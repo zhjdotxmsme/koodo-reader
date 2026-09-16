@@ -7,14 +7,12 @@ import {
   handleFetchPlugins,
   handleFetchDataSourceList,
   handleFetchDefaultSyncOption,
-  handleFetchLoginOptionList,
   handleTokenDialog,
   handleSettingMode,
   handleSettingDrive,
   handleLoadingDialog,
   handleFetchAuthed,
   handleLoginOptionList,
-  handleFetchUserInfo,
 } from "../../../store/actions";
 import { stateType } from "../../../store";
 import { withRouter } from "react-router-dom";
@@ -37,11 +35,9 @@ const actionCreator = {
   handleFetchDefaultSyncOption,
   handleSettingMode,
   handleSettingDrive,
-  handleFetchLoginOptionList,
   handleLoadingDialog,
   handleFetchAuthed,
   handleLoginOptionList,
-  handleFetchUserInfo,
 };
 export default connect(
   mapStateToProps,

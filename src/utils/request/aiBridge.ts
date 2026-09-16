@@ -205,3 +205,69 @@ export const aiAnalyzeTitle = async (
     return null;
   }
 };
+
+export type AiBookMetadata = {
+  name: string;
+  author: string;
+  publisher: string;
+  description: string;
+  cover: string;
+};
+
+/**
+ * 用自配 AI 检索书目元数据（替代原官方云端 getBookMetadata）。
+ * 未配置模型或解析失败时返回 null，由调用方提示「请先配置 AI 服务」。
+ */
+export const aiSearchBookMetadata = async (
+  name: string,
+  author: string
+): Promise<AiBookMetadata[] | null> => {
+  if (!name) {
+    return null;
+  }
+  const config = getFirstAiModelConfig();
+  if (!config) {
+    return null;
+  }
+  const prompt = [
+    `You are a bibliographic data assistant. Provide metadata for the book "${name}"${
+      author ? ` by ${author}` : ""
+    } based on your knowledge (no web access needed).`,
+    "If the exact book is unknown, return the closest well-known match instead of guessing wildly.",
+    'Return ONLY a minified JSON array with at most 1 object like {"name":"...","author":"...","publisher":"...","description":"1-3 sentences in the book language","cover":"https://.../cover.jpg"} (cover may be an empty string; publisher may be empty). No explanations, no markdown.',
+  ].join("\n");
+  try {
+    const answer = await collectChatText(prompt, config);
+    if (!answer) {
+      return null;
+    }
+    const start = answer.indexOf("[");
+    const end = answer.lastIndexOf("]");
+    if (start === -1 || end <= start) {
+      return null;
+    }
+    const parsed = JSON.parse(answer.slice(start, end + 1));
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+    const result: AiBookMetadata[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item.name !== "string" || !item.name.trim()) {
+        continue;
+      }
+      result.push({
+        name: item.name.trim(),
+        author: typeof item.author === "string" ? item.author.trim() : "",
+        publisher:
+          typeof item.publisher === "string" ? item.publisher.trim() : "",
+        description:
+          typeof item.description === "string" ? item.description.trim() : "",
+        cover: typeof item.cover === "string" ? item.cover.trim() : "",
+      });
+    }
+    return result;
+  } catch (error) {
+    console.error("aiSearchBookMetadata failed:", error);
+    return null;
+  }
+};

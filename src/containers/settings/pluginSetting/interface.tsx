@@ -8,7 +8,6 @@ export interface SettingInfoProps extends RouteComponentProps<any> {
   handleTokenDialog: (isOpenTokenDialog: boolean) => void;
   handleFetchDataSourceList: () => void;
   handleFetchDefaultSyncOption: () => void;
-  handleFetchLoginOptionList: () => void;
   handleLoginOptionList: (
     loginOptionList: { email: string; provider: string }[]
   ) => void;

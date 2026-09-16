@@ -6,12 +6,10 @@ import {
   CommonTool,
   ConfigService,
 } from "../../assets/lib/kookit-extra-browser.min";
-import { getCloudConfig } from "./common";
 import DatabaseService from "../storage/databaseService";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
 import ConfigUtil from "./configUtil";
-import SyncService from "../storage/syncService";
 import BackgroundUtil from "./backgroundUtil";
 import FontUtil from "./fontUtil";
 import toast from "react-hot-toast";
@@ -60,34 +58,16 @@ export const backup = async (service: string): Promise<BackupResult> => {
     if (!backupResult) {
       return "failed";
     }
-    if (service === "local") {
-      return "success";
-    } else {
-      let tokenConfig = await getCloudConfig(service);
-
-      return (await ipcRenderer.invoke("cloud-upload", {
-        ...tokenConfig,
-        fileName: "data.zip",
-        service: service,
-        type: "backup",
-        storagePath: getStorageLocation(),
-      }))
-        ? "success"
-        : "failed";
-    }
+    // 本地全功能模式：备份仅保存到本机
+    return "success";
   } else {
     let blob: Blob | boolean = await backupFromStorage();
     if (!blob) {
       return "failed";
     }
-    if (service === "local") {
-      saveAs(blob as Blob, fileName);
-      return "success";
-    } else {
-      let syncUtil = await SyncService.getSyncUtil();
-      let result = await syncUtil.uploadFile(fileName, "backup", blob as Blob);
-      return result ? "success" : "failed";
-    }
+    // 本地全功能模式：备份直接下载保存
+    saveAs(blob as Blob, fileName);
+    return "success";
   }
 };
 export const generateSnapshot = async () => {

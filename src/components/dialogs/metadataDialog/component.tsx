@@ -11,7 +11,10 @@ import {
 } from "./interface";
 import toast from "react-hot-toast";
 import copy from "copy-text-to-clipboard";
-import { getBookMetadata } from "../../../utils/request/reader";
+import {
+  aiSearchBookMetadata,
+  AiBookMetadata,
+} from "../../../utils/request/aiBridge";
 
 class MetadataDialog extends React.Component<
   MetadataDialogProps,
@@ -42,13 +45,6 @@ class MetadataDialog extends React.Component<
       return;
     }
 
-    if (!this.props.isAuthed) {
-      toast(this.props.t("Please upgrade to Pro to use this feature"));
-      this.props.handleSetting(true);
-      this.props.handleSettingMode("account");
-      return;
-    }
-
     this.setState({
       isLoading: true,
       error: "",
@@ -57,20 +53,17 @@ class MetadataDialog extends React.Component<
     });
 
     try {
-      const res = await getBookMetadata(searchName, searchAuthor);
-      if (res && res.code === 200 && res.data) {
-        const data = res.data as BookResultItem[];
-
-        this.setState({ results: data, isLoading: false });
-      } else if (res && res.code === 200 && !res.data) {
-        this.setState({
-          isLoading: false,
-          error: this.props.t("No metadata found"),
-        });
+      const data = await aiSearchBookMetadata(searchName, searchAuthor);
+      if (data && data.length > 0) {
+        const normalized: BookResultItem[] = data.map((item: AiBookMetadata) => ({
+          key: item.name + "|" + item.author,
+          ...item,
+        }));
+        this.setState({ results: normalized, isLoading: false });
       } else {
         this.setState({
           isLoading: false,
-          error: this.props.t("Failed to fetch metadata"),
+          error: this.props.t("No metadata found"),
         });
       }
     } catch {
@@ -117,7 +110,6 @@ class MetadataDialog extends React.Component<
       <div className="metadata-dialog-container edit-dialog-container">
         <div className="metadata-dialog-title">
           <Trans>Get metadata</Trans>
-          <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>
         </div>
 
         {/* Search inputs */}

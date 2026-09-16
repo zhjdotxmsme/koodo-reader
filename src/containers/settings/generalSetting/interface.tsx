@@ -7,7 +7,6 @@ export interface SettingInfoProps extends RouteComponentProps<any> {
   handleTokenDialog: (isOpenTokenDialog: boolean) => void;
   handleFetchDataSourceList: () => void;
   handleFetchDefaultSyncOption: () => void;
-  handleFetchLoginOptionList: () => void;
   handleLoginOptionList: (
     loginOptionList: { email: string; provider: string }[]
   ) => void;
@@ -16,7 +15,6 @@ export interface SettingInfoProps extends RouteComponentProps<any> {
   t: (title: string) => string;
   handleFetchBooks: () => void;
   handleFetchPlugins: () => void;
-  handleFetchUserInfo: () => void;
   plugins: PluginModel[];
   loginOptionList: { email: string; provider: string }[];
   defaultSyncOption: string;

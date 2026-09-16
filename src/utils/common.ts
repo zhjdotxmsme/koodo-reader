@@ -14,6 +14,7 @@ import i18n from "../i18n";
 import localforage from "localforage";
 import { languageCNMap, languageENMap } from "../constants/ttsList";
 import { BookHelper } from "../assets/lib/kookit.min";
+import * as Kookit from "../assets/lib/kookit.min";
 import {
   getOcrPaddleLangList,
   ocrTesseractLangList,

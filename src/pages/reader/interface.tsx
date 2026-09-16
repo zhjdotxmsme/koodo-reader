@@ -35,7 +35,6 @@ export interface ReaderProps {
   handleScale: (scale: string) => void;
   renderBookFunc: () => void;
   handleFetchAuthed: () => void;
-  handleFetchUserInfo: () => Promise<any>;
 }
 
 export interface ReaderState {

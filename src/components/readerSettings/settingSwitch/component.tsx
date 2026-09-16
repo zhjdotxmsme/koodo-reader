@@ -430,14 +430,6 @@ class SettingSwitch extends React.Component<
                   };
 
                   if (propName === "isBionic") {
-                    if (!this.state.isBionic && this.state.isWordDefinition) {
-                      toast.error(
-                        this.props.t(
-                          "Word definitions and fast reading mode cannot be enabled at the same time"
-                        )
-                      );
-                      return;
-                    }
                     this._handleChange(propName);
                   } else if (propName === "isShowPageBorder") {
                     this.props.handleShowBorder(!this.state.isShowPageBorder);

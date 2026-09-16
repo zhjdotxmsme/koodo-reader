@@ -77,8 +77,6 @@ let mainView;
 let readerWindowReadyToClose = false;
 let chatWindow;
 let dbConnection = {};
-let syncUtilCache = {};
-let pickerUtilCache = {};
 let downloadRequest = null;
 
 const RESIZE_THROTTLE_MS = 300;
@@ -260,31 +258,6 @@ const getDBConnection = (dbName, storagePath, sqlStatement) => {
     }
   }
   return dbConnection[dbName];
-};
-const getSyncUtil = async (config, isUseCache = true) => {
-  if (!isUseCache || !syncUtilCache[config.service]) {
-    const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
-    syncUtilCache[config.service] = new SyncUtil(config.service, config);
-  }
-  return syncUtilCache[config.service];
-};
-const removeSyncUtil = (config) => {
-  if (syncUtilCache[config.service]) {
-    syncUtilCache[config.service].clearQueue();
-    delete syncUtilCache[config.service];
-  }
-};
-const getPickerUtil = async (config, isUseCache = true) => {
-  if (!isUseCache || !pickerUtilCache[config.service]) {
-    const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
-    pickerUtilCache[config.service] = new SyncUtil(config.service, config);
-  }
-  return pickerUtilCache[config.service];
-};
-const removePickerUtil = (config) => {
-  if (pickerUtilCache[config.service]) {
-    pickerUtilCache[config.service] = null;
-  }
 };
 const getNativeThemeSource = (appSkin) => {
   if (appSkin === "night") {
@@ -976,84 +949,6 @@ const createMainWin = () => {
     }
     return voices;
   });
-  ipcMain.handle("cloud-upload", async (event, config) => {
-    let syncUtil = await getSyncUtil(config, config.isUseCache);
-    let result = await syncUtil.uploadFile(
-      config.fileName,
-      config.fileName,
-      config.type
-    );
-    return result;
-  });
-
-  ipcMain.handle("cloud-download", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = await syncUtil.downloadFile(
-      config.fileName,
-      (config.isTemp ? "temp-" : "") + config.fileName,
-      config.type
-    );
-    return result;
-  });
-  ipcMain.handle("cloud-progress", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = syncUtil.getDownloadedSize();
-    return result;
-  });
-  ipcMain.handle("picker-download", async (event, config) => {
-    let pickerUtil = await getPickerUtil(config);
-    let result = await pickerUtil.remote.downloadFile(
-      config.sourcePath,
-      config.destPath
-    );
-    return result;
-  });
-  ipcMain.handle("picker-progress", async (event, config) => {
-    let pickerUtil = await getPickerUtil(config);
-    let result = await pickerUtil.getDownloadedSize();
-    return result;
-  });
-  ipcMain.handle("cloud-reset", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = syncUtil.resetCounters();
-    return result;
-  });
-  ipcMain.handle("cloud-stats", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = syncUtil.getStats();
-    return result;
-  });
-  ipcMain.handle("cloud-delete", async (event, config) => {
-    try {
-      let syncUtil = await getSyncUtil(config, config.isUseCache);
-      let result = await syncUtil.deleteFile(config.fileName, config.type);
-      return result;
-    } catch (error) {
-      console.error("Error deleting file:", error);
-    }
-    return false;
-  });
-
-  ipcMain.handle("cloud-list", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = await syncUtil.listFiles(config.type);
-    return result;
-  });
-  ipcMain.handle("picker-list", async (event, config) => {
-    let pickerUtil = await getPickerUtil(config);
-    let result = await pickerUtil.listFileInfos(config.currentPath);
-    return result;
-  });
-  ipcMain.handle("cloud-exist", async (event, config) => {
-    let syncUtil = await getSyncUtil(config);
-    let result = await syncUtil.isExist(config.fileName, config.type);
-    return result;
-  });
-  ipcMain.handle("cloud-close", async (event, config) => {
-    removeSyncUtil(config);
-    return "pong";
-  });
-
   ipcMain.handle("clear-tts", async (event, config) => {
     if (!fs.existsSync(path.join(dirPath, "tts"))) {
       return "pong";

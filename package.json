@@ -116,6 +116,10 @@
     "dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://127.0.0.1:3000/ && nodemon --watch main.js --watch src/utils/plugins/main --ext js --exec electron .\"",
     "release": "electron-builder",
     "prerelease": "yarn build",
+    "release:android": "node scripts/build-android.js",
+    "release:apk": "node scripts/build-android.js",
+    "android:debug": "node scripts/build-android.js --debug",
+    "android:dry": "node scripts/build-android.js --dry-run",
     "postinstall": "node scripts/patch-nan.js && electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },

@@ -1,5 +1,8 @@
 {
   "Books": "Books",
+  "Full translation needs an AI model. Add one under Settings > General first.": "Full translation needs an AI model. Add one under Settings > General first.",
+  "Title analysis needs an AI model. Add one under Settings > General first.": "Title analysis needs an AI model. Add one under Settings > General first.",
+  "Translation failed": "Translation failed",
   "Recent": "Recents",
   "Bookmarks": "Bookmarks",
   "Favorites": "Favorites",
