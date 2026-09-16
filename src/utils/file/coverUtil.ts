@@ -11,7 +11,6 @@ import {
 } from "../../assets/lib/kookit-extra-browser.min";
 import { getCloudConfig } from "./common";
 import { LocalFileManager } from "./localFile";
-import TokenService from "../storage/tokenService";
 declare var window: any;
 class AsyncQueue {
   private queue: (() => Promise<void>)[] = [];
@@ -357,10 +356,7 @@ class CoverUtil {
     }
   }
   static async uploadCover(cover: string) {
-    let isAuthed = await TokenService.getToken("is_authed");
-    if (isAuthed !== "yes") {
-      return;
-    }
+    // 本地全功能模式：云同步仅取决于是否已配置数据源
     if (isElectron) {
       const ipcRenderer = window.electronAPI;
       let service = ConfigService.getItem("defaultSyncOption");
@@ -460,10 +456,7 @@ class CoverUtil {
     }
   }
   static async deleteCloudCover(key: string) {
-    let isAuthed = await TokenService.getToken("is_authed");
-    if (isAuthed !== "yes") {
-      return;
-    }
+    // 本地全功能模式：云同步仅取决于是否已配置数据源
     let coverList = await this.getCloudCoverList();
     for (let cover of coverList) {
       if (cover.startsWith(key)) {

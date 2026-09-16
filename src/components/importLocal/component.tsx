@@ -26,7 +26,7 @@ import {
 } from "../../utils/common";
 import DatabaseService from "../../utils/storage/databaseService";
 import { BookHelper } from "../../assets/lib/kookit.min";
-import { analyzeBookTitle } from "../../utils/request/reader";
+import { aiAnalyzeTitle } from "../../utils/request/aiBridge";
 
 // Convert supportedFormats to react-dropzone v14+ accept format
 // Key is MIME type, value is array of file extensions
@@ -177,21 +177,11 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
       if (this.state.isOpenFile) {
         if (ConfigService.getReaderConfig("isPreventAdd") === "yes") {
           //ignore
-        } else if (
-          this.props.isAuthed &&
-          ConfigService.getItem("defaultSyncOption")
-        ) {
-          await BookUtil.addBook(
-            book.key,
-            book.format.toLowerCase(),
-            buffer,
-            sourcePath
-          );
-          await CoverUtil.addCover(book);
         } else if (isImportPath) {
+          // 已是导入路径重复项：仅登记封面
           await CoverUtil.addCover(book);
-          //ignore
         } else {
+          // 本地全功能模式：全部本地入库
           await BookUtil.addBook(
             book.key,
             book.format.toLowerCase(),
@@ -207,10 +197,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
           return resolve();
         }
       } else {
-        if (
-          !isImportPath ||
-          (this.props.isAuthed && ConfigService.getItem("defaultSyncOption"))
-        ) {
+        if (!isImportPath) {
           await BookUtil.addBook(
             book.key,
             book.format.toLowerCase(),
@@ -273,16 +260,16 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
   analyzeBookMetadata = async (book: BookModel, bookName: string) => {
     if (
       ConfigService.getReaderConfig("isAIAnalyzeTitle") !== "yes" ||
-      !this.props.isAuthed ||
       book.name !== bookName
     ) {
       return;
     }
     try {
-      const response = await analyzeBookTitle(book.name);
-      if (response && response.code === 200 && response.data?.name) {
-        book.name = response.data.name;
-        book.author = response.data.author || book.author;
+      // 本地全功能模式：使用自配 AI（Settings > AI Services）解析书名
+      const result = await aiAnalyzeTitle(book.name);
+      if (result && result.name) {
+        book.name = result.name;
+        book.author = result.author || book.author;
       }
     } catch (error) {
       console.error(error, bookName);
@@ -813,14 +800,6 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
     }));
   };
 
-  // Add method to handle cloud import
-  handleCloudImport = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the Dropzone
-    this.setState({ isMoreOptionsVisible: false });
-
-    this.props.handleImportDialog(true);
-  };
-
   // Handle OPDS import
   handleOPDSImport = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the Dropzone
@@ -939,12 +918,6 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
           this.props.handleDrag(false);
           for (let item of acceptedFiles) {
             await this.getMd5WithBrowser(item);
-          }
-          if (
-            ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
-            ConfigService.getItem("defaultSyncOption")
-          ) {
-            await this.props.cloudSyncFunc();
           }
         }}
         accept={supportedFormatsAccept}
@@ -1065,14 +1038,6 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
                           this.setState({
                             isMoreOptionsVisible: false,
                           });
-                          if (
-                            ConfigService.getReaderConfig(
-                              "isDisableAutoSync"
-                            ) !== "yes" &&
-                            ConfigService.getItem("defaultSyncOption")
-                          ) {
-                            await this.props.cloudSyncFunc();
-                          }
                         }
                       }}
                     >
@@ -1112,25 +1077,9 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
                               await this.getMd5WithBrowser(item);
                             }
                             this.toggleMoreOptions();
-                            if (
-                              ConfigService.getReaderConfig(
-                                "isDisableAutoSync"
-                              ) !== "yes" &&
-                              ConfigService.getItem("defaultSyncOption")
-                            ) {
-                              await this.props.cloudSyncFunc();
-                            }
                           }}
                         ></input>
                       )}
-                    </div>
-                    <div
-                      className="more-option-item"
-                      onClick={this.handleCloudImport}
-                    >
-                      <span className="more-option-text">
-                        <Trans>From cloud storage</Trans>
-                      </span>
                     </div>
                     <div
                       className="more-option-item"
@@ -1207,13 +1156,6 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
                         error
                       );
                     }
-                  }
-                  if (
-                    ConfigService.getReaderConfig("isDisableAutoSync") !==
-                      "yes" &&
-                    ConfigService.getItem("defaultSyncOption")
-                  ) {
-                    await this.props.cloudSyncFunc();
                   }
                 }}
               ></div>

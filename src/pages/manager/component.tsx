@@ -232,12 +232,6 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
               }
               await this.props.importBookFunc(file);
             }
-            if (
-              ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
-              ConfigService.getItem("defaultSyncOption")
-            ) {
-              await this.props.cloudSyncFunc();
-            }
           }}
           onClick={() => {
             this.props.handleEditDialog(false);
@@ -245,10 +239,6 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
             this.props.handleAddDialog(false);
             this.props.handleDetailDialog(false);
             this.props.handleLoadingDialog(false);
-            if (!this.props.isAuthed) {
-              this.props.handleNewDialog(false);
-              this.props.handleShowSupport(false);
-            }
             this.props.handleLocalFileDialog(false);
             this.props.handleImportDialog(false);
             this.props.handleOPDSDialog(false);

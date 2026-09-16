@@ -412,12 +412,6 @@ export const titleSizeList = [
 export const ocrEngineList = [
   { label: "Please select", value: "", lang: "" },
   {
-    label: "Official AI OCR",
-    value: "official-ai-ocr",
-    lang: "general",
-    isPro: true,
-  },
-  {
     label: "System OCR",
     value: "system-ocr",
     lang: "auto",

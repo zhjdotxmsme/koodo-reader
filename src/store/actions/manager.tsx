@@ -1,16 +1,8 @@
-import {
-  ConfigService,
-  KookitConfig,
-} from "../../assets/lib/kookit-extra-browser.min";
+import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import BookModel from "../../models/Book";
 import PluginModel from "../../models/Plugin";
 import { Dispatch } from "redux";
 import DatabaseService from "../../utils/storage/databaseService";
-import {
-  fetchUserInfo,
-  getUserRequest,
-  resetUserRequest,
-} from "../../utils/request/user";
 import {
   officialDictList,
   officialTranList,
@@ -18,11 +10,7 @@ import {
 import toast from "react-hot-toast";
 import BookUtil from "../../utils/file/bookUtil";
 import i18n from "../../i18n";
-import { langToName } from "../../utils/common";
-import { resetReaderRequest } from "../../utils/request/reader";
-import { resetThirdpartyRequest } from "../../utils/request/thirdparty";
 import DictUtil from "../../utils/file/dictUtil";
-import TokenService from "../../utils/storage/tokenService";
 import { resolveStoredPlugin } from "../../utils/plugins/records";
 import { isBuiltinPluginKey } from "../../utils/plugins/catalog";
 
@@ -225,61 +213,6 @@ export function handleFetchBooks() {
     // });
   };
 }
-export function handleFetchUserInfo() {
-  return async (dispatch: Dispatch) => {
-    let response = await fetchUserInfo();
-    let userInfo: any = null;
-    if (response.code === 200) {
-      userInfo = response.data;
-      ConfigService.setReaderConfig(
-        "isEnableKoodoSync",
-        userInfo.is_enable_koodo_sync || "no"
-      );
-      if (
-        userInfo.is_enable_koodo_sync === "yes" &&
-        userInfo.default_sync_option &&
-        userInfo.default_sync_token
-      ) {
-        if (
-          ConfigService.getItem("defaultSyncOption") ===
-          userInfo.default_sync_option
-        ) {
-          let encryptedToken = await TokenService.getToken(
-            userInfo.default_sync_option + "_token"
-          );
-          if (encryptedToken !== userInfo.default_sync_token) {
-            await TokenService.setToken(
-              userInfo.default_sync_option + "_token",
-              userInfo.default_sync_token
-            );
-          }
-        }
-      }
-    }
-    if (
-      userInfo &&
-      userInfo.valid_until < parseInt(new Date().getTime() / 1000 + "")
-    ) {
-      dispatch(handleShowSupport(true));
-    }
-    if (userInfo && userInfo.valid_until && userInfo.token_valid_until) {
-      if (
-        userInfo.valid_until > 0 &&
-        userInfo.token_valid_until > 0 &&
-        userInfo.valid_until > userInfo.token_valid_until
-      ) {
-        let userRequest = await getUserRequest();
-        await userRequest.refreshUserToken();
-        resetReaderRequest();
-        resetUserRequest();
-        resetThirdpartyRequest();
-      }
-    }
-
-    dispatch(handleUserInfo(userInfo));
-    return userInfo;
-  };
-}
 export function handleFetchPlugins() {
   return async (dispatch: Dispatch) => {
     DatabaseService.getAllRecords("plugins").then(async (pluginList) => {
@@ -415,123 +348,26 @@ export function handleFetchPlugins() {
             pluginList.push(assistPlugin);
           }
         }
-        if (ConfigService.getReaderConfig("isDisableAI") !== "yes") {
-          // 官方 AI 插件始终展示（不依赖登录），选择时再判断是否升级
-          let dictPlugin = new PluginModel(
-            "official-ai-dict-plugin",
-            "dictionary",
-            "Official AI Dictionary",
-            "dict",
-            "1.0.0",
-            "",
-            {},
-            officialDictList,
-            [],
-            "",
-            ""
-          );
-          pluginList.push(dictPlugin);
-          let transPlugin = new PluginModel(
-            "official-ai-trans-plugin",
-            "translation",
-            "Official AI Translation",
-            "translation",
-            "1.0.0",
-            "",
-            {},
-            officialTranList,
-            [],
-            "",
-            ""
-          );
-          pluginList.push(transPlugin);
-          let sumPlugin = new PluginModel(
-            "official-ai-assistant-plugin",
-            "assistant",
-            "Official AI Assistant",
-            "assistant",
-            "1.0.0",
-            "",
-            {},
-            officialTranList,
-            [],
-            "",
-            ""
-          );
-          pluginList.push(sumPlugin);
-        }
-        const isAuthed = (await TokenService.getToken("is_authed")) === "yes";
-        if (ConfigService.getReaderConfig("isDisableAI") !== "yes") {
-          // 官方 AI 语音始终展示（不依赖登录），选择时再判断是否升级
-          let sortedVoiceList = [
-            ...KookitConfig.OfficialVoiceList.map((item) => {
-              return {
-                ...item,
-                label:
-                  i18n.t("Kokoro") +
-                  " - " +
-                  (KookitConfig.SelfHostedVoiceList.includes(item.name) &&
-                  isAuthed
-                    ? i18n.t("Limited free") + " - "
-                    : "") +
-                  item.displayName +
-                  " - " +
-                  item.language +
-                  " - " +
-                  (item.gender === "female"
-                    ? i18n.t("Female voice")
-                    : i18n.t("Male voice")),
-              };
-            }),
-            ...KookitConfig.AzureTTSVoiceList.map((item) => {
-              return {
-                ...item,
-                label:
-                  "Azure" +
-                  " - " +
-                  (KookitConfig.SelfHostedVoiceList.includes(item.name) &&
-                  isAuthed
-                    ? i18n.t("Limited free") + " - "
-                    : "") +
-                  item.displayName +
-                  " - " +
-                  langToName(item.locale) +
-                  " - " +
-                  (item.gender === "female"
-                    ? i18n.t("Female voice")
-                    : i18n.t("Male voice")),
-              };
-            }),
-          ];
-          let voicePlugin = new PluginModel(
-            "official-ai-voice-plugin",
-            "voice",
-            "Official AI Voice",
-            "speaker",
-            "1.0.0",
-            "",
-            {},
-            {},
-            sortedVoiceList.map((item: any) => {
-              return {
-                ...item,
-                plugin: "official-ai-voice-plugin",
-                config: {},
-                displayName: item.label,
-              };
-            }),
-            "",
-            ""
-          );
-          pluginList.push(voicePlugin);
-        }
-        TokenService.getToken("is_authed").then((value) => {
-          let isAuthed = value === "yes";
-          if (isAuthed && !ConfigService.getItem("serverRegion")) {
-            ConfigService.setItem("serverRegion", "global");
+        // 本地全功能模式：官方云端 AI（词典/翻译/助手/语音/OCR）已移除，
+        // AI 功能统一走用户自配 API key（custom-ai-* 插件），
+        // 语音/OCR 使用本地引擎。这里把指向官方插件的存量配置迁移为空，
+        // 让各选择器回退到本地/自配 AI 项。
+        for (const [prop, officialKey] of [
+          ["dictService", "official-ai-dict-plugin"],
+          ["transService", "official-ai-trans-plugin"],
+          ["aiService", "official-ai-assistant-plugin"],
+          ["voiceEngine", "official-ai-voice-plugin"],
+          ["textOcrEngine", "official-ai-ocr"],
+          ["scannedOcrEngine", "official-ai-ocr"],
+        ] as [string, string][]) {
+          if (ConfigService.getReaderConfig(prop) === officialKey) {
+            ConfigService.setReaderConfig(prop, "");
           }
-          dispatch(handlePlugins(pluginList));
-        });
+        }
+        if (!ConfigService.getItem("serverRegion")) {
+          ConfigService.setItem("serverRegion", "global");
+        }
+        dispatch(handlePlugins(pluginList));
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -544,13 +380,11 @@ export function handleFetchPlugins() {
 export function handleFetchAuthed() {
   return (dispatch: Dispatch) => {
     try {
-      TokenService.getToken("is_authed").then((value) => {
-        let isAuthed = value === "yes";
-        if (isAuthed && !ConfigService.getItem("serverRegion")) {
-          ConfigService.setItem("serverRegion", "global");
-        }
-        dispatch(handleAuthed(isAuthed));
-      });
+      // 本地全功能模式：直接解锁全部功能，不再读取登录令牌
+      if (!ConfigService.getItem("serverRegion")) {
+        ConfigService.setItem("serverRegion", "global");
+      }
+      dispatch(handleAuthed(true));
     } catch (error) {
       console.error(error);
     }

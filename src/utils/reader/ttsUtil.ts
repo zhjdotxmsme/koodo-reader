@@ -1,7 +1,7 @@
 import { Howl } from "howler";
 import PluginModel from "../../models/Plugin";
 import { getAllVoices, getFormatFromAudioPath } from "../common";
-import { getTTSAudio } from "../request/reader";
+
 import { isElectron } from "react-device-detect";
 import { TextRule } from "../common";
 
@@ -245,30 +245,16 @@ class TTSUtil {
   ) {
     // 朗读前应用文本替换 / 删除规则
     text = this.applyTextRules(text);
-    if (voiceEngine === "official-ai-voice-plugin") {
-      let res = await getTTSAudio(
-        text,
-        voice.language,
-        voice.name,
-        (speed + 100) / 100,
-        1.0,
-        isFirst
-      );
-      if (res && res.data && res.data.audio_base64) {
-        return res.data.audio_base64;
-      }
-      return "";
-    } else {
-      let audioPath = await window
-        .electronAPI
-        .invoke("generate-tts", {
-          text: text,
-          speed,
-          pluginKey: plugin.key,
-          config: voice.config,
-        });
-      return audioPath;
-    }
+    // 本地全功能模式：官方云端 TTS 已移除，统一走本地 generate-tts
+    let audioPath = await window
+      .electronAPI
+      .invoke("generate-tts", {
+        text: text,
+        speed,
+        pluginKey: plugin.key,
+        config: voice.config,
+      });
+    return audioPath;
   }
   static setAudioPaths() {
     this.audioPaths = [];

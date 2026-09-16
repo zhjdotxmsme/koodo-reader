@@ -70,7 +70,6 @@ export type stateType = {
     currentBook: BookModel;
     renderBookFunc: () => void;
     importBookFunc: (file: any) => Promise<void>;
-    cloudSyncFunc: () => Promise<void>;
     renderNoteFunc: () => void;
   };
   backupPage: {

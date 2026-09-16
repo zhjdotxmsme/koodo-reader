@@ -189,6 +189,8 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       );
       this.setState({ isEnableKoReaderSync: true });
       ConfigService.setReaderConfig("isEnableKoReaderSync", "yes");
+      // 通知 header 立即执行一次 KOReader 同步
+      window.dispatchEvent(new Event("koodo-koreader-sync"));
       toast.success(this.props.t("Validation successful"), {
         id: "ko-reader-sync",
       });
@@ -461,10 +463,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     }
     ConfigService.setItem("storageLocation", newPath);
     this.setState({ storageLocation: newPath });
-    let targetDrive = ConfigService.getItem("defaultSyncOption");
-    await ipcRenderer.invoke("cloud-close", {
-      service: targetDrive,
-    });
 
     toast.success(this.props.t("Change successful"));
     this.props.handleFetchBooks();
@@ -496,10 +494,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       } catch (error) {
         console.error("Error reading config.json:", error);
       }
-      let targetDrive = ConfigService.getItem("defaultSyncOption");
-      await ipcRenderer.invoke("cloud-close", {
-        service: targetDrive,
-      });
       toast.success(this.props.t("Switch successful"));
       this.props.handleFetchBooks();
       await generateSyncRecord();

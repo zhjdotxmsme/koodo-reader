@@ -9,9 +9,7 @@ export interface HeaderProps extends RouteComponentProps<any> {
   isLoadMore: boolean;
   isAuthed: boolean;
   currentBook: Book;
-  defaultSyncOption: string;
   mode: string;
-  userInfo: any;
   bookSortCode: { sort: number; order: number };
   importBookFunc: (file: any) => Promise<void>;
   handleSortDisplay: (isSortDisplay: boolean) => void;
@@ -21,10 +19,8 @@ export interface HeaderProps extends RouteComponentProps<any> {
   handleImportDialog: (isOpenImportDialog: boolean) => void;
   handleFetchAuthed: () => void;
   handleSearchResults: (results: number[]) => void;
-  handleFetchUserInfo: () => Promise<any>;
   handleSettingMode: (settingMode: string) => void;
   handleFetchDefaultSyncOption: () => void;
-  handleFetchLoginOptionList: () => void;
   handleFetchDataSourceList: () => void;
   handleDrag: (isDrag: boolean) => void;
   handleFetchBooks: () => void;
@@ -32,9 +28,6 @@ export interface HeaderProps extends RouteComponentProps<any> {
   handleFetchNotes: () => void;
   handleFetchBookmarks: () => void;
   handleReadingBook: (book: Book) => void;
-  handleCloudSyncFunc: (
-    cloudSyncFunc: (userInfo: any) => Promise<false | undefined>
-  ) => void;
 }
 
 export interface HeaderState {
@@ -43,6 +36,5 @@ export interface HeaderState {
   width: number;
   isNewVersion: boolean;
   isHidePro: boolean;
-  isSync: boolean;
   notificationCount: number;
 }

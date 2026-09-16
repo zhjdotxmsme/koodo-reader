@@ -6,7 +6,7 @@ const initState = {
   isSearch: false,
   isShowPopupNote: false,
   isAboutOpen: false,
-  isAuthed: false,
+  isAuthed: true,
   userInfo: null,
   userConfig: null,
   isSettingOpen: false,

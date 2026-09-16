@@ -41,7 +41,6 @@ export interface SettingSwitchState {
   isShowPageBorder: boolean;
   isCustomBookCSS: boolean;
   customBookCSS: string;
-  isWordDefinition: boolean;
   isSeperateStyle: boolean;
   isReadingRuler: boolean;
   readingRulerLineHeight: string;
@@ -49,8 +48,4 @@ export interface SettingSwitchState {
   isSpeedReading: boolean;
   speedReadingSpeed: string;
   isMergeWord: boolean;
-  wordDefinitionLang: string;
-  currentChineseLevel: string;
-  currentJapaneseLevel: string;
-  currentEnglishLevel: string;
 }

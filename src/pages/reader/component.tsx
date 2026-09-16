@@ -25,7 +25,6 @@ import {
   updateDiscordPresence,
   clearDiscordPresence,
 } from "../../utils/reader/discordRPC";
-import SupportDialog from "../../components/dialogs/supportDialog";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { throttle } from "../../utils/common";
 declare var window: any;
@@ -175,17 +174,6 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
     }
     this.props.handleFetchBooks();
     this.props.handleFetchAuthed();
-    if (
-      key &&
-      ConfigService.getAllListConfig("convertPDFBooks").includes(key) &&
-      ConfigService.getReaderConfig(
-        this.props.currentBook?.description?.indexOf("scanned") > -1
-          ? "scannedOcrEngine"
-          : "textOcrEngine"
-      ) === "official-ai-ocr"
-    ) {
-      await this.props.handleFetchUserInfo();
-    }
     DatabaseService.getRecord(key, "books").then((book: Book | null) => {
       book = book || JSON.parse(ConfigService.getItem("tempBook") || "{}");
       if (!book) return;
@@ -880,7 +868,6 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
         {this.props.currentBook.key && <Viewer {...(renditionProps as any)} />}
         {this.props.isConvertOpen && <ConvertDialog />}
         {this.props.isPdfCropOpen && <PdfCropDialog />}
-        <SupportDialog />
         {this.props.isOpenPopupOptionDialog && (
           <>
             <PopupOptionDialog />
