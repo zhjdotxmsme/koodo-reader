@@ -206,6 +206,18 @@ Make sure that you have installed yarn and git
    `android.config.json`, and CI produces the APK via
    [.github/workflows/release-android.yml](.github/workflows/release-android.yml).
 
+    **Local library import (SAF)** — call `window.AndroidBridge.pickFolder()` (or
+    `window.ReactNativeWebView.pickFolder()`) from the page: the host opens Android's
+    storage picker, keeps the folder's read permission across restarts, and returns its
+    files (root + 2 sub-directory levels, up to 1000 files) via
+    `window.ReactNativeWebView.onFolderPicked(json)` and a `document` `message` event
+    (engine style: `JSON.parse(event.data)`):
+    `{"event":"folder-picked","folder":"content://...","count":3,"files":[{"name","uri","size","mime"}]}`.
+    Every `uri` is a `content://` URI the engine can `fetch()` directly (e.g.
+    `addMobileBook`). `AndroidBridge.listFolder(uri)` re-lists a previously picked
+    folder. Book-file rules (extensions/MIME/payload) live in
+    `src/utils/android/folderBridge.js` (unit tested; Kotlin only enumerates).
+
    > **Scope note** — the Android host embeds the shared web build in a WebView and
    > bridges to the reading engine's existing `ReactNativeWebView` surface (book pick,
    > errors). Desktop-only native features (e.g. `better-sqlite3`, cloud-sync plugins,

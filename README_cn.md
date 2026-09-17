@@ -208,6 +208,17 @@ brew install --cask koodo-reader
    环境变量）。打包配置在 `android.config.json`，CI 通过
    [.github/workflows/release-android.yml](.github/workflows/release-android.yml) 生成 APK。
 
+   **本地书库批量导入（SAF）** — 在页面里调用 `window.AndroidBridge.pickFolder()`
+   （或 `window.ReactNativeWebView.pickFolder()`）：宿主会打开安卓系统的存储选目录，
+   并记住该文件夹的读权限（重启后仍有效），然后把其中的文件（根目录 + 2 级子目录，
+   最多 1000 个文件）通过 `window.ReactNativeWebView.onFolderPicked(json)` 和一个
+   `document` `message` 事件（引擎同款：`JSON.parse(event.data)`）交还页面：
+   `{"event":"folder-picked","folder":"content://...","count":3,"files":[{"name","uri","size","mime"}]}`。
+   每个 `uri` 都是引擎可直接 `fetch()` 的 `content://` URI（例如喂给 `addMobileBook`）。
+   `AndroidBridge.listFolder(uri)` 可重新读取之前选过的文件夹。书名规则
+   （扩展名 / MIME / payload）在 `src/utils/android/folderBridge.js`（有单测；
+   Kotlin 侧只负责枚举）。
+
    > **范围说明** — 安卓宿主把共享的网页版构建打包进 WebView，并桥接阅读引擎
    > 已有的 `ReactNativeWebView` 能力（选书、错误提示等）。仅桌面端可用的原生
    > 能力（如 `better-sqlite3`、云同步插件、原生 OCR）在 WebView 版中不可用。
