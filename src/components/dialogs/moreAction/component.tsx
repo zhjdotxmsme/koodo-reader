@@ -1,4 +1,5 @@
 import React from "react";
+import { getIsMobile } from "../../../utils/android/nativeBridge";
 import "./moreAction.css";
 import { Trans } from "react-i18next";
 import { MoreActionProps, MoreActionState } from "./interface";
@@ -331,7 +332,7 @@ class MoreAction extends React.Component<MoreActionProps, MoreActionState> {
                         ConfigService.getReaderConfig("textOrientation"),
                       parserRegex: "",
                       isDarkMode: "no",
-                      isMobile: "no",
+                      isMobile: getIsMobile(),
                       password: getPdfPassword(this.props.currentBook),
                       isScannedPDF: "no",
                       isKeepPDFBackground: "no",

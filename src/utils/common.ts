@@ -1,5 +1,6 @@
 import Plugin from "../models/Plugin";
 import { isElectron } from "react-device-detect";
+import { getIsMobile } from "./android/nativeBridge";
 import CryptoJS from "crypto-js";
 import {
   CommonTool,
@@ -714,7 +715,7 @@ export const preCacheAllBooks = async (bookList: Book[]) => {
         textOrientation: ConfigService.getReaderConfig("textOrientation"),
         parserRegex: "",
         isDarkMode: "no",
-        isMobile: "no",
+        isMobile: getIsMobile(),
         password: getPdfPassword(selectedBook),
         isScannedPDF:
           selectedBook.description.indexOf("scanned") > -1 ? "yes" : "no",

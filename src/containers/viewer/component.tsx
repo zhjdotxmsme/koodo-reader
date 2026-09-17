@@ -9,6 +9,7 @@ import "./index.css";
 import { htmlMouseEvent } from "../../utils/reader/mouseEvent";
 import ImageViewer from "../../components/imageViewer";
 import { getIframeDoc } from "../../utils/reader/docUtil";
+import { isNativeMobile, getIsMobile } from "../../utils/android/nativeBridge";
 import PopupBox from "../../components/popups/popupBox";
 import Note from "../../models/Note";
 import PageWidget from "../pageWidget";
@@ -308,7 +309,7 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
             ? "yes"
             : "no",
         backgroundColor: ConfigService.getReaderConfig("backgroundColor"),
-        isMobile: "no",
+        isMobile: getIsMobile(),
         isIndent: ConfigService.getReaderConfig("isIndent"),
         isHyphenation: ConfigService.getReaderConfig("isHyphenation"),
         isStartFromEven: ConfigService.getReaderConfig("isStartFromEven"),
@@ -632,6 +633,11 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
           this.setState({ chapterDocIndex });
         }
 
+        if (isNativeMobile()) {
+          // Native shell owns the selection menu (NativeEventDispatcher);
+          // suppress the web popup to avoid double menus.
+          return;
+        }
         if (this.state.isDisablePopup) {
           if (doc!.getSelection()!.toString().trim().length === 0) {
             let rect = doc!
@@ -665,6 +671,7 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
           event.preventDefault();
         }
 
+        if (isNativeMobile()) return; // selection menu is native in the APK
         if (!this.state.isDisablePopup && !this.state.isTouch) return;
 
         if (

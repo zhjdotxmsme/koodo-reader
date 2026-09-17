@@ -13,6 +13,11 @@ import {
   getSelectionSentence,
 } from "../../../utils/reader/mouseEvent";
 import { createHighlight } from "../../../utils/reader/noteUtil";
+import {
+  buildMenuLabels,
+  createHostApi,
+  isNativeMobile,
+} from "../../../utils/android/nativeBridge";
 
 declare var window: any;
 
@@ -41,6 +46,48 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
       isRightEdge: false,
     };
   }
+  componentDidMount() {
+    if (!isNativeMobile()) return;
+    // Native shell → web callback surface. Registered here (not in the
+    // viewer) because this component owns both the live `rendition` (page
+    // turns) and `openMenu()` (the app's own selection menu, which the native
+    // menu's 高亮/笔记 items delegate to). See nativeBridge.js for the
+    // protocol; the Kotlin side is NativeEventDispatcher.kt.
+    window.__koodoNative = createHostApi({
+      prevPage: () =>
+        this.props.rendition && this.props.rendition.prev
+          ? (this.props.rendition.prev(), null)
+          : null,
+      nextPage: () =>
+        this.props.rendition && this.props.rendition.next
+          ? (this.props.rendition.next(), null)
+          : null,
+      openSelectionMenu: () => {
+        this.openMenu();
+        return null;
+      },
+    });
+    // Push i18n labels so the native menu speaks the app's language.
+    const bridge = window.AndroidBridge;
+    if (bridge && typeof bridge.setMenuLabels === "function") {
+      try {
+        bridge.setMenuLabels(JSON.stringify(buildMenuLabels(this.props.t)));
+      } catch (e) {
+        // Non-fatal: native falls back to built-in labels.
+      }
+    }
+  }
+
+  componentWillUnmount() {
+    if (window && window.__koodoNative) {
+      try {
+        delete window.__koodoNative;
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+
   UNSAFE_componentWillReceiveProps(nextProps: PopupMenuProps) {
     if (nextProps.rect !== this.props.rect) {
       this.setState(

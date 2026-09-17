@@ -41,33 +41,31 @@ class MainActivity : Activity() {
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     private var lastFolder: Uri? = null
 
+    /**
+     * Engine event consumer (21-event protocol). Lazily built so the WebView
+     * exists at construction; the protocol mirror is
+     * `src/utils/android/nativeBridge.js`.
+     */
+    private val eventDispatcher by lazy { NativeEventDispatcher(this, webView) }
+
     /** JS-visible bridge, attached as `window.AndroidBridge`. */
     private val bridge = object : Any() {
 
         @JavascriptInterface
         fun postMessage(message: String) {
             runOnUiThread {
-                var event = "message"
-                var payload = ""
-                try {
-                    val obj = JSONObject(message)
-                    event = obj.optString("event", "message")
-                    payload = obj.optString("message", "")
-                } catch (ignored: Exception) {
-                    // Not JSON — treat as a plain log line.
-                }
-                when (event) {
-                    "error" ->
-                        Toast.makeText(
-                            this@MainActivity,
-                            if (payload.isNotEmpty()) "Koodo: $payload" else "Koodo: an error occurred",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    else ->
-                        // Future hooks (finish-download, cache, ocr-result) can be added here.
-                        {}
-                }
+                if (message.isEmpty()) return@runOnUiThread
+                eventDispatcher.dispatch(message)
             }
+        }
+
+        /**
+         * i18n labels for the native selection menu, pushed by the web app
+         * (PopupMenu mount). Shape: `{copy,highlight,note,share,search}`.
+         */
+        @JavascriptInterface
+        fun setMenuLabels(labels: String) {
+            runOnUiThread { eventDispatcher.setMenuLabels(labels) }
         }
 
         @JavascriptInterface
@@ -135,6 +133,9 @@ class MainActivity : Activity() {
         settings.mediaPlaybackRequiresUserGesture = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // Respect the viewport meta (mobile layout) instead of desktop sizing.
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = true
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {

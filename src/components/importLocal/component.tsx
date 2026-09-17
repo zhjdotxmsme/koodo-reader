@@ -1,4 +1,5 @@
 import React from "react";
+import { getIsMobile } from "../../utils/android/nativeBridge";
 import "./importLocal.css";
 import BookModel from "../../models/Book";
 import { Trans } from "react-i18next";
@@ -531,7 +532,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
           textOrientation: ConfigService.getReaderConfig("textOrientation"),
           parserRegex: "",
           isDarkMode: "no",
-          isMobile: "no",
+          isMobile: getIsMobile(),
           password: "",
           isScannedPDF: "no",
           isKeepPDFBackground: "no",
