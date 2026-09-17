@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.view.KeyEvent
@@ -160,8 +159,9 @@ class MainActivity : Activity() {
                 url: String?,
                 message: String?,
                 result: JsResult?
-            ) {
+            ): Boolean {
                 result?.confirm()
+                return true
             }
         }
 
@@ -253,13 +253,12 @@ class MainActivity : Activity() {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 lastFolder?.let { putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
-                // Persist the read permission across restarts (required on SDK 33+).
-                if (Build.VERSION.SDK_INT >= 33) {
-                    putExtra(
-                        Intent.EXTRA_PERSISTED_URI_PERMISSION,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
+                // Request a persistable read grant so the folder access survives
+                // app restarts (takePersistableUriPermission is applied on result).
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                )
             }
             startActivityForResult(intent, REQ_FOLDER_PICKER)
         }.onFailure { toast("Could not open the folder picker.") }
@@ -290,7 +289,8 @@ class MainActivity : Activity() {
 
         fun walk(docId: String, remainingDepth: Int) {
             if (files.size >= limit) return
-            val childrenUri = DocumentsContract.buildChildDocumentsUriDirectory(treeUri, docId)
+            val authority = treeUri.authority ?: return
+            val childrenUri = DocumentsContract.buildChildDocumentsUri(authority, docId)
             val cursor = contentResolver.query(childrenUri, projection, null, null, null) ?: return
             cursor.use { c ->
                 val idCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
