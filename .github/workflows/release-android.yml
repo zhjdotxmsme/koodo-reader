@@ -112,13 +112,20 @@ jobs:
           set -e
           curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.5-bin.zip
           rm -rf /opt/gradle-8.5
-          mkdir -p /opt/gradle-8.5
-          unzip -q /tmp/gradle.zip -d /opt/gradle-8.5
+          mkdir -p /opt
+          # The distribution zip contains a top-level gradle-8.5/ directory,
+          # so extracting to /opt yields /opt/gradle-8.5/bin/gradle.
+          unzip -q /tmp/gradle.zip -d /opt
+          test -x /opt/gradle-8.5/bin/gradle
       - name: Activate Gradle
         shell: bash
         run: |
+          set -e
           echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
-          gradle --version
+          command -v gradle
+          gradle --version | head -4
+          # Hard-fail if the wrong (runner-image) Gradle shadows ours.
+          gradle --version | grep -q "Gradle 8.5"
 
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
         run: node scripts/build-android.js --debug --abi arm64-v8a,armeabi-v7a --audit --verbose

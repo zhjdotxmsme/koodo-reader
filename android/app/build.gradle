@@ -25,9 +25,11 @@ android {
 
         // Restrict the APK to a single ABI when building per-ABI splits
         // (driven by `-PabiFilters=<abi>` from scripts/build-android.js).
+        // `abiFilters` is a varargs DSL method (String...) — splat the list.
         if (project.hasProperty("abiFilters")) {
+            def abis = project.property("abiFilters").toString().split(",").collect { it.trim() }
             ndk {
-                abiFilters project.property("abiFilters").toString().split(",").collect { it.trim() }
+                abiFilters *abis
             }
         }
     }
