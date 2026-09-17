@@ -325,8 +325,9 @@ class MainActivity : Activity() {
     /**
      * Deliver the folder listing to the page:
      *   1. a `document` "message" event (engine style: `JSON.parse(event.data)`)
-     *   2. `window.ReactNativeWebView.onFolderPicked(json)`
-     * `payload.toString()` is JSON, which is a valid JS expression.
+     *   2. `window.ReactNativeWebView.onFolderPicked(jsonString)`
+     * The payload is passed as a JSON **string** literal (JSONObject.quote), so
+     * `event.data` stays a string that `JSON.parse` accepts — engine style.
      */
     private fun deliverFolderResult(folder: Uri, files: List<FolderFile>) {
         val arr = JSONArray()
@@ -357,7 +358,7 @@ class MainActivity : Activity() {
                 "    window.ReactNativeWebView.onFolderPicked(j);" +
                 "  }" +
                 "} catch (e) {}" +
-                "})(" + payload.toString() + ")"
+                "})(" + JSONObject.quote(payload.toString()) + ")"
         webView.evaluateJavascript(script, null)
     }
 
