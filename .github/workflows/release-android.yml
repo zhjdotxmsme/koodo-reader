@@ -45,6 +45,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Redirect git+ssh dependency fetches to HTTPS (GHA has no SSH key)
+        shell: bash
+        run: |
+          # yarn.lock holds transitive git deps (e.g. @electron/node-gyp,
+          # register-scheme) as git+ssh://; yarn 1 fetches them via `git`,
+          # which fails without an SSH key on GHA. Rewrite to HTTPS.
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global --list | grep -i insteadof || true
+
       - name: Install dependencies (skip native postinstall; the web build needs no native module)
         run: yarn install --ignore-scripts
 
