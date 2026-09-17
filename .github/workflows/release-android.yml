@@ -117,14 +117,17 @@ jobs:
           # so extracting to /opt yields /opt/gradle-8.5/bin/gradle.
           unzip -q /tmp/gradle.zip -d /opt
           test -x /opt/gradle-8.5/bin/gradle
-      - name: Activate Gradle
+          /opt/gradle-8.5/bin/gradle --version | grep -q "Gradle 8.5"
+      - name: Activate Gradle (GITHUB_PATH applies to subsequent steps only)
+        shell: bash
+        run: echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
+      - name: Verify Gradle 8.5 is on PATH
         shell: bash
         run: |
           set -e
-          echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
           command -v gradle
           gradle --version | head -4
-          # Hard-fail if the wrong (runner-image) Gradle shadows ours.
+          # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
           gradle --version | grep -q "Gradle 8.5"
 
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
