@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def keystoreProp = (project.findProperty("keystore") ?: "").toString().trim()
+def storePass = (project.findProperty("storePassword") ?: "").toString()
+def aliasProp = (project.findProperty("keyAlias") ?: "").toString()
+def keyPass = (project.findProperty("keyPassword") ?: "").toString()
+if (keyPass.length() == 0) {
+    keyPass = storePass
+}
+def hasKeystore = keystoreProp.length() > 0
+
+android {
+    namespace 'com.koodoreader.reader'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.koodoreader.reader"
+        minSdk 24
+        targetSdk 34
+        versionCode Math.max(1, Integer.parseInt((project.findProperty("versionCode") ?: "1").toString()))
+        versionName (project.findProperty("versionName") ?: "0.0.0").toString()
+
+        // Restrict the APK to a single ABI when building per-ABI splits
+        // (driven by `-PabiFilters=<abi>` from scripts/build-android.js).
+        if (project.hasProperty("abiFilters")) {
+            ndk {
+                abiFilters project.property("abiFilters").toString().split(",").collect { it.trim() }
+            }
+        }
+    }
+
+    signingConfigs {
+        if (hasKeystore) {
+            release {
+                storeFile file(keystoreProp)
+                storePassword storePass
+                keyAlias aliasProp
+                keyPassword keyPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // Intentionally minimal: this is a WebView host. The reading app itself is
+    // the bundled web build under assets/webapp (staged by the build script).
+}

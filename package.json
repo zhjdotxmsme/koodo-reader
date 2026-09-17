@@ -120,6 +120,7 @@
     "release:apk": "node scripts/build-android.js",
     "android:debug": "node scripts/build-android.js --debug",
     "android:dry": "node scripts/build-android.js --dry-run",
+    "android:audit": "node scripts/build-android.js --audit-only",
     "postinstall": "node scripts/patch-nan.js && electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },

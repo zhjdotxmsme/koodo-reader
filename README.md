@@ -183,6 +183,34 @@ Make sure that you have installed yarn and git
    yarn start
    ```
 
+4. Build the Android APK
+
+   The Android host lives in `android/`; the web build is staged into the APK's
+   assets. You need the Android SDK + a Gradle 8.x installation (CI sets both up).
+
+    ```
+    yarn build                                  # build the web app into build/
+    node scripts/build-android.js --debug       # build an installable, self-signed debug APK
+    ```
+
+   Useful options:
+   - `--release` — build a release APK (requires a signing keystore, see below).
+   - `--abi arm64-v8a,armeabi-v7a` — restrict which ABIs to build (both by default).
+   - `--no-split` — produce one universal APK instead of one APK per ABI.
+   - `--dry-run` — stage assets and print the Gradle plan without running Gradle.
+   - `--keystore <path>` / `--store-password <p>` / `--key-alias <a>` / `--key-password <p>` — release signing.
+
+   A release build needs a keystore (via the flags above, or the
+   `ANDROID_KEYSTORE` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` /
+   `ANDROID_KEY_PASSWORD` environment variables). The build is configured in
+   `android.config.json`, and CI produces the APK via
+   [.github/workflows/release-android.yml](.github/workflows/release-android.yml).
+
+   > **Scope note** — the Android host embeds the shared web build in a WebView and
+   > bridges to the reading engine's existing `ReactNativeWebView` surface (book pick,
+   > errors). Desktop-only native features (e.g. `better-sqlite3`, cloud-sync plugins,
+   > native OCR) are not available inside the WebView build.
+
 ## Translation
 
 ### Edit current language

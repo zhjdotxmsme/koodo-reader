@@ -1,0 +1,71 @@
+name: Build/release-android
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies (skip native postinstall; the web build needs no native module)
+        run: yarn install --ignore-scripts
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit --noUnusedLocals false --noUnusedParameters false
+
+      - name: Run Android build core tests
+        env:
+          CI: true
+        run: npx react-scripts test --watchAll=false --testPathPattern "androidBuild"
+
+      - name: Build the web app
+        env:
+          GENERATE_SOURCEMAP: "false"
+          CI: "true"
+        run: yarn build
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK (API 34)
+        uses: reactivecircus/android-setup-action@v3
+        with:
+          api-level: 34
+          build-tools-revision: "34.0.0"
+
+      - name: Set up Gradle 8.5
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.5"
+
+      - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
+        run: node scripts/build-android.js --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: koodo-reader-android
+          path: android/app/build/outputs/apk/debug/**/*.apk
+          if-no-files-found: warn
+
+      - name: Attach APKs to the GitHub Release (on version tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: android/app/build/outputs/apk/debug/**/*.apk

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple "open book" foreground. Centred within the 108dp adaptive safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Left page -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,38 C40,30 51,30 53,34 L53,74 C51,70 40,70 32,78 Z" />
+    <!-- Right page -->
+    <path
+        android:fillColor="#DBEAFE"
+        android:pathData="M76,38 C68,30 57,30 55,34 L55,74 C57,70 68,70 76,78 Z" />
+    <!-- Spine line -->
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M52,34 L56,34 L56,74 L52,74 Z" />
+    <!-- Bookmark / reading cue -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M40,40 L46,40 L43,47 Z" />
+</vector>

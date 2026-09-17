@@ -1,0 +1,24 @@
+{
+  "name": "Koodo Reader",
+  "packageName": "com.koodoreader.reader",
+  "versionName": "",
+  "versionCode": 0,
+  "minSdk": 24,
+  "targetSdk": 34,
+  "compileSdk": 34,
+  "abis": ["arm64-v8a", "armeabi-v7a"],
+  "buildTypes": ["release"],
+  "splitPerAbi": true,
+  "webBuildDir": "build",
+  "webBuildEntry": "index.html",
+  "assetStageDir": "android/app/src/main/assets/webapp",
+  "icon": "assets/icons/512x512.png",
+  "outputDir": "android/app/build/outputs/apk",
+  "requireSigning": false,
+  "signing": {
+    "keystore": "",
+    "storePassword": "",
+    "keyAlias": "",
+    "keyPassword": ""
+  }
+}
