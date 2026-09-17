@@ -13,6 +13,7 @@ import android.net.Uri
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.webkit.WebView
@@ -246,19 +247,20 @@ class NativeEventDispatcher(
     private fun anchorPoint(payloadRaw: String): Pair<Int, Int> {
         val w = activity.resources.displayMetrics.widthPixels
         val h = activity.resources.displayMetrics.heightPixels
-        runOrNull {
-            val o = JSONObject(payloadRaw)
-            val pos = o.optJSONObject("position")
+        try {
+            val pos = JSONObject(payloadRaw).optJSONObject("position")
             if (pos != null) {
                 val px = pos.optDouble("x", -1.0)
                 val py = pos.optDouble("y", -1.0)
-                if (px >= 0 && py >= 0) return (px.toInt() to py.toInt())
+                if (px >= 0 && py >= 0) return Pair(px.toInt(), py.toInt())
                 val left = pos.optDouble("left", -1.0)
                 val top = pos.optDouble("top", -1.0)
-                if (left >= 0 && top >= 0) return (left.toInt() to top.toInt())
+                if (left >= 0 && top >= 0) return Pair(left.toInt(), top.toInt())
             }
+        } catch (ignored: Exception) {
+            // fall through to the default anchor
         }
-        return (w / 2) to (h / 3)
+        return Pair(w / 2, h / 3)
     }
 
     private fun shareText(text: String) {
