@@ -25,11 +25,18 @@ android {
 
         // Restrict the APK to a single ABI when building per-ABI splits
         // (driven by `-PabiFilters=<abi>` from scripts/build-android.js).
-        // `abiFilters` is a varargs DSL method (String...) — splat the list.
+        // `abiFilters` resolves to the NdkOptions property (HashSet) when written
+        // as a bare expression (Groovy then looks for a `*` operator), so use the
+        // explicit call form with a splat to hit the varargs method abiFilters(String...).
         if (project.hasProperty("abiFilters")) {
             def abis = project.property("abiFilters").toString().split(",").collect { it.trim() }
             ndk {
-                abiFilters *abis
+                try {
+                    abiFilters(*abis)
+                } catch (Exception ignoreAbiMethodMismatch) {
+                    // AGP/Gradle DSL drift fallback: assign the settable property.
+                    abiFilters = abis
+                }
             }
         }
     }
