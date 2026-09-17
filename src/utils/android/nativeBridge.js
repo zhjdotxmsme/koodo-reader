@@ -7,9 +7,9 @@
  * NativeEventDispatcher.kt`). Keep the two in sync — every name below appears
  * in the Kotlin file with a cross-reference comment.
  *
- * Pure CJS, zero imports: loadable directly by Jest (react-scripts roots=src)
- * and by the local Node harness. No React, no i18n, no DOM access in here —
- * `t`-style translators are injected by the caller.
+ * Pure ESM, zero imports: imported directly by app code (webpack/CRA), by Jest
+ * (react-scripts roots=src) and by the local Node harness. No React, no i18n,
+ * no DOM access in here — `t`-style translators are injected by the caller.
  *
  * Decoded engine semantics (kookit.min.js):
  *   - "right" → next page, "left" → prev page (LTR reading order, verified in
@@ -21,8 +21,8 @@
 
 "use strict";
 
-/** All event names the engine can emit (19 literals + 2 dynamic values). */
-const EVENTS = {
+/** All event names the engine can emit (20 literals + 2 dynamic values). */
+export const EVENTS = {
   BOOK_INITED: "book-inited",
   CACHE: "cache",
   CHAPTER_PAGES: "chapter-pages",
@@ -48,7 +48,7 @@ const EVENTS = {
 };
 
 /** Events with a known disposition in NativeEventDispatcher (mirrors Kotlin KNOWN_EVENTS). */
-const KNOWN_EVENTS = new Set([
+export const KNOWN_EVENTS = new Set([
   EVENTS.BOOK_INITED,
   EVENTS.CACHE,
   EVENTS.CHAPTER_PAGES,
@@ -77,7 +77,7 @@ const KNOWN_EVENTS = new Set([
  * Page-turn events → `__koodoNative` hook name.
  * null = not a page-turn event (shell must not turn pages for it).
  */
-const PAGE_TURN_HOOKS = {
+export const PAGE_TURN_HOOKS = {
   [EVENTS.RIGHT]: "nextPage",
   [EVENTS.LEFT]: "prevPage",
   [EVENTS.SWIPE]: "nextPage", // directionless gesture → default forward
@@ -86,16 +86,16 @@ const PAGE_TURN_HOOKS = {
 };
 
 /** Events that open the native selection menu. */
-const SELECT_TEXT_EVENTS = new Set([
+export const SELECT_TEXT_EVENTS = new Set([
   EVENTS.SELECT_TEXT,
   EVENTS.SELECT_TEXT_AFTER_TOUCH,
 ]);
 
 /** Native menu action ids (mirrors Kotlin menu item order). */
-const MENU_ACTIONS = ["copy", "highlight", "note", "share", "search"];
+export const MENU_ACTIONS = ["copy", "highlight", "note", "share", "search"];
 
 /** i18n key per menu action (all exist in en.json; "Share" was added). */
-const MENU_LABEL_KEYS = {
+export const MENU_LABEL_KEYS = {
   copy: "Copy",
   highlight: "Highlight",
   note: "Note",
@@ -107,23 +107,23 @@ const MENU_LABEL_KEYS = {
  * True inside the Android host (any bridge surface present).
  * `win` defaults to the real `window` when running in a browser/webview.
  */
-function isNativeMobile(win) {
+export function isNativeMobile(win) {
   const w = win === undefined ? (typeof window !== "undefined" ? window : undefined) : win;
   return !!(w && (w.ReactNativeWebView || w.AndroidBridge));
 }
 
 /** Engine-facing mobile flag value ("yes" | "no"). */
-function getIsMobile(win) {
+export function getIsMobile(win) {
   return isNativeMobile(win) ? "yes" : "no";
 }
 
 /** `__koodoNative` hook for a page-turn event, or null. */
-function pageTurnHook(eventName) {
+export function pageTurnHook(eventName) {
   return PAGE_TURN_HOOKS[eventName] || null;
 }
 
 /** @returns {boolean} true if the event should open the native selection menu. */
-function isSelectTextEvent(eventName) {
+export function isSelectTextEvent(eventName) {
   return SELECT_TEXT_EVENTS.has(eventName);
 }
 
@@ -133,7 +133,7 @@ function isSelectTextEvent(eventName) {
  * `selectedText` (for copy/share/search); `position`/`range` are optional
  * (the menu falls back to screen-centre anchoring).
  */
-function validateSelectTextPayload(payload) {
+export function validateSelectTextPayload(payload) {
   let obj = payload;
   if (typeof obj === "string") {
     try {
@@ -152,7 +152,7 @@ function validateSelectTextPayload(payload) {
 /**
  * True if a `link-clicked` href should be opened in the system browser.
  */
-function isExternalHref(href) {
+export function isExternalHref(href) {
   return (
     typeof href === "string" &&
     (href.startsWith("http://") ||
@@ -165,7 +165,7 @@ function isExternalHref(href) {
  * Build the label object pushed to native via `AndroidBridge.setMenuLabels`.
  * @param {(key: string) => string} t i18n translator (falls back to the key).
  */
-function buildMenuLabels(t) {
+export function buildMenuLabels(t) {
   const tr = typeof t === "function" ? t : (k) => k;
   const out = {};
   for (const action of MENU_ACTIONS) {
@@ -183,7 +183,7 @@ function buildMenuLabels(t) {
  *
  * @param {{prevPage?: Function, nextPage?: Function, openSelectionMenu?: Function}} api
  */
-function createHostApi(api) {
+export function createHostApi(api) {
   const guard = (fn) => {
     if (typeof fn !== "function") return () => null;
     return () => {
@@ -200,20 +200,3 @@ function createHostApi(api) {
     openSelectionMenu: guard(api && api.openSelectionMenu),
   };
 }
-
-module.exports = {
-  EVENTS,
-  KNOWN_EVENTS,
-  PAGE_TURN_HOOKS,
-  SELECT_TEXT_EVENTS,
-  MENU_ACTIONS,
-  MENU_LABEL_KEYS,
-  isNativeMobile,
-  getIsMobile,
-  pageTurnHook,
-  isSelectTextEvent,
-  validateSelectTextPayload,
-  isExternalHref,
-  buildMenuLabels,
-  createHostApi,
-};
