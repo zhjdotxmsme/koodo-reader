@@ -420,7 +420,9 @@ class NativeEventDispatcher(
             setPadding(0, 0, 0, density(12))
         }
         val copyBtn = Button(activity).apply {
-            text = labelFootnoteCopy
+            // Explicit receiver: the outer `text` parameter would otherwise win
+            // the assignment resolution and fail with "val cannot be reassigned".
+            this.text = labelFootnoteCopy
             isSingleLine = true
             isAllCaps = false
             setTextColor(Color.WHITE)
