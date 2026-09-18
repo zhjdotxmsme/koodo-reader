@@ -40,12 +40,22 @@ export function validateSelectTextPayload(
 ): { ok: boolean; reason?: string; text?: string; position?: any };
 export function isExternalHref(href: string): boolean;
 export function buildMenuLabels(t: (key: string) => string): Record<string, string>;
-export function createHostApi(api: {
-  prevPage?: () => any;
-  nextPage?: () => any;
-  openSelectionMenu?: () => any;
-}): {
-  prevPage: () => any;
-  nextPage: () => any;
-  openSelectionMenu: () => any;
+export function createHostApi(api: Record<string, (...args: any[]) => any>): Record<
+  string,
+  (...args: any[]) => any
+>;
+export const HOST_HOOKS: {
+  PREV_PAGE: string;
+  NEXT_PAGE: string;
+  OPEN_SELECTION_MENU: string;
+  OPEN_LOCAL_FILE: string;
 };
+export function registerHostHooks(
+  hooks: Record<string, (...args: any[]) => any>,
+  win?: any
+): boolean;
+export function unregisterHostHooks(names: string[], win?: any): boolean;
+export function validateOpenLocalFileArgs(
+  url: string,
+  name?: string
+): { ok: boolean; reason?: string; url?: string; name?: string };

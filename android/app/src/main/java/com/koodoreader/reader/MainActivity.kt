@@ -5,8 +5,11 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
+import android.util.Log
 import android.view.KeyEvent
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
@@ -18,28 +21,50 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Koodo Reader Android host.
  *
- * Loads the bundled web build (`assets/webapp/index.html`) in a [WebView] and
- * exposes a small JS bridge. The bridge mirrors the `window.ReactNativeWebView`
- * surface that the reading engine (`kookit-extra`) already knows how to talk to:
+ * Loads the bundled web build in a [WebView] and exposes a small JS bridge. The
+ * page is served by [LocalAssetServer] over `http://127.0.0.1:<port>/index.html`
+ * (real origin), with a `file:///android_asset/webapp/index.html` fallback when
+ * the loopback server cannot start. The bridge mirrors the
+ * `window.ReactNativeWebView` surface that the reading engine (`kookit-extra`)
+ * already knows how to talk to:
  *   - web -> native: `window.ReactNativeWebView.postMessage(json)`
+ *     (consumed by [NativeEventDispatcher])
  *   - native -> web: `window.ReactNativeWebView.onFilePicked(uri)`
- * and a native-only helper `window.AndroidBridge` (openExternal, getInfo, pickFile,
- * pickFolder, listFolder).
+ * and a native-only helper `window.AndroidBridge` (openExternal, getInfo,
+ * pickFile, pickFolder, listFolder, setMenuLabels).
  *
  * Folder picking (bulk library import) uses Storage Access Framework
  * (`ACTION_OPEN_DOCUMENT_TREE`) with a persisted read permission. The Kotlin
  * side only enumerates files; the protocol and book-file rules live in
  * `src/utils/android/folderBridge.js` (single source of truth, unit tested).
+ *
+ * Files opened from other apps (`VIEW`/`SEND` intents) are copied into the cache,
+ * exposed through the loopback server and handed to the web app via the
+ * `__koodoNative.openLocalFile` hook (see `src/utils/android/nativeBridge.js`).
  */
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     private var lastFolder: Uri? = null
+
+    /**
+     * Loopback HTTP server serving `assets/webapp` (see [LocalAssetServer]).
+     * Lazily built so `webView` exists first; stopped in [onDestroy].
+     */
+    private val assetServer by lazy { LocalAssetServer(assets) }
+
+    /** A book pushed by VIEW/SEND awaiting delivery to the web app. */
+    private class PendingBook(val url: String, val name: String) {
+        var attempts: Int = 0
+    }
+
+    private var pendingBook: PendingBook? = null
 
     /**
      * Engine event consumer (21-event protocol). Lazily built so the WebView
@@ -141,6 +166,7 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 installReactNativeWebViewShim()
+                deliverPendingBook()
             }
         }
 
@@ -168,10 +194,190 @@ class MainActivity : Activity() {
 
         webView.addJavascriptInterface(bridge, "AndroidBridge")
 
-        val base = "file:///android_asset/webapp/index.html"
-        val deepLink = intent?.data
-        val target = if (deepLink != null) deepLink.toString() else base
-        webView.loadUrl(target)
+        // Leftover intent copies from a previous session are stale by now;
+        // drop them before the next import copies its own payload.
+        cleanupIntentBooks()
+        // Prefer the loopback HTTP origin (real origin: IndexedDB/localStorage/
+        // CORS behave) and fall back to file:// when the server cannot start.
+        webView.loadUrl(pageUrl())
+        handleIntent(intent)
+    }
+
+    /** URL the web app is loaded from (loopback HTTP when available). */
+    private fun pageUrl(): String {
+        if (!assetServer.isRunning) {
+            val started = runCatching { assetServer.start() }.getOrNull()
+            if (started == null) {
+                Log.w(TAG, "loopback server failed to start; falling back to file://")
+                return FALLBACK_URL
+            }
+            Log.i(TAG, "loopback server on ${assetServer.baseUrl()}")
+        }
+        return "${assetServer.baseUrl()}/index.html"
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    /**
+     * Act on a VIEW/SEND intent carrying a book (file manager / share sheet).
+     * The stream is copied into the app cache and exposed through the loopback
+     * server, then handed to the web app's import pipeline via the
+     * `__koodoNative.openLocalFile` hook (see src/utils/android/nativeBridge.js).
+     */
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action == Intent.ACTION_SEND) {
+            val stream = getParcelableUri(intent, Intent.EXTRA_STREAM)
+            if (stream != null) queueBook(stream, intent.type)
+            return
+        }
+        val data = intent.data ?: return
+        val scheme = data.scheme?.lowercase() ?: return
+        when (scheme) {
+            "content", "file" -> queueBook(data, intent.type)
+            // App scheme (koodo-reader://) and plain web links: nothing to import.
+            else -> Unit
+        }
+    }
+
+    /**
+     * Copy the incoming document into the cache and remember it for delivery.
+     * The copy runs off the UI thread (a large book must not risk an ANR); the
+     * hand-over then resumes on the UI thread.
+     */
+    private fun queueBook(uri: Uri, mimeType: String?) {
+        if (!assetServer.isRunning && runCatching { assetServer.start() }.isFailure) {
+            Log.w(TAG, "loopback server unavailable; cannot hand over $uri")
+            toast("Cannot import: the local service failed to start.")
+            return
+        }
+        val thread = Thread {
+            val copied = runCatching { copyToCache(uri, mimeType) }.getOrNull()
+            runOnUiThread {
+                if (copied == null) {
+                    Log.w(TAG, "could not read intent payload: $uri")
+                    // `content://` carries a system read grant; a bare `file://`
+                    // has none, so scoped storage usually blocks the direct read.
+                    if (uri.scheme == "file") {
+                        toast(
+                            "This file cannot be opened directly. " +
+                                "Please share it to Koodo Reader or import it from inside the app."
+                        )
+                    } else {
+                        toast("Could not read the shared file.")
+                    }
+                    return@runOnUiThread
+                }
+                val exposedPath = assetServer.exposeFile("$BOOKS_PREFIX/${copied.name}", copied)
+                pendingBook = PendingBook("${assetServer.baseUrl()}/$exposedPath", copied.name)
+                deliverPendingBook()
+            }
+        }
+        thread.name = "koodo-intent-copy"
+        thread.isDaemon = true
+        thread.start()
+    }
+
+    /**
+     * Delete documents copied for earlier intent imports. Safe at `onCreate`
+     * time: nothing is exposed to the loopback server yet, and every new
+     * import copies its own payload before delivery.
+     */
+    private fun cleanupIntentBooks() {
+        runCatching {
+            File(cacheDir, "intent-books").listFiles()?.forEach { it.deleteRecursively() }
+        }.onFailure { Log.w(TAG, "intent-books cleanup failed", it) }
+    }
+
+    /**
+     * Hand the queued book to the page once the import hook exists.
+     * Retries briefly: on a cold start the React tree (which registers the hook)
+     * may still be mounting when the page finishes loading.
+     */
+    private fun deliverPendingBook() {
+        val book = pendingBook ?: return
+        if (book.attempts >= MAX_DELIVER_ATTEMPTS) {
+            pendingBook = null
+            return
+        }
+        book.attempts += 1
+        val js = "window.__koodoNative && window.__koodoNative.openLocalFile" +
+            " && window.__koodoNative.openLocalFile(${JSONObject.quote(book.url)}," +
+            " ${JSONObject.quote(book.name)})"
+        webView.evaluateJavascript(js) { result ->
+            // null/undefined/false → the hook is not registered yet; retry.
+            val handled = result != null && result != "null" &&
+                result != "undefined" && result != "false"
+            if (handled) {
+                pendingBook = null
+            } else {
+                webView.postDelayed({ deliverPendingBook() }, DELIVER_RETRY_MS)
+            }
+        }
+    }
+
+    /** Copy a content:// (or file://) document into `cacheDir/intent-books/`. */
+    private fun copyToCache(uri: Uri, mimeType: String?): File? {
+        val name = displayName(uri, mimeType)
+        val dir = File(cacheDir, "intent-books")
+        if (!dir.exists() && !dir.mkdirs()) return null
+        val target = File(dir, name)
+        val input = when (uri.scheme?.lowercase()) {
+            "content" -> contentResolver.openInputStream(uri)
+            else -> File(uri.path ?: return null).inputStream()
+        } ?: return null
+        input.use { source ->
+            target.outputStream().use { sink -> source.copyTo(sink) }
+        }
+        return target
+    }
+
+    /** Best-effort display name for an incoming document URI. */
+    private fun displayName(uri: Uri, mimeType: String?): String {
+        val fromProvider = runCatching {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        }.getOrNull()
+        val raw = fromProvider
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+            ?: "book"
+        val safe = raw.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001f]"), "_").trim()
+        val withName = if (safe.isEmpty()) "book" else safe
+        return if (withName.contains('.')) withName else "$withName.${extensionFor(mimeType)}"
+    }
+
+    private fun extensionFor(mimeType: String?): String {
+        return when (mimeType?.lowercase()) {
+            "application/epub+zip" -> "epub"
+            "application/pdf" -> "pdf"
+            "text/plain" -> "txt"
+            "text/html", "application/xhtml+xml" -> "html"
+            "text/xml", "application/xml" -> "xml"
+            "text/markdown" -> "md"
+            "application/x-mobipocket-ebook" -> "mobi"
+            "application/x-fictionbook+xml" -> "fb2"
+            "application/x-cbz" -> "cbz"
+            "application/x-cbr" -> "cbr"
+            "application/x-cbt" -> "cbt"
+            "application/x-cb7" -> "cb7"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
+            else -> "epub"
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getParcelableUri(intent: Intent, key: String): Uri? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(key, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(key) as? Uri
+        }
     }
 
     /**
@@ -424,6 +630,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        assetServer.stop()
         if (this::webView.isInitialized) {
             webView.destroy()
         }
@@ -440,5 +647,10 @@ class MainActivity : Activity() {
         // Keep in sync with src/utils/android/folderBridge.js (MAX_FILES / FOLDER_DEPTH).
         private const val MAX_FILES = 1000
         private const val FOLDER_DEPTH = 2
+        private const val TAG = "KoodoReader"
+        private const val FALLBACK_URL = "file:///android_asset/webapp/index.html"
+        private const val BOOKS_PREFIX = "__books__"
+        private const val MAX_DELIVER_ATTEMPTS = 20
+        private const val DELIVER_RETRY_MS = 400L
     }
 }

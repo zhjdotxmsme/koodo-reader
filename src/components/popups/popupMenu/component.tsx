@@ -15,8 +15,10 @@ import {
 import { createHighlight } from "../../../utils/reader/noteUtil";
 import {
   buildMenuLabels,
-  createHostApi,
+  HOST_HOOKS,
   isNativeMobile,
+  registerHostHooks,
+  unregisterHostHooks,
 } from "../../../utils/android/nativeBridge";
 
 declare var window: any;
@@ -51,18 +53,20 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
     // Native shell → web callback surface. Registered here (not in the
     // viewer) because this component owns both the live `rendition` (page
     // turns) and `openMenu()` (the app's own selection menu, which the native
-    // menu's 高亮/笔记 items delegate to). See nativeBridge.js for the
+    // menu's highlight/note items delegate to). See nativeBridge.js for the
     // protocol; the Kotlin side is NativeEventDispatcher.kt.
-    window.__koodoNative = createHostApi({
-      prevPage: () =>
+    // Merged into window.__koodoNative (other components contribute their own
+    // hooks, e.g. importLocal contributes openLocalFile).
+    registerHostHooks({
+      [HOST_HOOKS.PREV_PAGE]: () =>
         this.props.rendition && this.props.rendition.prev
           ? (this.props.rendition.prev(), null)
           : null,
-      nextPage: () =>
+      [HOST_HOOKS.NEXT_PAGE]: () =>
         this.props.rendition && this.props.rendition.next
           ? (this.props.rendition.next(), null)
           : null,
-      openSelectionMenu: () => {
+      [HOST_HOOKS.OPEN_SELECTION_MENU]: () => {
         this.openMenu();
         return null;
       },
@@ -79,13 +83,11 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
   }
 
   componentWillUnmount() {
-    if (window && window.__koodoNative) {
-      try {
-        delete window.__koodoNative;
-      } catch (e) {
-        // ignore
-      }
-    }
+    unregisterHostHooks([
+      HOST_HOOKS.PREV_PAGE,
+      HOST_HOOKS.NEXT_PAGE,
+      HOST_HOOKS.OPEN_SELECTION_MENU,
+    ]);
   }
 
   UNSAFE_componentWillReceiveProps(nextProps: PopupMenuProps) {

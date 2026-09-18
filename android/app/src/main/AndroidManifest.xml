@@ -4,13 +4,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Storage (scoped; only needed on API 30 and below for direct file access). -->
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
+    <!--
+      No storage permissions, by design: every import path is permission-free.
+      `content://` intents carry a system read grant; in-app pickers use the
+      Storage Access Framework. Direct `file://` reads are not supported under
+      scoped storage — when such an intent fails, the shell shows a guiding
+      toast instead.
+    -->
 
     <application
         android:name=".KoodoReaderApp"
@@ -24,6 +24,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
             android:windowSoftInputMode="adjustResize">
 
@@ -38,6 +39,70 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="koodo-reader" />
+            </intent-filter>
+
+            <!--
+              Open ebooks from other apps (file managers, browsers, mail).
+              MIME list mirrors the official Android build so "Open with" works
+              for every format the app supports.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/epub+zip" />
+                <data android:scheme="content" android:mimeType="application/pdf" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+                <data android:scheme="content" android:mimeType="text/html" />
+                <data android:scheme="content" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="content" android:mimeType="text/xml" />
+                <data android:scheme="content" android:mimeType="application/xml" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:scheme="content" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="content" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="content" android:mimeType="message/rfc822" />
+                <data android:scheme="content" android:mimeType="application/x-cbz" />
+                <data android:scheme="content" android:mimeType="application/x-cbr" />
+                <data android:scheme="content" android:mimeType="application/x-cbt" />
+                <data android:scheme="content" android:mimeType="application/x-cb7" />
+                <data android:scheme="file" android:mimeType="application/epub+zip" />
+                <data android:scheme="file" android:mimeType="application/pdf" />
+                <data android:scheme="file" android:mimeType="text/plain" />
+                <data android:scheme="file" android:mimeType="text/html" />
+                <data android:scheme="file" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="file" android:mimeType="text/xml" />
+                <data android:scheme="file" android:mimeType="text/markdown" />
+                <data android:scheme="file" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="file" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="file" android:mimeType="application/x-cbz" />
+                <data android:scheme="file" android:mimeType="application/x-cbr" />
+                <data android:scheme="file" android:mimeType="application/x-cbt" />
+                <data android:scheme="file" android:mimeType="application/x-cb7" />
+            </intent-filter>
+
+            <!-- Share sheet target ("Send to Koodo Reader"). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!--
+              Some file managers report `file://` URIs with a generic MIME type.
+              Kept in its own filter so `application/octet-stream` does not widen
+              the content:// and share-sheet matches above.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
     </application>

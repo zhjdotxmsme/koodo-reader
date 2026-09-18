@@ -218,6 +218,23 @@ Make sure that you have installed yarn and git
     folder. Book-file rules (extensions/MIME/payload) live in
     `src/utils/android/folderBridge.js` (unit tested; Kotlin only enumerates).
 
+    **Local HTTP origin** — the host does not load the page over `file://`. It starts a
+    dependency-free loopback server (`LocalAssetServer`, bound to `127.0.0.1` on an
+    ephemeral port) and loads `http://127.0.0.1:<port>/index.html`, so the page runs on a
+    real origin (IndexedDB / localStorage / service workers / CORS behave normally). The
+    server serves `assets/webapp/…` with correct MIME types, supports single-range
+    requests and falls back to `index.html` for extension-less routes. If it cannot
+    start, the loader silently falls back to `file:///android_asset/webapp/index.html`.
+
+    **"Open with" / share target** — the manifest declares `VIEW` and `SEND` filters for
+    the ebook MIME types the app supports, so books can be opened from a file manager,
+    browser or share sheet. The host copies the incoming document into its cache, exposes
+    it through the loopback server and hands it to the web app, which imports it through
+    the normal pipeline: `window.__koodoNative.openLocalFile(url, name)` (registered by
+    `src/components/importLocal`; contract in `src/utils/android/nativeBridge.js`).
+    Several components contribute hooks to `window.__koodoNative` via
+    `registerHostHooks` / `unregisterHostHooks`.
+
    > **Scope note** — the Android host embeds the shared web build in a WebView and
    > bridges to the reading engine's existing `ReactNativeWebView` surface (book pick,
    > errors). Desktop-only native features (e.g. `better-sqlite3`, cloud-sync plugins,

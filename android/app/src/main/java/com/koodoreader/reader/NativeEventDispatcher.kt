@@ -440,7 +440,9 @@ class NativeEventDispatcher(
 
     // ── helpers ─────────────────────────────────────────────────────────────
     private fun callHook(fn: String) {
-        val expr = "window.__koodoNative && window.__koodoNative.$fn()"
+        // Guard the hook itself: contributors register/unregister independently,
+        // so a page may legitimately not expose every hook at any given moment.
+        val expr = "window.__koodoNative && window.__koodoNative.$fn && window.__koodoNative.$fn()"
         runOnUiThread {
             runCatching { webView.evaluateJavascript(expr, null) }
                 .onFailure { Log.w(TAG, "hook $fn failed", it) }

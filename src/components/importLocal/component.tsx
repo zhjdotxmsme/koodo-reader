@@ -1,5 +1,12 @@
 import React from "react";
-import { getIsMobile } from "../../utils/android/nativeBridge";
+import {
+  getIsMobile,
+  HOST_HOOKS,
+  isNativeMobile,
+  registerHostHooks,
+  unregisterHostHooks,
+  validateOpenLocalFileArgs,
+} from "../../utils/android/nativeBridge";
 import "./importLocal.css";
 import BookModel from "../../models/Book";
 import { Trans } from "react-i18next";
@@ -112,12 +119,30 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
     });
     window.addEventListener("resize", this.resizeHandler);
     this.props.handleImportBookFunc(this.getMd5WithBrowser);
+    // Android host: the shell pushes files opened from other apps (VIEW/SEND
+    // intents) as a URL served by its loopback HTTP server. This component
+    // owns the import pipeline, so it contributes the hook.
+    if (isNativeMobile()) {
+      registerHostHooks({
+        [HOST_HOOKS.OPEN_LOCAL_FILE]: async (url: string, name?: string) => {
+          const args = validateOpenLocalFileArgs(url, name);
+          if (!args.ok) return false;
+          const response = await fetch(args.url as string);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const blob = await response.blob();
+          const file = new File([blob], args.name as string);
+          await this.getMd5WithBrowser(file);
+          return true;
+        },
+      });
+    }
   }
   componentWillUnmount() {
     if (this.resizeHandler) {
       window.removeEventListener("resize", this.resizeHandler);
       this.resizeHandler = null;
     }
+    unregisterHostHooks([HOST_HOOKS.OPEN_LOCAL_FILE]);
   }
   handleFilePath = async (filePath: string) => {
     clickFilePath = filePath;

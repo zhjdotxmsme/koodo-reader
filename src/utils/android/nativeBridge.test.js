@@ -5,6 +5,7 @@
  */
 import {
   EVENTS,
+  HOST_HOOKS,
   KNOWN_EVENTS,
   MENU_ACTIONS,
   buildMenuLabels,
@@ -14,6 +15,9 @@ import {
   isNativeMobile,
   isSelectTextEvent,
   pageTurnHook,
+  registerHostHooks,
+  unregisterHostHooks,
+  validateOpenLocalFileArgs,
   validateSelectTextPayload,
 } from "./nativeBridge";
 
@@ -114,20 +118,94 @@ describe("nativeBridge labels + host api", () => {
   it("wraps host api calls, swallowing throws and absent fns", () => {
     const api = createHostApi({
       nextPage: () => "nexted",
-      // prevPage absent
+      // prevPage absent → no property is created for it
       openSelectionMenu: () => {
         throw new Error("boom");
       },
     });
     expect(api.nextPage()).toBe("nexted");
-    expect(api.prevPage()).toBeNull();
+    expect(api.prevPage).toBeUndefined();
     expect(api.openSelectionMenu()).toBeNull();
     // entirely absent api
     const bare = createHostApi({});
-    expect([bare.prevPage(), bare.nextPage(), bare.openSelectionMenu()]).toEqual([
-      null,
-      null,
-      null,
-    ]);
+    expect(bare.prevPage).toBeUndefined();
+    expect(bare.nextPage).toBeUndefined();
+  });
+
+  it("passes arguments through the guarded wrapper", () => {
+    const api = createHostApi({ openLocalFile: (url, name) => `${name}@${url}` });
+    expect(api.openLocalFile("http://x/y.epub", "y.epub")).toBe("y.epub@http://x/y.epub");
+  });
+});
+
+describe("nativeBridge host hook registry", () => {
+  const fakeWindow = () => ({});
+
+  it("merges contributions instead of overwriting the global", () => {
+    const win = fakeWindow();
+    const okA = registerHostHooks({ nextPage: () => 1 }, win);
+    const okB = registerHostHooks({ openLocalFile: () => 2 }, win);
+    expect(okA).toBe(true);
+    expect(okB).toBe(true);
+    expect(Object.keys(win.__koodoNative).sort()).toEqual(["nextPage", "openLocalFile"]);
+    // both callable
+    expect([win.__koodoNative.nextPage(), win.__koodoNative.openLocalFile()]).toEqual([1, 2]);
+  });
+
+  it("unregisters only its own hooks and drops the global when empty", () => {
+    const win = fakeWindow();
+    registerHostHooks({ nextPage: () => 1 }, win);
+    registerHostHooks({ openLocalFile: () => 2 }, win);
+    unregisterHostHooks([HOST_HOOKS.OPEN_LOCAL_FILE], win);
+    expect(Object.keys(win.__koodoNative)).toEqual(["nextPage"]);
+    unregisterHostHooks([HOST_HOOKS.NEXT_PAGE], win);
+    expect(win.__koodoNative).toBeUndefined();
+  });
+
+  it("rejects empty contributions and missing windows", () => {
+    expect(registerHostHooks({}, {})).toBe(false);
+    expect(registerHostHooks(null, {})).toBe(false);
+    expect(registerHostHooks({ nextPage: () => 1 }, null)).toBe(false);
+    expect(unregisterHostHooks(["nextPage"], null)).toBe(false);
+  });
+
+  it("keeps a throwing hook from breaking the registry", () => {
+    const win = fakeWindow();
+    registerHostHooks(
+      {
+        nextPage: () => {
+          throw new Error("nope");
+        },
+      },
+      win
+    );
+    expect(win.__koodoNative.nextPage()).toBeNull();
+  });
+
+  it("validates openLocalFile arguments", () => {
+    expect(validateOpenLocalFileArgs("http://127.0.0.1:1/__books__/a.epub", "a.epub")).toEqual({
+      ok: true,
+      url: "http://127.0.0.1:1/__books__/a.epub",
+      name: "a.epub",
+    });
+    expect(validateOpenLocalFileArgs("http://x/a.epub")).toEqual({
+      ok: true,
+      url: "http://x/a.epub",
+      name: "book",
+    });
+    expect(validateOpenLocalFileArgs("")).toEqual({ ok: false, reason: "missing-url" });
+    expect(validateOpenLocalFileArgs(undefined)).toEqual({
+      ok: false,
+      reason: "missing-url",
+    });
+  });
+
+  it("exposes the host hook names used by the Android host", () => {
+    expect(HOST_HOOKS).toEqual({
+      PREV_PAGE: "prevPage",
+      NEXT_PAGE: "nextPage",
+      OPEN_SELECTION_MENU: "openSelectionMenu",
+      OPEN_LOCAL_FILE: "openLocalFile",
+    });
   });
 });

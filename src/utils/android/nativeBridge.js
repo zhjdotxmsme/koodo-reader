@@ -186,17 +186,88 @@ export function buildMenuLabels(t) {
 export function createHostApi(api) {
   const guard = (fn) => {
     if (typeof fn !== "function") return () => null;
-    return () => {
+    return (...args) => {
       try {
-        return fn();
+        return fn(...args);
       } catch (e) {
         return null;
       }
     };
   };
+  const out = {};
+  for (const name of Object.keys(api || {})) {
+    out[name] = guard(api[name]);
+  }
+  return out;
+}
+
+/** Host hook names contributed by app components (merged into __koodoNative). */
+export const HOST_HOOKS = {
+  PREV_PAGE: "prevPage",
+  NEXT_PAGE: "nextPage",
+  OPEN_SELECTION_MENU: "openSelectionMenu",
+  OPEN_LOCAL_FILE: "openLocalFile",
+};
+
+/**
+ * Merge hook contributions into `window.__koodoNative`.
+ *
+ * Two different components own different responsibilities (PopupMenu: page
+ * turns + selection menu; importLocal: opening a file pushed by the OS), so the
+ * global is merged rather than overwritten. Errors are swallowed per-hook so a
+ * throwing contributor can never break the engine bridge.
+ *
+ * @param {Record<string, Function>} hooks
+ * @param {any} [win] injectable for tests
+ * @returns {boolean} true when at least one hook was registered
+ */
+export function registerHostHooks(hooks, win) {
+  const w = win === undefined ? (typeof window !== "undefined" ? window : undefined) : win;
+  if (!w || !hooks) return false;
+  const safe = createHostApi(hooks);
+  const names = Object.keys(safe);
+  if (!names.length) return false;
+  const current = w.__koodoNative ? { ...w.__koodoNative } : {};
+  for (const name of names) current[name] = safe[name];
+  w.__koodoNative = current;
+  return true;
+}
+
+/**
+ * Remove previously registered hooks (component unmount).
+ * Other contributors' hooks are preserved.
+ *
+ * @param {string[]} names
+ * @param {any} [win]
+ */
+export function unregisterHostHooks(names, win) {
+  const w = win === undefined ? (typeof window !== "undefined" ? window : undefined) : win;
+  if (!w || !w.__koodoNative || !names) return false;
+  const current = { ...w.__koodoNative };
+  for (const name of names) delete current[name];
+  if (Object.keys(current).length === 0) {
+    try {
+      delete w.__koodoNative;
+    } catch (e) {
+      w.__koodoNative = undefined;
+    }
+  } else {
+    w.__koodoNative = current;
+  }
+  return true;
+}
+
+/**
+ * True when the native shell asked for a local file to be imported.
+ * Payload shape: `{url, name}` (see `LocalAssetServer` in the Android host).
+ */
+export function validateOpenLocalFileArgs(url, name) {
+  if (typeof url !== "string" || url.length === 0) {
+    return { ok: false, reason: "missing-url" };
+  }
   return {
-    prevPage: guard(api && api.prevPage),
-    nextPage: guard(api && api.nextPage),
-    openSelectionMenu: guard(api && api.openSelectionMenu),
+    ok: true,
+    url,
+    name: typeof name === "string" && name.length > 0 ? name : "book",
   };
 }

@@ -219,6 +219,20 @@ brew install --cask koodo-reader
    （扩展名 / MIME / payload）在 `src/utils/android/folderBridge.js`（有单测；
    Kotlin 侧只负责枚举）。
 
+   **本地 HTTP 源** — 宿主不再用 `file://` 加载页面，而是启动一个零依赖的本机回环服务
+   （`LocalAssetServer`，仅绑定 `127.0.0.1` + 随机端口），加载
+   `http://127.0.0.1:<port>/index.html`，因此页面拥有真实 origin
+   （IndexedDB / localStorage / Service Worker / CORS 行为正常）。服务按正确 MIME 提供
+   `assets/webapp/…`，支持单段 Range 请求，无扩展名的路径回退 `index.html`；若服务启动
+   失败则自动回退 `file:///android_asset/webapp/index.html`。
+
+   **「用其他应用打开」/ 分享目标** — Manifest 为支持的电子书 MIME 声明了 `VIEW` 与
+   `SEND` 过滤器，可从文件管理器、浏览器或分享面板直接打开书籍。宿主把收到的文档复制到
+   缓存，经回环服务暴露，再交给网页版走既有导入流程：
+   `window.__koodoNative.openLocalFile(url, name)`（由 `src/components/importLocal`
+   注册，协议见 `src/utils/android/nativeBridge.js`）。多个组件通过
+   `registerHostHooks` / `unregisterHostHooks` 共同向 `window.__koodoNative` 注册钩子。
+
    > **范围说明** — 安卓宿主把共享的网页版构建打包进 WebView，并桥接阅读引擎
    > 已有的 `ReactNativeWebView` 能力（选书、错误提示等）。仅桌面端可用的原生
    > 能力（如 `better-sqlite3`、云同步插件、原生 OCR）在 WebView 版中不可用。
