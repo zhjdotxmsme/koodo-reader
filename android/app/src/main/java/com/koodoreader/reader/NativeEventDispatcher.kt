@@ -148,7 +148,9 @@ class NativeEventDispatcher(
             EVENT_ERROR -> {
                 val msg = try {
                     JSONObject(rawJson).optString("message", "")
-                } catch (e: Exception) ""
+                } catch (e: Exception) {
+                    ""
+                }
                 if (msg.isNotBlank())
                     Toast.makeText(activity, "Koodo: $msg", Toast.LENGTH_LONG).show()
                 else
@@ -218,7 +220,7 @@ class NativeEventDispatcher(
         fun menuItem(label: String, onClick: () -> Unit): View = Button(ctx).apply {
             text = label
             isSingleLine = true
-            allCaps = false
+            isAllCaps = false
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setPadding(px(16), px(13), px(16), px(13))
@@ -270,12 +272,12 @@ class NativeEventDispatcher(
         }
         runOnUiThread {
             runCatching {
-                startActivity(Intent(Intent.ACTION_SEND).apply {
+                activity.startActivity(Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, text)
                 })
             }.onFailure {
-                Toast.makeText(this@NativeEventDispatcher, labelNothingOpens, Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, labelNothingOpens, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -284,12 +286,13 @@ class NativeEventDispatcher(
         if (text.isBlank()) return
         runOnUiThread {
             runCatching {
-                startActivity(Intent(Intent.ACTION_WEB_SEARCH).apply {
-                    putExtra(Intent.EXTRA_QUERY, text)
+                // ACTION_WEB_SEARCH's extra key is the literal "query" (no constant).
+                activity.startActivity(Intent(Intent.ACTION_WEB_SEARCH).apply {
+                    putExtra("query", text)
                 })
             }.onFailure {
                 runCatching {
-                    startActivity(
+                    activity.startActivity(
                         Intent(
                             Intent.ACTION_VIEW,
                             Uri.parse("https://www.bing.com/search?q=${Uri.encode(text)}")
@@ -297,7 +300,7 @@ class NativeEventDispatcher(
                     )
                 }.onFailure {
                     Toast.makeText(
-                        this@NativeEventDispatcher,
+                        activity,
                         labelNothingOpens,
                         Toast.LENGTH_SHORT
                     ).show()
@@ -336,7 +339,7 @@ class NativeEventDispatcher(
                 val lp = WindowManager.LayoutParams()
                 lp.width = WindowManager.LayoutParams.MATCH_PARENT
                 lp.height = WindowManager.LayoutParams.MATCH_PARENT
-                win.setLayoutParams(lp)
+                win.attributes = lp
                 win.setDimAmount(0.96f)
             }
             innerWebView.webViewClient = object : android.webkit.WebViewClient() {
@@ -385,7 +388,7 @@ class NativeEventDispatcher(
         }
         if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:")) {
             runOnUiThread {
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href))) }
+                runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href))) }
                     .onFailure {
                         Toast.makeText(activity, labelNothingOpens, Toast.LENGTH_SHORT).show()
                     }
@@ -404,7 +407,7 @@ class NativeEventDispatcher(
             val lp = WindowManager.LayoutParams()
             lp.width = WindowManager.LayoutParams.MATCH_PARENT
             lp.height = WindowManager.LayoutParams.WRAP_CONTENT
-            win.setLayoutParams(lp)
+            win.attributes = lp
         }
         val container = ScrollView(activity).apply {
             setBackgroundColor(Color.parseColor("#1B1D22"))
@@ -419,7 +422,7 @@ class NativeEventDispatcher(
         val copyBtn = Button(activity).apply {
             text = labelFootnoteCopy
             isSingleLine = true
-            allCaps = false
+            isAllCaps = false
             setTextColor(Color.WHITE)
             setOnClickListener {
                 val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -451,6 +454,11 @@ class NativeEventDispatcher(
 
     private inline fun <T> runOrNull(block: () -> T?): T? =
         try { block() } catch (e: Exception) { null }
+
+    /** The dispatcher is not an Activity; hop to the UI thread via the host. */
+    private fun runOnUiThread(block: () -> Unit) {
+        activity.runOnUiThread(block)
+    }
 
     private fun density(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
