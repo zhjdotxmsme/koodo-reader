@@ -55,6 +55,7 @@ export function registerHostHooks(
   win?: any
 ): boolean;
 export function unregisterHostHooks(names: string[], win?: any): boolean;
+export function notifyHooksReady(win?: any): boolean;
 export function validateOpenLocalFileArgs(
   url: string,
   name?: string

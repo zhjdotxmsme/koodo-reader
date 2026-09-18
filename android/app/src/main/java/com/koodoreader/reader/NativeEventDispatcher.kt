@@ -67,6 +67,7 @@ class NativeEventDispatcher(
     private val EVENT_VIEW_IMAGE = "view-image"
     private val EVENT_LINK_CLICKED = "link-clicked"
     private val EVENT_ERROR = "error"
+    private val EVENT_HOOKS_READY = "hooks-ready"
 
     // ── __koodoNative hook names — mirrors nativeBridge.js HOOKS ────────────
     private val HOOK_NEXT_PAGE = "nextPage"
@@ -91,6 +92,14 @@ class NativeEventDispatcher(
     private var labelFootnoteCopy = ""
     private var labelImageTooLarge = ""
     private var labelNothingOpens = ""
+
+    /**
+     * Invoked when the page reports its import hook is live ("hooks-ready"
+     * app-RPC). The shell wires this to [MainActivity.deliverPendingBook] so a
+     * pending intent import is delivered immediately instead of waiting out
+     * the retry loop.
+     */
+    var onHooksReady: (() -> Unit)? = null
 
     private var selectionMenu: PopupWindow? = null
     private var imageDialog: Dialog? = null
@@ -130,6 +139,10 @@ class NativeEventDispatcher(
             "message"
         }
         when (event) {
+            // App-injected RPC, not an engine event: the page mounted its
+            // import hook — hand over any book queued from an intent.
+            EVENT_HOOKS_READY -> onHooksReady?.invoke()
+
             EVENT_RIGHT -> callHook(HOOK_NEXT_PAGE)
             EVENT_LEFT -> callHook(HOOK_PREV_PAGE)
             EVENT_SWIPE -> callHook(HOOK_NEXT_PAGE) // directionless → forward

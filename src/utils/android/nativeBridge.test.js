@@ -14,6 +14,7 @@ import {
   isExternalHref,
   isNativeMobile,
   isSelectTextEvent,
+  notifyHooksReady,
   pageTurnHook,
   registerHostHooks,
   unregisterHostHooks,
@@ -207,5 +208,33 @@ describe("nativeBridge host hook registry", () => {
       OPEN_SELECTION_MENU: "openSelectionMenu",
       OPEN_LOCAL_FILE: "openLocalFile",
     });
+  });
+});
+
+describe("nativeBridge hooks-ready notification", () => {
+  it("posts the hooks-ready event through AndroidBridge", () => {
+    const sent = [];
+    const win = {
+      AndroidBridge: {
+        postMessage: (msg) => sent.push(msg),
+      },
+    };
+    expect(notifyHooksReady(win)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0])).toEqual({ event: "hooks-ready" });
+  });
+
+  it("returns false without a bridge or a throwing bridge", () => {
+    expect(notifyHooksReady({})).toBe(false);
+    expect(notifyHooksReady(undefined)).toBe(false);
+    expect(
+      notifyHooksReady({
+        AndroidBridge: {
+          postMessage: () => {
+            throw new Error("bridge gone");
+          },
+        },
+      })
+    ).toBe(false);
   });
 });

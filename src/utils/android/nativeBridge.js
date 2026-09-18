@@ -162,6 +162,26 @@ export function isExternalHref(href) {
 }
 
 /**
+/**
+ * Tell the Android shell the host hooks are live. The shell uses this to
+ * deliver a pending intent import immediately (its 20x400ms retry is only a
+ * fallback for cold starts). App-injected RPC — not an engine event.
+ * @param {Window} [win] defaults to the global window
+ * @returns {boolean} true when the notification was sent
+ */
+export function notifyHooksReady(win) {
+  const w = win || (typeof window !== "undefined" ? window : undefined);
+  const bridge = w && w.AndroidBridge;
+  if (!bridge || typeof bridge.postMessage !== "function") return false;
+  try {
+    bridge.postMessage(JSON.stringify({ event: "hooks-ready" }));
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Build the label object pushed to native via `AndroidBridge.setMenuLabels`.
  * @param {(key: string) => string} t i18n translator (falls back to the key).
  */

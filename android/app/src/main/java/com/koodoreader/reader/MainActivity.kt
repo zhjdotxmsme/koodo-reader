@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -193,6 +194,13 @@ class MainActivity : Activity() {
         }
 
         webView.addJavascriptInterface(bridge, "AndroidBridge")
+        // Event-driven intent delivery: the page notifies "hooks-ready" once
+        // its import hook is registered (the retry loop stays as a fallback).
+        eventDispatcher.onHooksReady = { deliverPendingBook() }
+        // Remote debugging (chrome://inspect) for debuggable builds only.
+        WebView.setWebContentsDebuggingEnabled(
+            (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        )
 
         // Leftover intent copies from a previous session are stale by now;
         // drop them before the next import copies its own payload.
@@ -429,17 +437,28 @@ class MainActivity : Activity() {
     }
 
     private fun startFileChooser() {
+        val callback = pendingFileChooser
+        if (callback == null) {
+            // onShowFileChooser always sets the callback first; reaching this
+            // branch means a stale chooser was already consumed.
+            toast("File picking requires the WebView file chooser.")
+            return
+        }
         runCatching {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = "application/octet-stream"
+                // `*/*` + OPENABLE: document providers report real MIME types
+                // (application/epub+zip, application/pdf, ...); an
+                // octet-stream filter greys out exactly those books.
+                type = "*/*"
             }
-            if (pendingFileChooser != null) {
-                startActivityForResult(Intent.createChooser(intent, "Choose a book"), REQ_FILE_CHOOSER)
-            } else {
-                toast("File picking requires the WebView file chooser.")
-            }
-        }.onFailure { toast("Could not open the file picker.") }
+            startActivityForResult(Intent.createChooser(intent, "Choose a book"), REQ_FILE_CHOOSER)
+        }.onFailure {
+            // Never leave the WebView waiting on a chooser that never opened.
+            pendingFileChooser = null
+            callback.onReceiveValue(null)
+            toast("Could not open the file picker.")
+        }
     }
 
     // ------------------------------------------------------------------

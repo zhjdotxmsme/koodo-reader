@@ -3,6 +3,7 @@ import {
   getIsMobile,
   HOST_HOOKS,
   isNativeMobile,
+  notifyHooksReady,
   registerHostHooks,
   unregisterHostHooks,
   validateOpenLocalFileArgs,
@@ -135,6 +136,10 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
           return true;
         },
       });
+      // Event-driven delivery: tell the shell the hook is live so a pending
+      // intent import fires immediately (the shell's retry loop is only a
+      // fallback for slow cold starts).
+      notifyHooksReady();
     }
   }
   componentWillUnmount() {
