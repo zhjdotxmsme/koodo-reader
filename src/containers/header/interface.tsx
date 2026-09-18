@@ -28,6 +28,7 @@ export interface HeaderProps extends RouteComponentProps<any> {
   handleFetchNotes: () => void;
   handleFetchBookmarks: () => void;
   handleReadingBook: (book: Book) => void;
+  handleMobileMenu?: () => void;
 }
 
 export interface HeaderState {

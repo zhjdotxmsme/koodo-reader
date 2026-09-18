@@ -61,6 +61,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     }
   }
   handleSidebar = (mode: string) => {
+    this.props.onMobileNavigate?.();
     this.setState({ mode: mode });
     this.props.handleSelectBook(false);
     this.props.history.push(`/manager/${mode}`);
@@ -120,6 +121,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     this.props.handleMode("shelf");
     this.setState({ mode: "" });
     this.props.history.push("/manager/shelf");
+    this.props.onMobileNavigate?.();
   };
   handleFavoriteDrop = (event: React.DragEvent) => {
     event.preventDefault();
@@ -141,6 +143,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     this.props.handleMode("favorite");
     this.setState({ mode: "favorite" });
     this.props.history.push("/manager/favorite");
+    this.props.onMobileNavigate?.();
   };
   handleTrashDrop = (event: React.DragEvent) => {
     event.preventDefault();
@@ -162,6 +165,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     this.props.handleMode("trash");
     this.setState({ mode: "trash" });
     this.props.history.push("/manager/trash");
+    this.props.onMobileNavigate?.();
   };
   getBookDragHandlers = (
     targetId: string,
@@ -296,6 +300,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
               }
               id={`sidebar-${index}`}
               onClick={() => {
+                this.props.onMobileNavigate?.();
                 this.props.handleShelf(item);
                 this.props.handleMode("shelf");
                 this.setState({ mode: "" });
@@ -565,6 +570,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
               className={"side-menu-selector"}
               style={{ cursor: "pointer" }}
               onClick={() => {
+                this.props.onMobileNavigate?.();
                 this.props.history.push("/stats");
               }}
             >

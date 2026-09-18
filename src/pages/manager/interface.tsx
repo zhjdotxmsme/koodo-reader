@@ -58,4 +58,5 @@ export interface ManagerState {
   isUpdated: boolean;
   isDrag: boolean;
   token: string;
+  isMobileSidebarOpen: boolean;
 }

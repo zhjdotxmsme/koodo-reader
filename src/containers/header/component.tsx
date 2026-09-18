@@ -262,6 +262,18 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         className="header"
         style={this.props.isCollapsed ? { marginLeft: "40px" } : {}}
       >
+        <div
+          className="mobile-menu-btn"
+          role="button"
+          aria-label={this.props.t("Menu")}
+          onClick={() => {
+            if (this.props.handleMobileMenu) {
+              this.props.handleMobileMenu();
+            }
+          }}
+        >
+          <span className="icon-menu"></span>
+        </div>
         {this.props.isAuthed && (
           <div
             className="header-chat-widget"

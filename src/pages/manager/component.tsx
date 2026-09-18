@@ -46,6 +46,7 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
       isUpdated: false,
       isDrag: false,
       token: "",
+      isMobileSidebarOpen: false,
     };
   }
 
@@ -133,6 +134,9 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
   handleDrag = (isDrag: boolean) => {
     this.setState({ isDrag });
   };
+  handleMobileSidebar = (isMobileSidebarOpen: boolean) => {
+    this.setState({ isMobileSidebarOpen });
+  };
   render() {
     let { books } = this.props;
     const PopupProps = {
@@ -141,7 +145,9 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
     };
     return (
       <div
-        className="manager"
+        className={`manager${
+          this.state.isMobileSidebarOpen ? " mobile-sidebar-open" : ""
+        }`}
         onDragEnter={(e) => {
           if (isExternalFileDragEvent(e)) {
             this.handleDrag(true);
@@ -278,7 +284,17 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
             </div>
           )}
         </div>
-        <Sidebar />
+        {this.state.isMobileSidebarOpen && (
+          <div
+            className="sidebar-overlay"
+            onClick={() => this.handleMobileSidebar(false)}
+          />
+        )}
+        <Sidebar
+          {...({
+            onMobileNavigate: () => this.handleMobileSidebar(false),
+          } as any)}
+        />
         <Toaster
           toastOptions={{
             style: {
@@ -289,7 +305,12 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
             },
           }}
         />
-        <Header {...({ handleDrag: this.handleDrag } as any)} />
+        <Header
+          {...({
+            handleDrag: this.handleDrag,
+            handleMobileMenu: () => this.handleMobileSidebar(true),
+          } as any)}
+        />
         {this.props.isOpenDeleteDialog && <DeleteDialog />}
         {this.props.isOpenEditDialog && <EditDialog />}
         {this.props.isOpenAddDialog && <AddDialog />}

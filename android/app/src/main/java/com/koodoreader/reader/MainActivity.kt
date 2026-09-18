@@ -162,6 +162,9 @@ class MainActivity : Activity() {
         // Respect the viewport meta (mobile layout) instead of desktop sizing.
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
+        // Lock web text zoom: the Android system font scale would break the
+        // mobile layout; reading font size is controlled in-app.
+        settings.textZoom = 100
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {

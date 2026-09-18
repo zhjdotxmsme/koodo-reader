@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import "./assets/styles/reset.css";
 import "./assets/styles/global.css";
 import "./assets/styles/style.css";
+import "./assets/styles/mobile.css";
 import { Provider } from "react-redux";
 import "./i18n";
 import store from "./store";
@@ -15,11 +16,13 @@ import {
   applyAppBackgroundImage,
 } from "./utils/reader/launchUtil";
 import { migrateConfig } from "./utils/common";
+import { initMobileMode } from "./utils/mobile/viewport";
 initTheme();
 initSystemFont();
 migrateConfig();
 applyCustomSystemCSS();
 applyAppBackgroundImage();
+initMobileMode();
 const container = document.getElementById("root")!;
 ReactDOM.render(
   <Provider store={store}>

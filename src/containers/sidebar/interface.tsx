@@ -14,6 +14,7 @@ export interface SidebarProps extends RouteComponentProps<any> {
   handleSelectBook: (isSelectBook: boolean) => void;
   handleShelf: (shelfTitle: string) => void;
   handleFetchBooks: () => void;
+  onMobileNavigate?: () => void;
   t: (title: string) => string;
 }
 
