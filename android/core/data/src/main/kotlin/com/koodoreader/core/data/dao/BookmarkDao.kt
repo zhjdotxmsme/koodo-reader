@@ -26,4 +26,7 @@ interface BookmarkDao {
 
     @Query("SELECT COUNT(*) FROM bookmarks")
     suspend fun count(): Long
+
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE bookKey = :bookKey")
+    fun observeCountForBook(bookKey: String): Flow<Long>
 }

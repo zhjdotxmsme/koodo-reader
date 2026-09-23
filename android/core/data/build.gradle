@@ -45,7 +45,9 @@ android {
 
 dependencies {
     def roomVersion = '2.6.1'
-    implementation "androidx.room:room-runtime:$roomVersion"
-    implementation "androidx.room:room-ktx:$roomVersion"
+    // api (not implementation): consumers such as :app reference KoodoDatabase /
+    // entities directly and need Room + coroutines on their compile classpath.
+    api "androidx.room:room-runtime:$roomVersion"
+    api "androidx.room:room-ktx:$roomVersion"
     ksp "androidx.room:room-compiler:$roomVersion"
 }

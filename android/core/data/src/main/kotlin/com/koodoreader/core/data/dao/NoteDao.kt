@@ -32,4 +32,7 @@ interface NoteDao {
 
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun count(): Long
+
+    @Query("SELECT COUNT(*) FROM notes WHERE bookKey = :bookKey")
+    fun observeCountForBook(bookKey: String): Flow<Long>
 }

@@ -26,4 +26,7 @@ interface WordDao {
 
     @Query("SELECT COUNT(*) FROM words")
     suspend fun count(): Long
+
+    @Query("SELECT COUNT(*) FROM words WHERE bookKey = :bookKey")
+    fun observeCountForBook(bookKey: String): Flow<Long>
 }
