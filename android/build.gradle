@@ -3,4 +3,7 @@
 plugins {
     id 'com.android.application' version '8.2.2' apply false
     id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+    // Pure Kotlin JVM modules (e.g. :engine:cfi) — no Android plugin needed, so
+    // they can be unit-tested without the Android SDK.
+    id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false
 }

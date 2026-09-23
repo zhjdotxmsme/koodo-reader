@@ -1,0 +1,90 @@
+# Koodo Reader - CFI golden vectors (native `engine/cfi` parity contract).
+#
+# GENERATED FILE - do not edit by hand.
+#   regenerate: node scripts/gen-cfi-golden.js
+#
+# Every `expected` value below was produced by the UPSTREAM implementation,
+# not by the Kotlin port, so this file is an independent oracle:
+#   upstream: https://raw.githubusercontent.com/johnfactotum/foliate-js/main/epubcfi.js
+#   sha256(epubcfi.js)[0:8]: e1a688ad
+#   local copy: C:\Users\54389\AppData\Local\Temp\koodo-cfi-ref\epubcfi.js
+#
+# Columns: op | arg1 | arg2 | arg3 | expected
+# Unused argument columns are empty. Fields never contain tabs.
+#
+canonicalPoint	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:10)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:10)
+canonicalPoint	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:1)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:1)
+canonicalPoint	/6/4[chap01ref]!/4[body01]/10[para05]/3:10			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:10)
+canonicalPoint	/6/4!/4/2/2:0			epubcfi(/6/4!/4/2/2)
+canonicalPoint	/6/4!/4/2/3:0			epubcfi(/6/4!/4/2/3:0)
+canonicalPoint	epubcfi(/6/2[cover]!/4/2/2)			epubcfi(/6/2[cover]!/4/2/2)
+canonicalPoint	/6/2!/4/2/2:5[pre,post]			epubcfi(/6/2!/4/2/2[pre,post])
+canonicalPoint	/6/2!/4/2/2:5[;s=b]			epubcfi(/6/2!/4/2/2[;s=b])
+canonicalPoint	/6/2!/4/2/1:3[;s=a]			epubcfi(/6/2!/4/2/1:3[;s=a])
+canonicalPoint	/6/2!/4/6/2[ch^,ap]			epubcfi(/6/2!/4/6/2[ch^,ap])
+canonicalPoint	/6/2!/4/2[text]			epubcfi(/6/2!/4/2[text])
+canonicalPoint	/6/2!/4/2~5.5			epubcfi(/6/2!/4/2~5.5)
+canonicalPoint	/6/2!/4/2~0			epubcfi(/6/2!/4/2)
+canonicalPoint	/6/2!/4/2@10:20			epubcfi(/6/2!/4/2@10:20)
+canonicalPoint	/2[x,y]			epubcfi(/2[x][y])
+canonicalPoint	/6/2!/4/2!/6/4			epubcfi(/6/2!/4/2!/6/4)
+collapse	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05],/2/1:1,/3:4)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:1)
+collapseEnd	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05],/2/1:1,/3:4)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:4)
+collapse	epubcfi(/6/4!/4/10/2,/1:0,/1:10)			epubcfi(/6/4!/4/10/2/1:0)
+collapseEnd	epubcfi(/6/4!/4/10/2,/1:0,/1:10)			epubcfi(/6/4!/4/10/2/1:10)
+buildRange	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:1)	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:9)		epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2,/1:1,/1:9)
+buildRange	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/2/1:1)	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:4)		epubcfi(/6/4[chap01ref]!/4[body01]/10[para05],/2/1:1,/3:4)
+buildRange	epubcfi(/6/4!/4/2/1:1)	epubcfi(/6/4!/4/2/1:1)		epubcfi(/6/4!/4/2,/1:1,/1:1)
+buildRange	epubcfi(/6/4!/4/2)	epubcfi(/6/4!/4/2/1:4)		epubcfi(/6/4!/4/2,,/1:4)
+buildRange	epubcfi(/6/4!/4/2/2/1:0)	epubcfi(/6/4!/4/2/2/3:7)		epubcfi(/6/4!/4/2/2,/1:0,/3:7)
+buildRange	/6/2!/4/2/1:1	/6/2!/4/2/1:1		epubcfi(/6/2!/4/2,/1:1,/1:1)
+compare	/6/4!/4/2/2:10	/6/4!/4/2/2:10		0
+compare	/6/4!/4/2/2:5	/6/4!/4/2/2:10		-1
+compare	/6/4!/4/2/2:10	/6/4!/4/2/2:5		1
+compare	/6/4!/4/2/2	/6/4!/4/2/2:5		0
+compare	/6/4!/4/2	/6/4!/4/2/2		-1
+compare	/6/4!/4/2/2	/6/2!/4/2/2		1
+compare	/6/4!/4/2	/6/4!/4		1
+compare	/6/2!/4/2	/6/2!/4/2!/6/2		-1
+compare	/6/4!/4/2/1:0	/6/4!/4/2/1:0		0
+compare	epubcfi(/6/4!/4/2,/1:1,/1:4)	epubcfi(/6/4!/4/2/1:2)		-1
+compare	epubcfi(/6/4!/4/2,/1:1,/1:4)	epubcfi(/6/4!/4/2,/1:0,/1:9)		1
+compare	epubcfi(/6/4!/4/2,/1:1,/1:4)	epubcfi(/6/4!/4/2,/1:1,/1:4)		0
+isCfi	epubcfi(/6/2)			true
+isCfi	/6/2			false
+isCfi	EPUBCFI(/6/2)			false
+joinIndir	epubcfi(/6/2)	/4/2		epubcfi(/6/2!/4/2)
+joinIndir	/6/2	epubcfi(/4/2)		epubcfi(/6/2!/4/2)
+fakeFromIndex	0			epubcfi(/6/2)
+fakeFromIndex	3			epubcfi(/6/8)
+fakeToIndex	/6/8			3
+fakeToIndex	/6/2			0
+fromCalibrePos	/22!/4/2/2:0			epubcfi(/6/22!)
+fromCalibrePos	/8!/4/2/2:5			epubcfi(/6/8!)
+fromCalibrePos	epubcfi(/6/22!/4/2/2:0)			epubcfi(/6/6!)
+fromCalibreHighlight	3	/2/4/2/2:1	/2/4/2/2:8	epubcfi(/6/8!/4/2,/2,/2)
+fromCalibreHighlight	0	/2/4/2:0	/2/4/2:12	epubcfi(/6/2!/4,/2,/2)
+tostring	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:10)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/3:10)
+tostring	/6/4!/4/2/2:0			epubcfi(/6/4!/4/2/2)
+tostring	/6/4!/4/2/3:0			epubcfi(/6/4!/4/2/3:0)
+tostring	/6/2!/4/2/2:5[pre,post]			epubcfi(/6/2!/4/2/2[pre,post])
+tostring	/6/2!/4/2/2:5[;s=b]			epubcfi(/6/2!/4/2/2[;s=b])
+tostring	/6/2!/4/6/2[ch^,ap]			epubcfi(/6/2!/4/6/2[ch^,ap])
+tostring	/6/2!/4/2~5.5			epubcfi(/6/2!/4/2~5.5)
+tostring	/6/2!/4/2~0			epubcfi(/6/2!/4/2)
+tostring	/6/2!/4/2@10:20			epubcfi(/6/2!/4/2@10:20)
+tostring	/6/2!/4/2/2[pre,post]			epubcfi(/6/2!/4/2/2[pre][post])
+tostring	epubcfi(/6/2!/4/2/2[pre,post])			epubcfi(/6/2!/4/2/2[pre][post])
+tostring	/2[x,y]			epubcfi(/2[x][y])
+tostring	/6/2!/4/2!/6/4			epubcfi(/6/2!/4/2!/6/4)
+tostring	epubcfi(/6/4[chap01ref]!/4[body01]/10[para05],/2/1:1,/3:4)			epubcfi(/6/4[chap01ref]!/4[body01]/10[para05],/2/1:1,/3:4)
+tostring	epubcfi(/6/4!/4/10/2,/1:0,/1:10)			epubcfi(/6/4!/4/10/2,/1:0,/1:10)
+escapeCfi	ch,ap;ter			ch^,ap^;ter
+escapeCfi	a(b)c[d]e^f=g			a^(b^)c^[d^]e^^f^=g
+escapeCfi	plain/*-+!			plain/*-+!
+unwrapCfi	epubcfi(/6/2)			/6/2
+unwrapCfi	/6/2			/6/2
+wrapCfi	/6/2			epubcfi(/6/2)
+wrapCfi	epubcfi(/6/2)			epubcfi(/6/2)
+concatArrays	epubcfi(/6/2)	/2/4		/6/2/2/4
+concatArrays	/6/2!/4/2	/6/4		/6/2!/4/2/6/4

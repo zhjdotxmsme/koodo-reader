@@ -1,0 +1,49 @@
+// Native CFI core (`engine/cfi`).
+//
+// A PURE KOTLIN JVM MODULE on purpose:
+//   - it has no Android dependency, so it can be unit-tested on any JVM (and even
+//     compiled with a bare `kotlinc`, see the self-check runner below), and
+//   - it can be consumed by every Android module (reader, annotate, sync) without
+//     dragging in Android APIs.
+//
+// The implementation is a faithful port of the web engine's CFI handling
+// (kookit `src/libs/cfi.ts` / foliate-js `epubcfi.js`), verified against
+// upstream-generated golden vectors — regenerate them with:
+//   node scripts/gen-cfi-golden.js
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only. No runtime dependencies at all: this module is deliberately
+    // dependency-free so it stays portable and cheap to verify.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner: runs the golden vectors AND the invariant
+// checks with nothing but the Kotlin stdlib.
+//   gradle :engine:cfi:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the native CFI self-check (golden vectors + invariants) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.cfi.CfiSelfCheckKt'
+}

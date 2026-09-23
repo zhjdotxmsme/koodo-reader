@@ -50,6 +50,7 @@ android/.gradle/
 android/.idea/
 android/app/build/
 android/build/
+android/engine/*/build/
 android/keystore/
 *.keystore
 
