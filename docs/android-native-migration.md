@@ -171,35 +171,73 @@ node scripts/build-android.js --target native,webview --no-split
 - [x] 桌面 `.db` schema 提取 → `schema.lock`：`node scripts/android-baseline.js --schema <data.db 路径>`（本机无档案时用 `--schema bootstrap`：shipped DDL 三重交叉验证 `.mjs` ↔ browser bundle ↔ 已安装 asar；sql.js 引擎、零原生依赖，产物可复现）
 - [ ] 性能基线（冷启动 / 打开 / 翻页 / 内存 / APK 体积）记录到 `docs/android-baseline.json`
 - [ ] PDF 渲染库 POC 结论（Pdfium vs PdfRenderer+PdfBox）
-- [ ] ADR-001 架构选型、ADR-002 定位与标注兼容策略、ADR-003 兜底岛生命周期
-- [ ] 桌面端功能对照表（附录 A）填写完成
+- [x] ADR-001 架构选型、ADR-002 定位与标注兼容策略、ADR-003 兜底岛生命周期（→ `docs/adr/ADR-001~003`）
+- [x] 桌面端功能对照表（附录 A）填写完成（33 项，桌面实现位置已按代码核实）
 
 ---
 
-## 附录 A：桌面端功能 ↔ Android 原生对照表（模板）
+## 附录 A：桌面端功能 ↔ Android 原生对照表
+
+> 已按代码核实「桌面端实现位置」（kookit 行数引自 `docs/android-loc-baseline.json`）。状态列：☐ 未开始 / ◐ 进行中 / ☑ 完成 / ✗ 不做。
+
+### A.1 书库与数据
 
 | 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
 |---|---|---|---|---|
-| 书库/书架/收藏/回收站 | `src/containers/lists/*` | `feature/library` | P1 | ☐ |
+| 书库/书架/收藏/回收站 | `src/pages/manager` + `src/containers/lists/*` | `feature/library` | P1 | ☐ |
 | 批量导入（本地目录） | `src/components/importLocal` | SAF + `core/data` | P1 | ☐ |
-| 阅读（EPUB） | kookit `EpubRender` | `engine/epub` | P2 | ☐ |
-| 阅读（PDF） | kookit `PdfRender`/`PdfTextRender` | `engine/pdf` | P3 | ☐ |
-| 阅读（MOBI/AZW3） | kookit `MobiRender` | `engine/mobi` | P4 | ☐ |
-| 高亮/笔记/书签 | `utils/reader/noteUtil.ts` + kookit `noteUtil` | `engine/annotate` | P2 | ☐ |
-| 主题/字体/行距/边距 | `utils/reader/themeUtil.ts`、`styleUtil.ts` | `core/designsystem` | P2 | ☐ |
-| 段落模式/速读/阅读尺 | kookit `paragraphModeUtil`/`speedReadingUtil`/`readingRulerUtil` | `engine/feature` | P6 | ☐ |
-| 文本替换规则 | kookit `textRuleUtil` | `engine/feature` | P6 | ☐ |
-| TTS | `utils/reader/ttsUtil.ts` | `feature/tts` | P6 | ☐ |
-| 词典 | `utils/file/dictUtil.ts` + `js-mdict` | `feature/dict` | P6 | ☐ |
-| 划词翻译 / AI | `utils/plugins/renderer/*`、`utils/request/aiBridge.ts` | `feature/translate` | P6 | ☐ |
-| 统计 | `src/pages/stats/*` | `feature/stats` | P6 | ☐ |
-| OCR | tesseract/onnxruntime(web) / 原生 OCR(桌面) | ML Kit | P6 | ☐ |
-| 备份/恢复 | `utils/file/backup.ts`、`restore.ts` | `core/data` | P7 | ☐ |
+| 封面生成/缓存 | `src/utils/file/coverUtil.ts` | `core/data` | P1 | ☐ |
+| 书籍拖拽排序/视图模式 | `src/utils/reader/bookDrag.ts`、`src/components/viewMode` | `feature/library` | P1 | ☐ |
+| 多语言（41 个 locale） | `src/assets/locales/*.json` | `core/common`（key 与桌面一致） | P1 | ☐ |
+| 备份/恢复/数据导入导出 | `src/utils/file/backup.ts`、`restore.ts`、`importData.ts`、`export.ts` | `core/data`（zip 结构与桌面一致） | P7 | ☐ |
+| 本地数据库（books/notes/bookmarks/plugins/words + temp-*） | `src/assets/lib/kookit-extra.min.mjs`（schema 已固化于 `schema.lock`） | Room（列名逐一对齐） | P1 | ☐ |
 | 云同步 / WebDAV / S3 | `main.js` + 插件 | **不做** | — | ✗ |
+| 插件系统（dict/translation/voice 注册表） | `src/utils/plugins/*`（catalog/registry/records） | **不做**（核心源内置为 feature） | — | ✗ |
+
+### A.2 格式渲染
+
+| 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
+|---|---|---|---|---|
+| EPUB | kookit `EpubRender`(220) + `epub.js`(921) + `cfi.ts`(883) + `epubcfi.js`(309) | `engine/epub`（cfi 已落地） | P2 | ◐ |
+| PDF | kookit `PdfRender`(1237) / `PdfTextRender`(540) + `pdf.js`(502) + vendored pdf.js(87.9k) | `engine/pdf`（Pdfium/PdfBox，P0 POC 定夺） | P3 | ☐ |
+| MOBI / AZW3 / AZW | kookit `MobiRender`(65) + `mobi.js`(1276)（PalmDOC/HUFF-CDIC/KF8/EXTH） | `engine/mobi` | P4 | ☐ |
+| TXT / MD | kookit `TxtRender`(75) / `MdRender`(53) + `textProcessor.ts`(238) | `engine/text`（含编码探测） | P5 | ☐ |
+| CBZ / CBR / CBT / CB7 | kookit `ComicRender`(1003) + `comic-book.js`(71) + `public/lib/7z-wasm`、`libunrar` | `engine/image`（懒加载） | P5 | ☐ |
+| FB2 / DOCX / HTML / MHTML | kookit `Fb2Render`(56) / `DocxRender`(51) / `HtmlRender`(61) + `fb2.js`(351) | **兜底岛长期驻留**，单独立项 | 后续 | ☐ |
+| 简繁转换 | kookit `zh-convert.ts`(8143) | `engine/feature`（OpenCC 原生或移植） | P6 | ☐ |
+
+### A.3 阅读器内核
+
+| 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
+|---|---|---|---|---|
+| 排版引擎（CSS columns） | kookit `layoutUtil.ts`(831) + `GeneralRender`(1906) | `engine/layout`（自绘分页） | P2 | ☐ |
+| CFI 定位/解析 | kookit `cfi.ts` + foliate `epubcfi.js` | `engine/cfi`（76 黄金向量，CI 防漂移） | P0/P2 | ☑ |
+| 高亮/笔记/书签 | `src/utils/reader/noteUtil.ts` + kookit `noteUtil.ts`(895) / `annotationUtil.ts`(652) | `engine/annotate` | P2 | ☐ |
+| 目录/进度/导航 | `src/containers/panels/navigationPanel`、`progressPanel` + kookit `navigationUtil.ts`(1344) | `feature/reader` | P2 | ☐ |
+| 手势/触控/动画 | kookit `touchUtil.ts`(1082) / `animationUtil.ts`(342) | Compose 手势 + `engine/gesture` | P2 | ☐ |
+| 全书搜索 | `src/components/searchBox` + kookit 搜索管线 | `feature/reader` | P2 | ☐ |
+| 主题/字体/行距/边距/背景 | `src/utils/reader/themeUtil.ts`、`styleUtil.ts`、`backgroundUtil.ts`、`src/utils/file/fontUtil.ts`、`src/components/readerSettings` | `core/designsystem` | P2 | ☐ |
+| 看图/脚注/内链 | `src/components/imageViewer`、`src/components/popups/*` + `NativeEventDispatcher` | `feature/reader` | P2 | ☐ |
+
+### A.4 阅读增强（P6）
+
+| 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
+|---|---|---|---|---|
+| 段落模式/速读/阅读尺 | kookit `paragraphModeUtil`(315) / `speedReadingUtil`(579) / `readingRulerUtil`(335) | `engine/feature` | P6 | ☐ |
+| 仿生阅读 | kookit `bionicUtil`(65) | `engine/feature` | P6 | ☐ |
+| 文本替换规则 | kookit `textRuleUtil`(150) | `engine/feature` | P6 | ☐ |
+| 选中文本自动翻页 | kookit `selectionAutoTurn.ts`(324) | `engine/feature` | P6 | ☐ |
+| TTS | `src/utils/reader/ttsUtil.ts` + `components/textToSpeech` + 15 个 voice 插件（`plugins/main/voice/*`，桌面独占） | `feature/tts`（Android TTS + MediaSession） | P6 | ☐ |
+| 词典（MDX/MDD + 25 个内嵌词典源） | `src/utils/file/dictUtil.ts` + `js-mdict` + `plugins/renderer/dictionary/*` | `feature/dict` | P6 | ☐ |
+| 划词翻译（25 个翻译源）/ AI | `plugins/renderer/translation/*`、`src/utils/request/aiBridge.ts` | `feature/translate` | P6 | ☐ |
+| 阅读统计 | `src/pages/stats/*` | `feature/stats` | P6 | ☐ |
+| OCR | `public/lib/tesseractjs`、`onnxruntime-web`、`esearch-ocr`（web）；桌面另有原生 OCR | ML Kit（按需下载） | P6 | ☐ |
 
 ---
 
 ## 附录 B：ADR 模板
+
+已产出：[ADR-001 架构选型](adr/ADR-001-architecture.md)、[ADR-002 定位与标注兼容策略](adr/ADR-002-cfi-compat.md)、[ADR-003 兜底岛生命周期](adr/ADR-003-fallback-island.md)。后续决策沿用以下模板：
 
 ```markdown
 # ADR-00X <决策标题>
