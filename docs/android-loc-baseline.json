@@ -1,0 +1,594 @@
+{
+  "generatedAt": "2026-09-23T04:20:22.289Z",
+  "method": "line-based LOC (approx): code = non-blank, non comment-only lines of .js/.jsx/.mjs/.cjs/.ts/.tsx (minified excluded)",
+  "modules": {
+    "kookit": {
+      "url": "https://github.com/koodo-reader/kookit.git",
+      "ref": "dev",
+      "commit": "3a5bdb651d016c21d8772a9b774015163611bd48",
+      "totals": {
+        "files": 57,
+        "lines": 36704,
+        "blank": 1867,
+        "comment": 2031,
+        "code": 32806
+      },
+      "byExtension": {
+        ".js": {
+          "files": 13,
+          "code": 8761,
+          "lines": 10553
+        },
+        ".ts": {
+          "files": 44,
+          "code": 24045,
+          "lines": 26151
+        }
+      }
+    },
+    "foliate-js": {
+      "url": "https://github.com/johnfactotum/foliate-js.git",
+      "ref": "main",
+      "commit": "78914aef4466eb960965702401634c2cb348e9b1",
+      "totals": {
+        "files": 32,
+        "lines": 97152,
+        "blank": 1289,
+        "comment": 1217,
+        "code": 94646
+      },
+      "byExtension": {
+        ".js": {
+          "files": 30,
+          "code": 6690,
+          "lines": 7630
+        },
+        ".mjs": {
+          "files": 2,
+          "code": 87956,
+          "lines": 89522
+        }
+      }
+    }
+  },
+  "perFile": {
+    "kookit": {
+      "rollup.config.js": {
+        "lines": 161,
+        "blank": 4,
+        "comment": 16,
+        "code": 141
+      },
+      "src/helpers/bookHelper.ts": {
+        "lines": 479,
+        "blank": 11,
+        "comment": 9,
+        "code": 459
+      },
+      "src/helpers/styleHelper.ts": {
+        "lines": 402,
+        "blank": 51,
+        "comment": 59,
+        "code": 292
+      },
+      "src/index.ts": {
+        "lines": 29,
+        "blank": 1,
+        "comment": 0,
+        "code": 28
+      },
+      "src/libs/cache-mobile.ts": {
+        "lines": 52,
+        "blank": 2,
+        "comment": 0,
+        "code": 50
+      },
+      "src/libs/cache.ts": {
+        "lines": 168,
+        "blank": 4,
+        "comment": 1,
+        "code": 163
+      },
+      "src/libs/cfi.ts": {
+        "lines": 1177,
+        "blank": 135,
+        "comment": 159,
+        "code": 883
+      },
+      "src/libs/comic-book.js": {
+        "lines": 77,
+        "blank": 4,
+        "comment": 2,
+        "code": 71
+      },
+      "src/libs/epub.js": {
+        "lines": 1038,
+        "blank": 55,
+        "comment": 62,
+        "code": 921
+      },
+      "src/libs/epubcfi.js": {
+        "lines": 359,
+        "blank": 29,
+        "comment": 21,
+        "code": 309
+      },
+      "src/libs/fb2.js": {
+        "lines": 391,
+        "blank": 27,
+        "comment": 13,
+        "code": 351
+      },
+      "src/libs/html.ts": {
+        "lines": 128,
+        "blank": 11,
+        "comment": 7,
+        "code": 110
+      },
+      "src/libs/mobi.js": {
+        "lines": 1435,
+        "blank": 75,
+        "comment": 84,
+        "code": 1276
+      },
+      "src/libs/pdf.js": {
+        "lines": 571,
+        "blank": 27,
+        "comment": 42,
+        "code": 502
+      },
+      "src/libs/textProcessor.ts": {
+        "lines": 266,
+        "blank": 10,
+        "comment": 18,
+        "code": 238
+      },
+      "src/libs/zh-convert.ts": {
+        "lines": 8161,
+        "blank": 10,
+        "comment": 8,
+        "code": 8143
+      },
+      "src/mobile.ts": {
+        "lines": 4,
+        "blank": 2,
+        "comment": 0,
+        "code": 2
+      },
+      "src/model/Book.ts": {
+        "lines": 44,
+        "blank": 2,
+        "comment": 0,
+        "code": 42
+      },
+      "src/model/chapter.ts": {
+        "lines": 15,
+        "blank": 2,
+        "comment": 0,
+        "code": 13
+      },
+      "src/model/chapterDoc.ts": {
+        "lines": 13,
+        "blank": 2,
+        "comment": 0,
+        "code": 11
+      },
+      "src/renders/CacheRender.ts": {
+        "lines": 28,
+        "blank": 2,
+        "comment": 0,
+        "code": 26
+      },
+      "src/renders/ComicRender.ts": {
+        "lines": 1034,
+        "blank": 6,
+        "comment": 25,
+        "code": 1003
+      },
+      "src/renders/DocxRender.ts": {
+        "lines": 53,
+        "blank": 2,
+        "comment": 0,
+        "code": 51
+      },
+      "src/renders/EpubRender.ts": {
+        "lines": 233,
+        "blank": 7,
+        "comment": 6,
+        "code": 220
+      },
+      "src/renders/Fb2Render.ts": {
+        "lines": 58,
+        "blank": 2,
+        "comment": 0,
+        "code": 56
+      },
+      "src/renders/GeneralRender.ts": {
+        "lines": 1987,
+        "blank": 35,
+        "comment": 46,
+        "code": 1906
+      },
+      "src/renders/HtmlRender.ts": {
+        "lines": 64,
+        "blank": 3,
+        "comment": 0,
+        "code": 61
+      },
+      "src/renders/MdRender.ts": {
+        "lines": 55,
+        "blank": 2,
+        "comment": 0,
+        "code": 53
+      },
+      "src/renders/MobiRender.ts": {
+        "lines": 66,
+        "blank": 1,
+        "comment": 0,
+        "code": 65
+      },
+      "src/renders/PdfRender.ts": {
+        "lines": 1315,
+        "blank": 52,
+        "comment": 26,
+        "code": 1237
+      },
+      "src/renders/PdfTextRender.ts": {
+        "lines": 615,
+        "blank": 31,
+        "comment": 44,
+        "code": 540
+      },
+      "src/renders/TxtRender.ts": {
+        "lines": 90,
+        "blank": 9,
+        "comment": 6,
+        "code": 75
+      },
+      "src/utils/EventEmitter.ts": {
+        "lines": 205,
+        "blank": 33,
+        "comment": 44,
+        "code": 128
+      },
+      "src/utils/animationUtil.ts": {
+        "lines": 448,
+        "blank": 59,
+        "comment": 47,
+        "code": 342
+      },
+      "src/utils/annotationUtil.ts": {
+        "lines": 720,
+        "blank": 38,
+        "comment": 30,
+        "code": 652
+      },
+      "src/utils/bionicUtil.ts": {
+        "lines": 81,
+        "blank": 7,
+        "comment": 9,
+        "code": 65
+      },
+      "src/utils/common.ts": {
+        "lines": 255,
+        "blank": 13,
+        "comment": 26,
+        "code": 216
+      },
+      "src/utils/generalParser.ts": {
+        "lines": 152,
+        "blank": 5,
+        "comment": 0,
+        "code": 147
+      },
+      "src/utils/layoutUtil.ts": {
+        "lines": 925,
+        "blank": 44,
+        "comment": 50,
+        "code": 831
+      },
+      "src/utils/mimetype.ts": {
+        "lines": 46,
+        "blank": 1,
+        "comment": 0,
+        "code": 45
+      },
+      "src/utils/navigationUtil.ts": {
+        "lines": 1460,
+        "blank": 72,
+        "comment": 44,
+        "code": 1344
+      },
+      "src/utils/noteUtil.ts": {
+        "lines": 1077,
+        "blank": 61,
+        "comment": 121,
+        "code": 895
+      },
+      "src/utils/ocrCacheUtil.ts": {
+        "lines": 493,
+        "blank": 69,
+        "comment": 85,
+        "code": 339
+      },
+      "src/utils/paragraphModeUtil.ts": {
+        "lines": 339,
+        "blank": 9,
+        "comment": 15,
+        "code": 315
+      },
+      "src/utils/pdfUtil.ts": {
+        "lines": 607,
+        "blank": 44,
+        "comment": 53,
+        "code": 510
+      },
+      "src/utils/readingRulerUtil.ts": {
+        "lines": 350,
+        "blank": 8,
+        "comment": 7,
+        "code": 335
+      },
+      "src/utils/selectionAutoTurn.ts": {
+        "lines": 368,
+        "blank": 34,
+        "comment": 10,
+        "code": 324
+      },
+      "src/utils/speedReadingUtil.ts": {
+        "lines": 652,
+        "blank": 46,
+        "comment": 27,
+        "code": 579
+      },
+      "src/utils/textRuleUtil.ts": {
+        "lines": 171,
+        "blank": 19,
+        "comment": 2,
+        "code": 150
+      },
+      "src/utils/touchUtil.ts": {
+        "lines": 1245,
+        "blank": 81,
+        "comment": 82,
+        "code": 1082
+      },
+      "test/7zz.umd.js": {
+        "lines": 6291,
+        "blank": 573,
+        "comment": 688,
+        "code": 5030
+      },
+      "test/chinese-s2t.js": {
+        "lines": 84,
+        "blank": 6,
+        "comment": 18,
+        "code": 60
+      },
+      "test/download.js": {
+        "lines": 137,
+        "blank": 26,
+        "comment": 15,
+        "code": 96
+      },
+      "test/underscore-umd-min.js": {
+        "lines": 6,
+        "blank": 0,
+        "comment": 4,
+        "code": 2
+      },
+      "test/untar.js": {
+        "lines": 1,
+        "blank": 0,
+        "comment": 0,
+        "code": 1
+      },
+      "test/worker-bundle.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "types/index.d.ts": {
+        "lines": 21,
+        "blank": 2,
+        "comment": 0,
+        "code": 19
+      }
+    },
+    "foliate-js": {
+      "comic-book.js": {
+        "lines": 46,
+        "blank": 3,
+        "comment": 0,
+        "code": 43
+      },
+      "dict.js": {
+        "lines": 242,
+        "blank": 13,
+        "comment": 14,
+        "code": 215
+      },
+      "epub.js": {
+        "lines": 1084,
+        "blank": 64,
+        "comment": 77,
+        "code": 943
+      },
+      "epubcfi.js": {
+        "lines": 350,
+        "blank": 30,
+        "comment": 24,
+        "code": 296
+      },
+      "eslint.config.js": {
+        "lines": 23,
+        "blank": 2,
+        "comment": 0,
+        "code": 21
+      },
+      "fb2.js": {
+        "lines": 361,
+        "blank": 26,
+        "comment": 19,
+        "code": 316
+      },
+      "fixed-layout.js": {
+        "lines": 320,
+        "blank": 14,
+        "comment": 23,
+        "code": 283
+      },
+      "footnotes.js": {
+        "lines": 104,
+        "blank": 6,
+        "comment": 1,
+        "code": 97
+      },
+      "mobi.js": {
+        "lines": 1239,
+        "blank": 77,
+        "comment": 85,
+        "code": 1077
+      },
+      "opds.js": {
+        "lines": 290,
+        "blank": 28,
+        "comment": 2,
+        "code": 260
+      },
+      "overlayer.js": {
+        "lines": 176,
+        "blank": 3,
+        "comment": 7,
+        "code": 166
+      },
+      "paginator.js": {
+        "lines": 1131,
+        "blank": 48,
+        "comment": 121,
+        "code": 962
+      },
+      "pdf.js": {
+        "lines": 181,
+        "blank": 18,
+        "comment": 13,
+        "code": 150
+      },
+      "progress.js": {
+        "lines": 114,
+        "blank": 5,
+        "comment": 5,
+        "code": 104
+      },
+      "quote-image.js": {
+        "lines": 87,
+        "blank": 7,
+        "comment": 3,
+        "code": 77
+      },
+      "reader.js": {
+        "lines": 240,
+        "blank": 22,
+        "comment": 7,
+        "code": 211
+      },
+      "rollup.config.js": {
+        "lines": 33,
+        "blank": 3,
+        "comment": 0,
+        "code": 30
+      },
+      "rollup/fflate.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "rollup/zip.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "search.js": {
+        "lines": 131,
+        "blank": 8,
+        "comment": 5,
+        "code": 118
+      },
+      "tests/epubcfi-tests.js": {
+        "lines": 281,
+        "blank": 28,
+        "comment": 10,
+        "code": 243
+      },
+      "tests/tests.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "text-walker.js": {
+        "lines": 44,
+        "blank": 5,
+        "comment": 0,
+        "code": 39
+      },
+      "tts.js": {
+        "lines": 279,
+        "blank": 20,
+        "comment": 13,
+        "code": 246
+      },
+      "ui/menu.js": {
+        "lines": 43,
+        "blank": 2,
+        "comment": 1,
+        "code": 40
+      },
+      "ui/tree.js": {
+        "lines": 170,
+        "blank": 11,
+        "comment": 4,
+        "code": 155
+      },
+      "uri-template.js": {
+        "lines": 53,
+        "blank": 6,
+        "comment": 3,
+        "code": 44
+      },
+      "vendor/fflate.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "vendor/pdfjs/pdf.mjs": {
+        "lines": 26465,
+        "blank": 240,
+        "comment": 622,
+        "code": 25603
+      },
+      "vendor/pdfjs/pdf.worker.mjs": {
+        "lines": 63057,
+        "blank": 568,
+        "comment": 136,
+        "code": 62353
+      },
+      "vendor/zip.js": {
+        "lines": 2,
+        "blank": 1,
+        "comment": 0,
+        "code": 1
+      },
+      "view.js": {
+        "lines": 598,
+        "blank": 27,
+        "comment": 22,
+        "code": 549
+      }
+    }
+  }
+}

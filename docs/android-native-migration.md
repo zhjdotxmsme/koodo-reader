@@ -167,8 +167,8 @@ node scripts/build-android.js --target native,webview --no-split
 ## 10. Phase 0 Checklist
 
 - [ ] 引擎能力盘点（逐项跑现 WebView 版功能，产出清单）
-- [ ] 逐文件 LOC 基线：`node scripts/android-baseline.js --modules`（kookit / foliate-js）
-- [ ] 桌面 `.db` schema 提取 → `schema.lock`：`node scripts/android-baseline.js --schema <data.db 路径>`
+- [x] 逐文件 LOC 基线：`node scripts/android-baseline.js --modules`（kookit @ dev / foliate-js @ main → `docs/android-loc-baseline.json`）
+- [x] 桌面 `.db` schema 提取 → `schema.lock`：`node scripts/android-baseline.js --schema <data.db 路径>`（本机无档案时用 `--schema bootstrap`：shipped DDL 三重交叉验证 `.mjs` ↔ browser bundle ↔ 已安装 asar；sql.js 引擎、零原生依赖，产物可复现）
 - [ ] 性能基线（冷启动 / 打开 / 翻页 / 内存 / APK 体积）记录到 `docs/android-baseline.json`
 - [ ] PDF 渲染库 POC 结论（Pdfium vs PdfRenderer+PdfBox）
 - [ ] ADR-001 架构选型、ADR-002 定位与标注兼容策略、ADR-003 兜底岛生命周期

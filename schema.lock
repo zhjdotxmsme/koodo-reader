@@ -1,0 +1,1041 @@
+{
+  "lockVersion": 1,
+  "generatedAt": "2026-09-23T04:21:14.970Z",
+  "provenance": {
+    "mode": "bootstrap",
+    "note": "No populated desktop profile on this machine; DBs materialised from shipped DDL using main.js getDBConnection semantics (create + best-effort migrate, WAL), then extracted.",
+    "ddl": {
+      "file": "src/assets/lib/kookit-extra.min.mjs",
+      "sha256": "28d1fd173deb86f4d947c2dc3cd05fea9e515bbe4ffa797601734cd5a8ad5694"
+    },
+    "crossCheck": {
+      "file": "src/assets/lib/kookit-extra-browser.min.js",
+      "sha256": "5607770154e29b39a5062c35fa9ba8b892e91073b7062ea1032be1b8045e993f",
+      "match": true
+    },
+    "shippedAsar": {
+      "file": "C:\\Users\\54389\\AppData\\Local\\Programs\\koodo-reader\\resources\\app.asar",
+      "ddlSha256": "28d1fd173deb86f4d947c2dc3cd05fea9e515bbe4ffa797601734cd5a8ad5694",
+      "match": true
+    },
+    "engine": "sql.js (public/lib/sqljs-wasm) — same engine family as the desktop export path (sqlUtil.ts)",
+    "createOrder": [
+      "bookmarks",
+      "books",
+      "notes",
+      "plugins",
+      "temp-bookmarks",
+      "temp-books",
+      "temp-notes",
+      "temp-plugins",
+      "temp-words",
+      "words"
+    ],
+    "migrations": {
+      "bookmarks": {
+        "applied": [],
+        "failed": []
+      },
+      "books": {
+        "applied": [],
+        "failed": []
+      },
+      "notes": {
+        "applied": [],
+        "failed": []
+      },
+      "plugins": {
+        "applied": [],
+        "failed": []
+      },
+      "temp-bookmarks": {
+        "applied": [],
+        "failed": []
+      },
+      "temp-books": {
+        "applied": [],
+        "failed": []
+      },
+      "temp-notes": {
+        "applied": [],
+        "failed": []
+      },
+      "temp-plugins": {
+        "applied": [],
+        "failed": []
+      },
+      "temp-words": {
+        "applied": [],
+        "failed": [
+          "duplicate column name: sentence: ALTER TABLE words ADD COLUMN \"sentence\" text"
+        ]
+      },
+      "words": {
+        "applied": [],
+        "failed": [
+          "duplicate column name: sentence: ALTER TABLE words ADD COLUMN \"sentence\" text"
+        ]
+      }
+    }
+  },
+  "databases": {
+    "bookmarks": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "bookmarks": {
+          "sql": "CREATE TABLE \"bookmarks\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"cfi\" text,\n        \"label\" text,\n        \"percentage\" text,\n        \"chapter\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cfi",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "label",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "percentage",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_bookmarks_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_bookmarks_1": {
+          "sql": null,
+          "table": "bookmarks"
+        }
+      }
+    },
+    "books": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "books": {
+          "sql": "CREATE TABLE \"books\" (\n        \"key\" text PRIMARY KEY,\n        \"name\" text,\n        \"author\" text,\n        \"description\" text,\n        \"md5\" text,\n        \"cover\" text,\n        \"format\" text,\n        \"publisher\" text,\n        \"size\" integer,\n        \"page\" integer,\n        \"path\" text,\n        \"charset\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "name",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "author",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "description",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "md5",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cover",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "format",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "publisher",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "size",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "page",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "path",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "charset",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_books_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_books_1": {
+          "sql": null,
+          "table": "books"
+        }
+      }
+    },
+    "notes": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "notes": {
+          "sql": "CREATE TABLE \"notes\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"date\" object,\n        \"chapter\" text,\n        \"chapterIndex\" integer,\n        \"text\" text,\n        \"cfi\" text,\n        \"range\" text,\n        \"notes\" text,\n        \"percentage\" text,\n        \"color\" integer,\n        \"tag\" array\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "date",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapterIndex",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "text",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cfi",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "range",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "notes",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "percentage",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "color",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "tag",
+              "type": "array",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_notes_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_notes_1": {
+          "sql": null,
+          "table": "notes"
+        }
+      }
+    },
+    "plugins": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "plugins": {
+          "sql": "CREATE TABLE \"plugins\" (\n        \"key\" text PRIMARY KEY,\n        \"type\" text,\n        \"displayName\" text,\n        \"icon\" text,\n        \"version\" text,\n        \"config\" object,\n        \"autoValue\" string,\n        \"langList\" text,\n        \"voiceList\" text,\n        \"scriptSHA256\" text,\n        \"script\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "type",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "displayName",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "icon",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "version",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "config",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "autoValue",
+              "type": "string",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "langList",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "voiceList",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "scriptSHA256",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "script",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_plugins_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_plugins_1": {
+          "sql": null,
+          "table": "plugins"
+        }
+      }
+    },
+    "temp-bookmarks": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "bookmarks": {
+          "sql": "CREATE TABLE \"bookmarks\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"cfi\" text,\n        \"label\" text,\n        \"percentage\" text,\n        \"chapter\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cfi",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "label",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "percentage",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_bookmarks_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_bookmarks_1": {
+          "sql": null,
+          "table": "bookmarks"
+        }
+      }
+    },
+    "temp-books": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "books": {
+          "sql": "CREATE TABLE \"books\" (\n        \"key\" text PRIMARY KEY,\n        \"name\" text,\n        \"author\" text,\n        \"description\" text,\n        \"md5\" text,\n        \"cover\" text,\n        \"format\" text,\n        \"publisher\" text,\n        \"size\" integer,\n        \"page\" integer,\n        \"path\" text,\n        \"charset\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "name",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "author",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "description",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "md5",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cover",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "format",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "publisher",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "size",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "page",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "path",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "charset",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_books_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_books_1": {
+          "sql": null,
+          "table": "books"
+        }
+      }
+    },
+    "temp-notes": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "notes": {
+          "sql": "CREATE TABLE \"notes\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"date\" object,\n        \"chapter\" text,\n        \"chapterIndex\" integer,\n        \"text\" text,\n        \"cfi\" text,\n        \"range\" text,\n        \"notes\" text,\n        \"percentage\" text,\n        \"color\" integer,\n        \"tag\" array\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "date",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapterIndex",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "text",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "cfi",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "range",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "notes",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "percentage",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "color",
+              "type": "INTEGER",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "tag",
+              "type": "array",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_notes_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_notes_1": {
+          "sql": null,
+          "table": "notes"
+        }
+      }
+    },
+    "temp-plugins": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "plugins": {
+          "sql": "CREATE TABLE \"plugins\" (\n        \"key\" text PRIMARY KEY,\n        \"type\" text,\n        \"displayName\" text,\n        \"icon\" text,\n        \"version\" text,\n        \"config\" object,\n        \"autoValue\" string,\n        \"langList\" text,\n        \"voiceList\" text,\n        \"scriptSHA256\" text,\n        \"script\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "type",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "displayName",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "icon",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "version",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "config",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "autoValue",
+              "type": "string",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "langList",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "voiceList",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "scriptSHA256",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "script",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_plugins_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_plugins_1": {
+          "sql": null,
+          "table": "plugins"
+        }
+      }
+    },
+    "temp-words": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "words": {
+          "sql": "CREATE TABLE \"words\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"date\" object,\n        \"word\" text,\n        \"sentence\" text,\n        \"chapter\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "date",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "word",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "sentence",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_words_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_words_1": {
+          "sql": null,
+          "table": "words"
+        }
+      }
+    },
+    "words": {
+      "pragmas": {
+        "user_version": 0,
+        "application_id": 0
+      },
+      "tables": {
+        "words": {
+          "sql": "CREATE TABLE \"words\" (\n        \"key\" text PRIMARY KEY,\n        \"bookKey\" text,\n        \"date\" object,\n        \"word\" text,\n        \"sentence\" text,\n        \"chapter\" text\n      )",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 1
+            },
+            {
+              "name": "bookKey",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "date",
+              "type": "object",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "word",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "sentence",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            },
+            {
+              "name": "chapter",
+              "type": "TEXT",
+              "notnull": false,
+              "dflt": null,
+              "pk": 0
+            }
+          ],
+          "indexes": {
+            "sqlite_autoindex_words_1": {
+              "sql": null,
+              "unique": true,
+              "origin": "pk",
+              "partial": false,
+              "columns": [
+                "key"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": {
+        "sqlite_autoindex_words_1": {
+          "sql": null,
+          "table": "words"
+        }
+      }
+    }
+  }
+}
