@@ -6,4 +6,6 @@ plugins {
     // Pure Kotlin JVM modules (e.g. :engine:cfi) — no Android plugin needed, so
     // they can be unit-tested without the Android SDK.
     id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false
+    // KSP for Room annotation processing (:core:data).
+    id 'com.google.devtools.ksp' version '1.9.24-1.0.20' apply false
 }

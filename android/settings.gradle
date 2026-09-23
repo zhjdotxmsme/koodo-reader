@@ -16,6 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "KoodoReaderAndroid"
 include ':app'
+include ':core:data'
 
 // Native reading-engine modules (Kotlin, no Android dependency) — see
 // docs/android-native-migration.md. They are plain JVM modules so `gradle test`

@@ -51,6 +51,7 @@ android/.idea/
 android/app/build/
 android/build/
 android/engine/*/build/
+android/core/*/build/
 android/keystore/
 *.keystore
 

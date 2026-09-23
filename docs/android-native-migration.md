@@ -132,6 +132,7 @@ node scripts/build-android.js --target native,webview --no-split
 ### 7.3 CI
 - `release-android.yml` 现有 job 保持（webview 目标），新增原生单元测试步骤：`gradle :engine:cfi:test`（JVM 模块，不需要 Android SDK）。
 - Jest 侧保留 `nativeBridge.test.js` / `folderBridge.test.js` / `androidBuild.test.js` 作为**协议与构建守卫**。
+- 原生守卫脚本（Node 侧、CI 已接入）：`gen-cfi-golden.js --check`（CFI 黄金向量 vs 上游）、`check-room-schema.js`（Room 实体 vs `schema.lock` 逐列对齐）。
 
 ---
 
@@ -190,7 +191,7 @@ node scripts/build-android.js --target native,webview --no-split
 | 书籍拖拽排序/视图模式 | `src/utils/reader/bookDrag.ts`、`src/components/viewMode` | `feature/library` | P1 | ☐ |
 | 多语言（41 个 locale） | `src/assets/locales/*.json` | `core/common`（key 与桌面一致） | P1 | ☐ |
 | 备份/恢复/数据导入导出 | `src/utils/file/backup.ts`、`restore.ts`、`importData.ts`、`export.ts` | `core/data`（zip 结构与桌面一致） | P7 | ☐ |
-| 本地数据库（books/notes/bookmarks/plugins/words + temp-*） | `src/assets/lib/kookit-extra.min.mjs`（schema 已固化于 `schema.lock`） | Room（列名逐一对齐） | P1 | ☐ |
+| 本地数据库（books/notes/bookmarks/plugins/words + temp-*） | `src/assets/lib/kookit-extra.min.mjs`（schema 已固化于 `schema.lock`） | Room（列名逐一对齐） | P1 | ◐ `android/core/data` 实体/DAO 已落地，守卫 `check-room-schema.js`；待迁移与回填 |
 | 云同步 / WebDAV / S3 | `main.js` + 插件 | **不做** | — | ✗ |
 | 插件系统（dict/translation/voice 注册表） | `src/utils/plugins/*`（catalog/registry/records） | **不做**（核心源内置为 feature） | — | ✗ |
 

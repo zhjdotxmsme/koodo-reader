@@ -70,6 +70,9 @@ jobs:
       - name: Check CFI golden vectors match upstream (native engine guard)
         run: node scripts/gen-cfi-golden.js --check
 
+      - name: Check Room entities match schema.lock (native data-layer guard)
+        run: node scripts/check-room-schema.js
+
       - name: Build the web app
         env:
           GENERATE_SOURCEMAP: "false"

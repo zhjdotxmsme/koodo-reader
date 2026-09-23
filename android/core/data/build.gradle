@@ -1,0 +1,51 @@
+// core/data — Room persistence layer for the native Android client.
+//
+// Table and column names are aligned COLUMN-FOR-COLUMN with the desktop schema
+// (frozen in `schema.lock`, produced from the shipped DDL in
+// src/assets/lib/kookit-extra.min.mjs). The guard script
+//   node scripts/check-room-schema.js
+// fails CI if these entities drift from schema.lock.
+//
+// Type mapping notes (desktop SQLite DDL uses quirky type names):
+//   - "object" / "array" / "string" column types (date, tag, config, autoValue)
+//     carry JSON-serialised values on desktop; here they are plain String columns.
+//   - Desktop .db files therefore CANNOT be opened directly by Room (SQLite type
+//     affinity mismatch: "object" -> NUMERIC vs Room TEXT). Desktop import (P7)
+//     must open the desktop .db with a raw SupportSQLiteDatabase/SQLiteDatabase
+//     (no Room schema validation) and copy rows into this database.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp'
+}
+
+android {
+    namespace 'com.koodoreader.core.data'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    ksp {
+        // Export Room's view of the schema so it can be diffed against
+        // schema.lock in CI if we ever want a stronger guard.
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+}
+
+dependencies {
+    def roomVersion = '2.6.1'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    ksp "androidx.room:room-compiler:$roomVersion"
+}
