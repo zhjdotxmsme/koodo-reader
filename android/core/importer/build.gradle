@@ -1,0 +1,36 @@
+// core/importer — book-file import rules for the native Android client.
+//
+// PURE KOTLIN JVM MODULE (same rationale as :engine:cfi): the rules are
+// dependency-free logic, so they are unit-tested on any JVM without the
+// Android SDK. This module is the KOTLIN SINGLE SOURCE OF TRUTH declared by
+// P1 ("SAF 导入（规则迁 Kotlin 为单一事实源）"). The WebView track still
+// consumes the JS mirror src/utils/android/folderBridge.js (the web engine
+// protocol needs it there); CI keeps the two in lock-step via
+//   node scripts/check-import-rules.js
+// until the WebView track retires (P8).
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only — this module has zero runtime dependencies.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

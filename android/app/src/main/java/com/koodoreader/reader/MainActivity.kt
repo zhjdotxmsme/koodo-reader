@@ -20,6 +20,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.koodoreader.core.importer.BookRules
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -40,9 +41,11 @@ import java.io.File
  * pickFile, pickFolder, listFolder, setMenuLabels).
  *
  * Folder picking (bulk library import) uses Storage Access Framework
- * (`ACTION_OPEN_DOCUMENT_TREE`) with a persisted read permission. The Kotlin
- * side only enumerates files; the protocol and book-file rules live in
- * `src/utils/android/folderBridge.js` (single source of truth, unit tested).
+ * (`ACTION_OPEN_DOCUMENT_TREE`) with a persisted read permission. Kotlin only
+ * enumerates files via the shared [FolderEnumerator]; the WebView track's
+ * protocol and book-file rules live in `src/utils/android/folderBridge.js`,
+ * mirrored by the Kotlin single source of truth `:core:importer` (kept in
+ * lock-step by `scripts/check-import-rules.js`).
  *
  * Files opened from other apps (`VIEW`/`SEND` intents) are copied into the cache,
  * exposed through the loopback server and handed to the web app via the
@@ -465,17 +468,11 @@ class MainActivity : Activity() {
     }
 
     // ------------------------------------------------------------------
-    // SAF folder picking (bulk library import). Kotlin only enumerates; the
-    // protocol and book-file rules live in src/utils/android/folderBridge.js.
+    // SAF folder picking (bulk library import). Enumeration is shared with
+    // the native shell in [FolderEnumerator]; the WebView track's protocol
+    // and book-file rules live in src/utils/android/folderBridge.js (the
+    // Kotlin mirror is :core:importer, guarded by check-import-rules.js).
     // ------------------------------------------------------------------
-
-    /** One regular file inside a picked folder tree. */
-    private data class FolderFile(
-        val name: String,
-        val uri: Uri,
-        val mime: String?,
-        val size: Long?,
-    )
 
     private fun chooseFolder() {
         runCatching {
@@ -494,61 +491,16 @@ class MainActivity : Activity() {
     }
 
     private fun refreshFolderList(treeUri: Uri) {
-        val files = runCatching { listDirectory(treeUri, FOLDER_DEPTH, MAX_FILES) }.getOrElse {
+        val files = runCatching {
+            FolderEnumerator.enumerate(
+                contentResolver, treeUri, BookRules.FOLDER_DEPTH, BookRules.MAX_FILES,
+            )
+        }.getOrElse {
             toast("Failed to read the folder.")
             emptyList()
         }
         lastFolder = treeUri
         deliverFolderResult(treeUri, files)
-    }
-
-    /**
-     * Enumerate regular files under the SAF tree (root + [FOLDER_DEPTH]
-     * sub-directory levels), capped at [MAX_FILES]. Directories are never
-     * delivered.
-     */
-    private fun listDirectory(treeUri: Uri, depth: Int, limit: Int): List<FolderFile> {
-        val files = mutableListOf<FolderFile>()
-        val projection = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_SIZE,
-        )
-
-        fun walk(docId: String, remainingDepth: Int) {
-            if (files.size >= limit) return
-            val authority = treeUri.authority ?: return
-            val childrenUri = DocumentsContract.buildChildDocumentsUri(authority, docId)
-            val cursor = contentResolver.query(childrenUri, projection, null, null, null) ?: return
-            cursor.use { c ->
-                val idCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val sizeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                if (idCol < 0 || nameCol < 0) return@use
-                while (c.moveToNext() && files.size < limit) {
-                    val id = c.getString(idCol)
-                    val name = c.getString(nameCol)
-                    val mime = if (mimeCol >= 0) c.getString(mimeCol) else null
-                    val size = if (sizeCol >= 0 && !c.isNull(sizeCol)) {
-                        c.getString(sizeCol)?.toLongOrNull()
-                    } else {
-                        null
-                    }
-                    val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                    val isDirectory = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    if (isDirectory) {
-                        if (remainingDepth > 0) walk(id, remainingDepth - 1)
-                    } else {
-                        files.add(FolderFile(name, fileUri, mime, size))
-                    }
-                }
-            }
-        }
-
-        walk(DocumentsContract.getDocumentId(treeUri), depth)
-        return files
     }
 
     /**
@@ -666,9 +618,6 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_FILE_CHOOSER = 0x4F4B // "OK"
         private const val REQ_FOLDER_PICKER = 0x504B // "PK"
-        // Keep in sync with src/utils/android/folderBridge.js (MAX_FILES / FOLDER_DEPTH).
-        private const val MAX_FILES = 1000
-        private const val FOLDER_DEPTH = 2
         private const val TAG = "KoodoReader"
         private const val FALLBACK_URL = "file:///android_asset/webapp/index.html"
         private const val BOOKS_PREFIX = "__books__"

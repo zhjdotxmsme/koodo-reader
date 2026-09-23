@@ -17,6 +17,9 @@ dependencyResolutionManagement {
 rootProject.name = "KoodoReaderAndroid"
 include ':app'
 include ':core:data'
+// Pure JVM import rules module (Kotlin single source of truth for the SAF /
+// book-file import pipeline; see docs/android-native-migration.md P1).
+include ':core:importer'
 
 // Native reading-engine modules (Kotlin, no Android dependency) — see
 // docs/android-native-migration.md. They are plain JVM modules so `gradle test`

@@ -132,7 +132,7 @@ node scripts/build-android.js --target native,webview --no-split
 ### 7.3 CI
 - `release-android.yml` 现有 job 保持（webview 目标），新增原生单元测试步骤：`gradle :engine:cfi:test`（JVM 模块，不需要 Android SDK）。
 - Jest 侧保留 `nativeBridge.test.js` / `folderBridge.test.js` / `androidBuild.test.js` 作为**协议与构建守卫**。
-- 原生守卫脚本（Node 侧、CI 已接入）：`gen-cfi-golden.js --check`（CFI 黄金向量 vs 上游）、`check-room-schema.js`（Room 实体 vs `schema.lock` 逐列对齐）。
+- 原生守卫脚本（Node 侧、CI 已接入）：`gen-cfi-golden.js --check`（CFI 黄金向量 vs 上游）、`check-room-schema.js`（Room 实体 vs `schema.lock` 逐列对齐）、`check-import-rules.js`（`:core:importer/BookRules.kt` vs `folderBridge.js` —— SAF 导入规则的 Kotlin 单一事实源与 WebView 轨 JS 镜像保持 lock-step，P8 WebView 下线前删 JS 侧）。
 - `-Ptarget=native` 已接线启动器：`AndroidManifest.xml` 的 `LauncherAlias`（activity-alias）经 manifest placeholder `${nativeLauncher}` 指向 `shell.NativeShellActivity`（Compose 壳：书架 + 阅读占位）或默认 `MainActivity`（WebView 宿主）；两个目标均已本地验证可编译出 APK（`gradle :app:assembleDebug [-Ptarget=native]`）。Compose 依赖当前两条轨都打入（简单优先），体积优化见 R7。
 
 ---
@@ -187,7 +187,7 @@ node scripts/build-android.js --target native,webview --no-split
 | 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
 |---|---|---|---|---|
 | 书库/书架/收藏/回收站 | `src/pages/manager` + `src/containers/lists/*` | `app/shell`（P1 壳；成规模后拆 `feature/library`） | P1 | ◐ Compose 书架网格 + 阅读占位已落地（`-Ptarget=native` 启动）；排序/视图模式/收藏/回收站待做 |
-| 批量导入（本地目录） | `src/components/importLocal` | SAF + `core/data` | P1 | ☐ |
+| 批量导入（本地目录） | `src/components/importLocal` | SAF + `core/data` | P1 | ◐ SAF 选目录→共享枚举→规则过滤→流式 MD5 查重→Room 分批入库已落地（`core/importer` 单一事实源 + `check-import-rules.js` 守卫 + 17 单测）；1000 本不 OOM 待真机回填、封面/元数据抽取待后续行 |
 | 封面生成/缓存 | `src/utils/file/coverUtil.ts` | `core/data` | P1 | ☐ |
 | 书籍拖拽排序/视图模式 | `src/utils/reader/bookDrag.ts`、`src/components/viewMode` | `feature/library` | P1 | ☐ |
 | 多语言（41 个 locale） | `src/assets/locales/*.json` | `core/common`（key 与桌面一致） | P1 | ☐ |

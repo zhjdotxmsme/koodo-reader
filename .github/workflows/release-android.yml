@@ -73,6 +73,9 @@ jobs:
       - name: Check Room entities match schema.lock (native data-layer guard)
         run: node scripts/check-room-schema.js
 
+      - name: Check import rules match folderBridge.js (native import guard)
+        run: node scripts/check-import-rules.js
+
       - name: Build the web app
         env:
           GENERATE_SOURCEMAP: "false"
