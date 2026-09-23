@@ -16,6 +16,7 @@
  *   --release               build a release APK (default when not --debug)
  *   --abi <a,b|...>         override ABIs (comma separated), repeatable
  *   --abi=<a,b>             same as above
+ *   --target <a,b>          build targets: webview|native (default: webview)
  *   --no-split              produce one universal APK instead of per-ABI APKs
  *   --build-web             run the web build (`npm run build`) when missing
  *   --skip-web              skip the web-build precondition check entirely
@@ -61,6 +62,7 @@ function printHelp() {
       "  --debug                 build a (self-signed debug) APK",
       "  --release               build a release APK (default)",
       "  --abi <a,b>             override ABIs (comma separated), repeatable",
+      "  --target <a,b>          build targets: webview|native (default webview)",
       "  --no-split              one universal APK instead of per-ABI APKs",
       "  --build-web             run the web build when missing",
       "  --skip-web              skip the web-build precondition check",
@@ -97,6 +99,7 @@ function parseArgs(argv) {
     debug: false,
     release: true,
     abis: [],
+    targets: [],
     noSplit: false,
     buildWeb: false,
     skipWeb: false,
@@ -115,6 +118,7 @@ function parseArgs(argv) {
 
   const VALUE_FLAGS = new Set([
     "--abi",
+    "--target",
     "--keystore",
     "--store-password",
     "--key-alias",
@@ -145,6 +149,9 @@ function parseArgs(argv) {
       switch (flag) {
         case "--abi":
           opts.abis.push(inline);
+          break;
+        case "--target":
+          opts.targets.push(inline);
           break;
         case "--keystore":
           opts.keystore = inline;
@@ -218,6 +225,13 @@ function parseArgs(argv) {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
   }
+  if (opts.targets.length > 0) {
+    opts.targetList = opts.targets
+      .join(",")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
   return opts;
 }
 
@@ -267,6 +281,7 @@ function loadRawConfig(opts, env) {
   if (opts.debug) raw.buildTypes = ["debug"];
   if (opts.release) raw.buildTypes = ["release"];
   if (opts.abiList && opts.abiList.length) raw.abis = opts.abiList;
+  if (opts.targetList && opts.targetList.length) raw.targets = opts.targetList;
 
   return raw;
 }
@@ -484,6 +499,7 @@ function main(argv) {
   }
 
   const abis = config.abis;
+  const targets = config.targets;
   const platform = process.platform === "win32" ? "win32" : process.platform;
   const plan = core.buildBuildPlan(config, { platform });
   const expected = plan.map((s) => s.artifact);
@@ -496,12 +512,30 @@ function main(argv) {
     fail(`Android host project not found at ${androidDir}. This repo should contain android/.`, 1);
   }
 
-  if (!opts.stageOnly) {
+  // Web-asset work (build check + staging + audit) applies only to targets
+  // that package the web build; the native target ships Kotlin resources only.
+  const needsWebAssets = targets.includes("webview");
+
+  // --audit verifies packaged web assets, so a native-only + --audit combo is
+  // contradictory; fail fast with an actionable message instead of auditing
+  // nothing.
+  if (opts.audit && !needsWebAssets) {
+    fail(
+      `--audit verifies packaged web assets and requires the webview target, ` +
+        `but the current targets are: ${targets.join(", ")}. ` +
+        `Re-run with --target webview (or native,webview).`,
+      2
+    );
+  }
+
+  if (!opts.stageOnly && needsWebAssets) {
     ensureWebBuild(config, opts);
   }
 
-  const stageResult =
-    opts.stageOnly || !opts.skipWeb ? tryStage(config, opts) : { staged: 0, skipped: true };
+  let stageResult = { staged: 0, skipped: true };
+  if (needsWebAssets && (opts.stageOnly || !opts.skipWeb)) {
+    stageResult = tryStage(config, opts);
+  }
   const staged = stageResult.staged;
 
   // Enforce "all features are packaged": verify staged assets cover index.html.

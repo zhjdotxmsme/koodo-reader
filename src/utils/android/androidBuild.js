@@ -28,6 +28,14 @@ const ANDROID_ABIS = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"];
 const BUILD_TYPES = ["debug", "release"];
 
 /**
+ * Build targets understood by this app (dual-target build, docs §7.1):
+ * `webview` packages the web build into `assets/webapp`; `native` packages
+ * only native resources.
+ * @readonly {string[]}
+ */
+const ANDROID_TARGETS = ["webview", "native"];
+
+/**
  * Error codes thrown by {@link AndroidBuildError}.
  * @readonly {Object<string,string>}
  */
@@ -36,6 +44,7 @@ const ERROR_CODES = {
   WEB_BUILD_MISSING: "WEB_BUILD_MISSING",
   UNKNOWN_ABI: "UNKNOWN_ABI",
   UNKNOWN_BUILD_TYPE: "UNKNOWN_BUILD_TYPE",
+  UNKNOWN_TARGET: "UNKNOWN_TARGET",
   SIGNING_REQUIRED: "SIGNING_REQUIRED",
   TOOLCHAIN_MISSING: "TOOLCHAIN_MISSING",
   PRECONDITION_FAILED: "PRECONDITION_FAILED",
@@ -95,6 +104,7 @@ class AndroidConfigError extends AndroidBuildError {
  * @property {number} compileSdk
  * @property {string[]} abis
  * @property {string[]} buildTypes
+ * @property {string[]} targets build targets ("webview" and/or "native")
  * @property {boolean} splitPerAbi
  * @property {string} webBuildDir
  * @property {string} webBuildEntry
@@ -127,6 +137,7 @@ function toPositiveInt(value, name) {
 /**
  * A single Gradle invocation in a build plan.
  * @typedef {Object} BuildStep
+ * @property {string} target build target ("webview" or "native")
  * @property {string} buildType "debug" or "release"
  * @property {string|null} abi target ABI (null => universal / all ABIs)
  * @property {string} command binary to launch (e.g. "./gradlew")
@@ -190,6 +201,10 @@ function normalizeConfig(raw) {
     cfg.buildTypes === undefined ? ["release"] : cfg.buildTypes
   );
 
+  // Dual-target build (docs/android-native-migration.md §7): default to the
+  // existing webview shape so current configs/CI keep working unchanged.
+  const targets = resolveTargets(cfg.targets === undefined ? ["webview"] : cfg.targets);
+
   const splitPerAbi =
     typeof cfg.splitPerAbi === "boolean" ? cfg.splitPerAbi : abis.length > 1;
 
@@ -216,6 +231,7 @@ function normalizeConfig(raw) {
     compileSdk,
     abis,
     buildTypes,
+    targets,
     splitPerAbi,
     webBuildDir:
       typeof cfg.webBuildDir === "string" && cfg.webBuildDir.trim()
@@ -294,6 +310,39 @@ function resolveBuildTypes(input) {
 }
 
 /**
+ * Validate build targets against {@link ANDROID_TARGETS}: de-duplicate
+ * preserving order and reject anything unknown (dual-target build, docs §7.1).
+ *
+ * @param {string|string[]} input
+ * @param {string[]} [allowed] allowed target list (defaults to {@link ANDROID_TARGETS})
+ * @returns {string[]}
+ */
+function resolveTargets(input, allowed = ANDROID_TARGETS) {
+  const list = Array.isArray(input) ? input : [input];
+  const out = [];
+  for (const item of list) {
+    if (typeof item !== "string" || !allowed.includes(item)) {
+      throw new AndroidBuildError(
+        ERROR_CODES.UNKNOWN_TARGET,
+        `Unknown Android build target "${String(item)}". Allowed: ${allowed.join(", ")}`,
+        { target: String(item), allowed }
+      );
+    }
+    if (!out.includes(item)) {
+      out.push(item);
+    }
+  }
+  if (out.length === 0) {
+    throw new AndroidBuildError(
+      ERROR_CODES.UNKNOWN_TARGET,
+      "At least one Android build target must be specified",
+      { allowed }
+    );
+  }
+  return out;
+}
+
+/**
  * Decide which Gradle invocation to use given the presence of a wrapper.
  *
  * @param {{platform?: "win32"|"linux"|"darwin", hasGradlew?: boolean}} ctx
@@ -359,32 +408,44 @@ function collectSigningArgs(config, buildType) {
  * @param {AndroidBuildConfig} config
  * @param {string} buildType
  * @param {string|null} abi target ABI, or null for a universal APK
+ * @param {string} [target] build target, defaults to "webview"
  * @returns {string}
  */
-function getArtifactPath(config, buildType, abi) {
+function getArtifactPath(config, buildType, abi, target = "webview") {
+  if (!ANDROID_TARGETS.includes(target)) {
+    throw new AndroidBuildError(
+      ERROR_CODES.UNKNOWN_TARGET,
+      `Unknown Android build target "${String(target)}". Allowed: ${ANDROID_TARGETS.join(", ")}`,
+      { target: String(target), allowed: ANDROID_TARGETS }
+    );
+  }
   const base = (config.outputDir || "android/app/build/outputs/apk")
     .replace(/\\/g, "/")
     .replace(/\/+$/, "")
     .toLowerCase();
+  const suffix = target === "native" ? "-native" : "";
   if (abi) {
-    return `${base}/${buildType}/${abi}/app-${buildType}-${abi}.apk`.toLowerCase();
+    return `${base}/${buildType}/${abi}/app-${buildType}-${abi}${suffix}.apk`.toLowerCase();
   }
-  return `${base}/${buildType}/app-${buildType}.apk`.toLowerCase();
+  return `${base}/${buildType}/app-${buildType}${suffix}.apk`.toLowerCase();
 }
 
 /**
  * Build the ordered list of Gradle steps needed to produce all requested APKs.
  *
  * Semantics:
+ *   - The plan expands as `target x buildType x abi`; every step carries
+ *     `-Ptarget=<target>` (same style as the existing `-PabiFilters`).
  *   - `splitPerAbi` true (and at least one ABI)  -> one step per ABI, each
  *     constrained with `-PabiFilters=<abi>`, yielding `app-<type>-<abi>.apk`.
  *   - `splitPerAbi` false                        -> one universal step (no
  *     abiFilters), yielding `app-<type>.apk`.
+ *   - Native-target artifacts get the `-native` filename suffix (docs §7.1).
  *
  * Pure: returns data, spawns nothing.
  *
  * @param {AndroidBuildConfig} config
- * @param {{gradleBinary?: string, platform?: ("win32"|"linux"|"darwin"), buildTypes?: string[]}} [options]
+ * @param {{gradleBinary?: string, platform?: ("win32"|"linux"|"darwin"), buildTypes?: string[], targets?: string[]}} [options]
  * @returns {BuildStep[]}
  */
 function buildBuildPlan(config, options = {}) {
@@ -397,41 +458,54 @@ function buildBuildPlan(config, options = {}) {
     );
 
   const buildTypes = options.buildTypes || config.buildTypes;
+  const targets = options.targets || config.targets || ["webview"];
   const steps = [];
 
-  for (const buildType of buildTypes) {
-    if (!BUILD_TYPES.includes(buildType)) {
+  for (const target of targets) {
+    if (!ANDROID_TARGETS.includes(target)) {
       throw new AndroidBuildError(
-        ERROR_CODES.UNKNOWN_BUILD_TYPE,
-        `Unknown build type "${buildType}"`,
-        { buildType }
+        ERROR_CODES.UNKNOWN_TARGET,
+        `Unknown build target "${target}". Allowed: ${ANDROID_TARGETS.join(", ")}`,
+        { target }
       );
     }
-    const task = `:app:assemble${capitalize(buildType)}`;
-    const signingArgs = collectSigningArgs(config, buildType);
-    const versionArgs = [
-      `-PversionCode=${config.versionCode}`,
-      `-PversionName=${config.versionName}`,
-    ];
+    for (const buildType of buildTypes) {
+      if (!BUILD_TYPES.includes(buildType)) {
+        throw new AndroidBuildError(
+          ERROR_CODES.UNKNOWN_BUILD_TYPE,
+          `Unknown build type "${buildType}"`,
+          { buildType }
+        );
+      }
+      const task = `:app:assemble${capitalize(buildType)}`;
+      const signingArgs = collectSigningArgs(config, buildType);
+      const versionArgs = [
+        `-PversionCode=${config.versionCode}`,
+        `-PversionName=${config.versionName}`,
+      ];
+      const targetArgs = [`-Ptarget=${target}`];
 
-    if (config.splitPerAbi && config.abis.length > 0) {
-      for (const abi of config.abis) {
+      if (config.splitPerAbi && config.abis.length > 0) {
+        for (const abi of config.abis) {
+          steps.push({
+            target,
+            buildType,
+            abi,
+            command: binary,
+            args: [task, ...targetArgs, `-PabiFilters=${abi}`, ...versionArgs, ...signingArgs],
+            artifact: getArtifactPath(config, buildType, abi, target),
+          });
+        }
+      } else {
         steps.push({
+          target,
           buildType,
-          abi,
+          abi: null,
           command: binary,
-          args: [task, `-PabiFilters=${abi}`, ...versionArgs, ...signingArgs],
-          artifact: getArtifactPath(config, buildType, abi),
+          args: [task, ...targetArgs, ...versionArgs, ...signingArgs],
+          artifact: getArtifactPath(config, buildType, null, target),
         });
       }
-    } else {
-      steps.push({
-        buildType,
-        abi: null,
-        command: binary,
-        args: [task, ...versionArgs, ...signingArgs],
-        artifact: getArtifactPath(config, buildType, null),
-      });
     }
   }
 
@@ -449,10 +523,18 @@ function buildBuildPlan(config, options = {}) {
  * Build a plan of staging operations that record the staged source. The actual
  * copy is performed by the CLI; this returns the metadata we persist.
  *
+ * Only targets that package the web build need staging metadata; the `native`
+ * target ships Kotlin resources only, so it yields an empty plan (docs §7.1).
+ *
  * @param {AndroidBuildConfig} config
+ * @param {{targets?: string[]}} [options] override targets (defaults to config.targets)
  * @returns {StageAssetOperation[]}
  */
-function stageAssetsPlan(config) {
+function stageAssetsPlan(config, options = {}) {
+  const targets = options.targets || config.targets || ["webview"];
+  if (!targets.includes("webview")) {
+    return [];
+  }
   const webRoot = (config.webBuildDir || "build").replace(/\\/g, "/").replace(/\/+$/, "");
   const destRoot = (config.assetStageDir || "android/app/src/main/assets/webapp")
     .replace(/\\/g, "/")
@@ -473,11 +555,20 @@ function stageAssetsPlan(config) {
 /**
  * Validate that the web build is present and ready to be staged.
  *
+ * The `native` target does not package the web build, so it has no web
+ * precondition (docs §7.1); the check applies only when `webview` is among
+ * the requested targets.
+ *
  * @param {AndroidBuildConfig} config
  * @param {{existsSync:(p:string)=>boolean}} [fs] injected fs (kept pure/testable)
+ * @param {{targets?: string[]}} [options] override targets (defaults to config.targets)
  * @returns {{ok:boolean, missing:string[]}}
  */
-function validatePreconditions(config, fs) {
+function validatePreconditions(config, fs, options = {}) {
+  const targets = options.targets || config.targets || ["webview"];
+  if (!targets.includes("webview")) {
+    return { ok: true, missing: [] };
+  }
   const webRoot = (config.webBuildDir || "build").replace(/\\/g, "/").replace(/\/+$/, "");
   const entry = (config.webBuildEntry || "index.html").replace(/\\/g, "/");
   const entryPath = webRoot === "" ? entry : `${webRoot}/${entry}`;
@@ -578,6 +669,7 @@ function existsSyncSafe(p) {
  * @param {AndroidBuildConfig} input.config
  * @param {string} input.buildType
  * @param {string[]} input.abis
+ * @param {string[]} [input.targets] build targets (defaults to config.targets)
  * @param {string[]} [input.artifacts]
  * @param {string[]} [input.commands] binaries launched
  * @param {boolean} [input.dryRun]
@@ -590,6 +682,7 @@ function summarizeResult(input) {
     config,
     buildType,
     abis,
+    targets = config.targets || ["webview"],
     artifacts = [],
     commands = [],
     dryRun = false,
@@ -610,6 +703,7 @@ function summarizeResult(input) {
       targetSdk: config.targetSdk,
     },
     build: {
+      targets,
       buildType,
       abis,
       artifacts,
@@ -622,12 +716,14 @@ function summarizeResult(input) {
 module.exports = {
   ANDROID_ABIS,
   BUILD_TYPES,
+  ANDROID_TARGETS,
   ERROR_CODES,
   AndroidBuildError,
   AndroidConfigError,
   normalizeConfig,
   resolveAbis,
   resolveBuildTypes,
+  resolveTargets,
   resolveGradleBinary,
   collectSigningArgs,
   getArtifactPath,

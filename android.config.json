@@ -8,6 +8,7 @@
   "compileSdk": 34,
   "abis": ["arm64-v8a", "armeabi-v7a"],
   "buildTypes": ["release"],
+  "targets": ["webview"],
   "splitPerAbi": true,
   "webBuildDir": "build",
   "webBuildEntry": "index.html",

@@ -9,12 +9,14 @@
 const {
   ANDROID_ABIS,
   BUILD_TYPES,
+  ANDROID_TARGETS,
   ERROR_CODES,
   AndroidBuildError,
   AndroidConfigError,
   normalizeConfig,
   resolveAbis,
   resolveBuildTypes,
+  resolveTargets,
   resolveGradleBinary,
   collectSigningArgs,
   getArtifactPath,
@@ -44,15 +46,17 @@ function makeRaw(extra) {
 }
 
 describe("constants", () => {
-  it("exposes known ABIs and build types", () => {
+  it("exposes known ABIs, build types and targets", () => {
     expect(ANDROID_ABIS).toEqual(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
     expect(BUILD_TYPES).toEqual(["debug", "release"]);
+    expect(ANDROID_TARGETS).toEqual(["webview", "native"]);
   });
 
   it("exposes stable error codes", () => {
     expect(ERROR_CODES.CONFIG_INVALID).toBe("CONFIG_INVALID");
     expect(ERROR_CODES.SIGNING_REQUIRED).toBe("SIGNING_REQUIRED");
     expect(ERROR_CODES.UNKNOWN_ABI).toBe("UNKNOWN_ABI");
+    expect(ERROR_CODES.UNKNOWN_TARGET).toBe("UNKNOWN_TARGET");
   });
 });
 
@@ -118,6 +122,27 @@ describe("normalizeConfig", () => {
     );
     expect(cfg.signing.keyPassword).toBe("secret");
   });
+
+  it("defaults targets to [webview] (keeps existing CI behaviour)", () => {
+    expect(normalizeConfig(makeRaw()).targets).toEqual(["webview"]);
+  });
+
+  it("accepts an explicit target list preserving order", () => {
+    expect(normalizeConfig(makeRaw({ targets: ["native", "webview"] })).targets).toEqual([
+      "native",
+      "webview",
+    ]);
+  });
+
+  it("throws a typed error for an unknown target", () => {
+    try {
+      normalizeConfig(makeRaw({ targets: ["desktop"] }));
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AndroidBuildError);
+      expect(e.code).toBe(ERROR_CODES.UNKNOWN_TARGET);
+    }
+  });
 });
 
 describe("resolveAbis", () => {
@@ -155,6 +180,36 @@ describe("resolveBuildTypes", () => {
       expect.unreachable("should have thrown");
     } catch (e) {
       expect(e.code).toBe(ERROR_CODES.UNKNOWN_BUILD_TYPE);
+    }
+  });
+});
+
+describe("resolveTargets", () => {
+  it("deduplicates while preserving order", () => {
+    expect(resolveTargets(["native", "webview", "native"])).toEqual(["native", "webview"]);
+  });
+
+  it("accepts a single target string", () => {
+    expect(resolveTargets("native")).toEqual(["native"]);
+  });
+
+  it("rejects an unknown target with a typed error", () => {
+    try {
+      resolveTargets(["ios"]);
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AndroidBuildError);
+      expect(e.code).toBe(ERROR_CODES.UNKNOWN_TARGET);
+      expect(e.detail.allowed).toEqual(ANDROID_TARGETS);
+    }
+  });
+
+  it("rejects an empty target list", () => {
+    try {
+      resolveTargets([]);
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e.code).toBe(ERROR_CODES.UNKNOWN_TARGET);
     }
   });
 });
@@ -247,6 +302,45 @@ describe("buildBuildPlan", () => {
     const types = plan.map((s) => s.buildType);
     expect(types).toEqual(["debug", "release"]);
   });
+
+  it("tags every step with the webview target and -Ptarget by default", () => {
+    const plan = buildBuildPlan(base);
+    expect(plan).toHaveLength(2);
+    plan.forEach((s) => {
+      expect(s.target).toBe("webview");
+      expect(s.args).toContain("-Ptarget=webview");
+      expect(s.artifact).not.toMatch(/-native\.apk$/);
+    });
+  });
+
+  it("expands the plan across target x buildType x abi", () => {
+    const cfg = normalizeConfig(makeRaw({ targets: ["webview", "native"] }));
+    const plan = buildBuildPlan(cfg);
+    expect(plan).toHaveLength(4); // 2 targets x 1 buildType x 2 abis
+    const combos = plan.map((s) => `${s.target}:${s.buildType}:${s.abi}`);
+    expect(combos).toEqual([
+      "webview:release:arm64-v8a",
+      "webview:release:armeabi-v7a",
+      "native:release:arm64-v8a",
+      "native:release:armeabi-v7a",
+    ]);
+    plan
+      .filter((s) => s.target === "native")
+      .forEach((s) => {
+        expect(s.args).toContain("-Ptarget=native");
+        expect(s.artifact).toMatch(/-native\.apk$/);
+      });
+  });
+
+  it("rejects an unknown target with a typed error", () => {
+    try {
+      buildBuildPlan(base, { targets: ["desktop"] });
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AndroidBuildError);
+      expect(e.code).toBe(ERROR_CODES.UNKNOWN_TARGET);
+    }
+  });
 });
 
 describe("getArtifactPath", () => {
@@ -260,6 +354,29 @@ describe("getArtifactPath", () => {
   it("returns a universal path when abi is null", () => {
     const p = getArtifactPath(cfg, "release", null);
     expect(p).toMatch(/android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  });
+
+  it("keeps historical names for the webview target", () => {
+    expect(getArtifactPath(cfg, "release", "arm64-v8a", "webview")).toMatch(
+      /app-release-arm64-v8a\.apk$/
+    );
+    expect(getArtifactPath(cfg, "release", null, "webview")).toMatch(/app-release\.apk$/);
+  });
+
+  it("suffixes native-target artifacts with -native", () => {
+    expect(getArtifactPath(cfg, "release", "arm64-v8a", "native")).toMatch(
+      /app-release-arm64-v8a-native\.apk$/
+    );
+    expect(getArtifactPath(cfg, "debug", null, "native")).toMatch(/app-debug-native\.apk$/);
+  });
+
+  it("rejects an unknown target", () => {
+    try {
+      getArtifactPath(cfg, "release", null, "desktop");
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e.code).toBe(ERROR_CODES.UNKNOWN_TARGET);
+    }
   });
 });
 
@@ -289,6 +406,11 @@ describe("stageAssetsPlan", () => {
     expect(plan[0].type).toBe("write");
     expect(plan[0].destination).toContain("assets/webapp");
     expect(plan[0].content).toContain("com.koodoreader.reader");
+  });
+
+  it("produces no staging ops for a native-only target", () => {
+    const cfg = normalizeConfig(makeRaw({ targets: ["native"] }));
+    expect(stageAssetsPlan(cfg)).toEqual([]);
   });
 });
 
@@ -385,6 +507,22 @@ describe("validatePreconditions", () => {
     expect(result.missing.length).toBe(1);
     expect(result.missing[0]).toContain("index.html");
   });
+
+  it("does not require the web build for a native-only target", () => {
+    const nativeCfg = normalizeConfig(makeRaw({ targets: ["native"] }));
+    const result = validatePreconditions(nativeCfg, { existsSync: () => false });
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
+  });
+
+  it("still requires the web build when webview is among the targets", () => {
+    const both = normalizeConfig(makeRaw({ targets: ["webview", "native"] }));
+    const result = validatePreconditions(both, {
+      existsSync: (p) => !p.includes("index.html"),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.missing.length).toBe(1);
+  });
 });
 
 describe("summarizeResult", () => {
@@ -409,5 +547,11 @@ describe("summarizeResult", () => {
     const summary = summarizeResult({ config: cfg, buildType: "release", abis: [], error: "boom" });
     expect(summary.ok).toBe(false);
     expect(summary.error).toBe("boom");
+  });
+
+  it("records the build targets", () => {
+    const cfg = normalizeConfig(makeRaw({ targets: ["native"] }));
+    const summary = summarizeResult({ config: cfg, buildType: "release", abis: [] });
+    expect(summary.build.targets).toEqual(["native"]);
   });
 });

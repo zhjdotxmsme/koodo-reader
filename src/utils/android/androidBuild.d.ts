@@ -21,6 +21,7 @@ export interface AndroidBuildConfig {
   compileSdk: number;
   abis: string[];
   buildTypes: string[];
+  targets: string[];
   splitPerAbi: boolean;
   webBuildDir: string;
   webBuildEntry: string;
@@ -59,6 +60,7 @@ export interface PackageAuditResult {
 
 /** A single Gradle invocation in a build plan. */
 export interface BuildStep {
+  target: string;
   buildType: string;
   abi: string | null;
   command: string;
@@ -79,6 +81,7 @@ export interface BuildResultSummary {
     targetSdk: number;
   };
   build: {
+    targets: string[];
     buildType: string;
     abis: string[];
     artifacts: string[];
@@ -95,12 +98,14 @@ export interface AndroidBuildError extends Error {
 export interface AndroidBuildModule {
   ANDROID_ABIS: string[];
   BUILD_TYPES: string[];
+  ANDROID_TARGETS: string[];
   ERROR_CODES: Record<string, string>;
   AndroidBuildError: new (code: string, message: string, detail?: unknown) => AndroidBuildError;
   AndroidConfigError: new (message: string, detail?: unknown) => AndroidBuildError;
   normalizeConfig(raw?: AndroidBuildConfigInput | null): AndroidBuildConfig;
   resolveAbis(input: string | string[], allowed?: string[]): string[];
   resolveBuildTypes(input: string | string[]): string[];
+  resolveTargets(input: string | string[], allowed?: string[]): string[];
   resolveGradleBinary(ctx?: { platform?: string; hasGradlew?: boolean }): string;
   collectSigningArgs(config: AndroidBuildConfig, buildType: string): string[];
   getArtifactPath(config: AndroidBuildConfig, buildType: string, abi: string | null): string;
@@ -110,15 +115,24 @@ export interface AndroidBuildModule {
       gradleBinary?: string;
       platform?: string;
       buildTypes?: string[];
+      targets?: string[];
     }
   ): BuildStep[];
-  stageAssetsPlan(config: AndroidBuildConfig): StageAssetOperation[];
+  stageAssetsPlan(
+    config: AndroidBuildConfig,
+    options?: { targets?: string[] }
+  ): StageAssetOperation[];
   auditPackage(html: string, exists: (ref: string) => boolean): PackageAuditResult;
-  validatePreconditions(config: AndroidBuildConfig, fs?: FsLike): PreconditionsResult;
+  validatePreconditions(
+    config: AndroidBuildConfig,
+    fs?: FsLike,
+    options?: { targets?: string[] }
+  ): PreconditionsResult;
   summarizeResult(input: {
     config: AndroidBuildConfig;
     buildType: string;
     abis: string[];
+    targets?: string[];
     artifacts?: string[];
     commands?: string[];
     dryRun?: boolean;
