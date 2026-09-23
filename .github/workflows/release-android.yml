@@ -67,6 +67,9 @@ jobs:
           CI: true
         run: npx react-scripts test --watchAll=false --testPathPattern "androidBuild"
 
+      - name: Check CFI golden vectors match upstream (native engine guard)
+        run: node scripts/gen-cfi-golden.js --check
+
       - name: Build the web app
         env:
           GENERATE_SOURCEMAP: "false"
@@ -130,8 +133,15 @@ jobs:
           # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
           gradle --version | grep -q "Gradle 8.5"
 
+      - name: "Native engine unit tests (CFI port: golden vectors + invariants)"
+        shell: bash
+        run: |
+          set -e
+          cd android
+          gradle :engine:cfi:test --no-daemon --console=plain
+
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
-        run: node scripts/build-android.js --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
+        run: node scripts/build-android.js --target webview --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
 
       - name: Collect APK artifacts
         shell: bash
