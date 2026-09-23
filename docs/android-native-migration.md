@@ -172,7 +172,7 @@ node scripts/build-android.js --target native,webview --no-split
 - [x] 逐文件 LOC 基线：`node scripts/android-baseline.js --modules`（kookit @ dev / foliate-js @ main → `docs/android-loc-baseline.json`）
 - [x] 桌面 `.db` schema 提取 → `schema.lock`：`node scripts/android-baseline.js --schema <data.db 路径>`（本机无档案时用 `--schema bootstrap`：shipped DDL 三重交叉验证 `.mjs` ↔ browser bundle ↔ 已安装 asar；sql.js 引擎、零原生依赖，产物可复现）
 - [ ] 性能基线（冷启动 / 打开 / 翻页 / 内存 / APK 体积）记录到 `docs/android-baseline.json`
-- [ ] PDF 渲染库 POC 结论（Pdfium vs PdfRenderer+PdfBox）
+- [x] PDF 渲染库 POC 结论：**选定 pdf.js（引擎 WebView 内），排除 Pdfium（16KB 页 .so 未对齐、上游不维护）与 PdfBox-Android（慢渲染），PdfRenderer 留作导出/打印旁路**（静态 POC + 调研，真机数据回填 §4 → `docs/android-pdf-poc.md`）
 - [x] ADR-001 架构选型、ADR-002 定位与标注兼容策略、ADR-003 兜底岛生命周期（→ `docs/adr/ADR-001~003`）
 - [x] 桌面端功能对照表（附录 A）填写完成（33 项，桌面实现位置已按代码核实）
 
