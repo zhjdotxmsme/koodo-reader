@@ -220,8 +220,8 @@ node scripts/build-android.js --target native,webview --no-split
 |---|---|---|---|---|
 | EPUB | kookit `EpubRender`(220) + `epub.js`(921) + `cfi.ts`(883) + `epubcfi.js`(309) | `engine/epub`（cfi 已落地） | P2 | ◐ |
 | PDF | kookit `PdfRender`(1237) / `PdfTextRender`(540) + `pdf.js`(502) + vendored pdf.js(87.9k) | `engine/pdf`（Pdfium/PdfBox，P0 POC 定夺） | P3 | ☐ |
-| MOBI / AZW3 / AZW | kookit `MobiRender`(65) + `mobi.js`(1276)（PalmDOC/HUFF-CDIC/KF8/EXTH） | `engine/mobi` | P4 | ☐ |
-| TXT / MD | kookit `TxtRender`(75) / `MdRender`(53) + `textProcessor.ts`(238) | `engine/text`（含编码探测） | P5 | ☐ |
+| MOBI / AZW3 / AZW | kookit `MobiRender`(65) + `mobi.js`(1276)（PalmDOC/HUFF-CDIC/KF8/EXTH） | `engine/mobi` | P4 | ◐ 解析器落地（`engine/mobi`，提交 7693e8b3）：PalmDB 容器、PalmDOC 压缩 1/2、MOBI6/KF8 判定、EXTH 元数据、资源/封面抽取，74 单测（含 calibre 生成的真实 MOBI6/AZW3 夹具）；HUFF/CDIC(17480) 未实现（类型化降级，见卡片 t-muexn60r 清单 [6]）；HTML 清洗→接 P2 排版与兜底岛下线待后续 |
+| TXT / MD | kookit `TxtRender`(75) / `MdRender`(53) + `textProcessor.ts`(238) | `engine/text`（含编码探测） | P5 | ◐ 引擎落地（`engine/text`，提交 f2b73f2a）：编码探测替代 chardet（BOM/严格 UTF-8/GBK·Big5·Shift_JIS·EUC-KR 启发式）、解码归一化、章节切分、MD 子集渲染（转义+scheme 白名单），71 单测；TXT 分页接 P2 排版与兜底岛下线待后续 |
 | CBZ / CBR / CBT / CB7 | kookit `ComicRender`(1003) + `comic-book.js`(71) + `public/lib/7z-wasm`、`libunrar` | `engine/image`（懒加载） | P5 | ☐ |
 | FB2 / DOCX / HTML / MHTML | kookit `Fb2Render`(56) / `DocxRender`(51) / `HtmlRender`(61) + `fb2.js`(351) | **兜底岛长期驻留**，单独立项 | 后续 | ☐ |
 | 简繁转换 | kookit `zh-convert.ts`(8143) | `engine/feature`（OpenCC 原生或移植） | P6 | ☐ |
@@ -243,10 +243,10 @@ node scripts/build-android.js --target native,webview --no-split
 
 | 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
 |---|---|---|---|---|
-| 段落模式/速读/阅读尺 | kookit `paragraphModeUtil`(315) / `speedReadingUtil`(579) / `readingRulerUtil`(335) | `engine/feature` | P6 | ☐ |
-| 仿生阅读 | kookit `bionicUtil`(65) | `engine/feature` | P6 | ☐ |
-| 文本替换规则 | kookit `textRuleUtil`(150) | `engine/feature` | P6 | ☐ |
-| 选中文本自动翻页 | kookit `selectionAutoTurn.ts`(324) | `engine/feature` | P6 | ☐ |
+| 段落模式/速读/阅读尺 | kookit `paragraphModeUtil`(315) / `speedReadingUtil`(579) / `readingRulerUtil`(335) | `engine/feature` | P6 | ◐ 引擎逻辑落地（`engine/feature`，提交 3858e0e3）：段落切分+模式状态机、RSVP 速读（ORP/WPM/停顿）、阅读尺几何与命中，84 单测（六项共 84）；UI 呈现与排版管线消费待 reader 接线 |
+| 仿生阅读 | kookit `bionicUtil`(65) | `engine/feature` | P6 | ◐ `BionicReading`（前 N 字符加粗 + 桌面 HALF_WORD 模式，无损可回映）已落地（3858e0e3） |
+| 文本替换规则 | kookit `textRuleUtil`(150) | `engine/feature` | P6 | ◐ `TextRuleEngine`+`TextRuleJson` 已落地（3858e0e3），键名与桌面互通（textRuleList/textRules） |
+| 选中文本自动翻页 | kookit `selectionAutoTurn.ts`(324) | `engine/feature` | P6 | ◐ `SelectionAutoTurn.decide` 纯决策函数已落地（3858e0e3），阈值含端点边界 |
 | TTS | `src/utils/reader/ttsUtil.ts` + `components/textToSpeech` + 15 个 voice 插件（`plugins/main/voice/*`，桌面独占） | `feature/tts`（Android TTS + MediaSession） | P6 | ☐ |
 | 词典（MDX/MDD + 25 个内嵌词典源） | `src/utils/file/dictUtil.ts` + `js-mdict` + `plugins/renderer/dictionary/*` | `feature/dict` | P6 | ☐ |
 | 划词翻译（25 个翻译源）/ AI | `plugins/renderer/translation/*`、`src/utils/request/aiBridge.ts` | `feature/translate` | P6 | ☐ |
