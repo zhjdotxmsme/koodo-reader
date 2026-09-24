@@ -424,7 +424,7 @@ function renderTsv(cfi, upstreamPath, hash) {
     "# not by the Kotlin port, so this file is an independent oracle:",
     `#   upstream: ${CFI_REF_URL}`,
     `#   sha256(epubcfi.js)[0:8]: ${hash}`,
-    `#   local copy: ${upstreamPath}`,
+    "#   local copy: <machine-specific cache path, intentionally not recorded>",
     "#",
     "# Columns: " + COLUMNS.join(" | "),
     "# Unused argument columns are empty. Fields never contain tabs.",

@@ -7,7 +7,7 @@
 # not by the Kotlin port, so this file is an independent oracle:
 #   upstream: https://raw.githubusercontent.com/johnfactotum/foliate-js/main/epubcfi.js
 #   sha256(epubcfi.js)[0:8]: e1a688ad
-#   local copy: C:\Users\54389\AppData\Local\Temp\koodo-cfi-ref\epubcfi.js
+#   local copy: <machine-specific cache path, intentionally not recorded>
 #
 # Columns: op | arg1 | arg2 | arg3 | expected
 # Unused argument columns are empty. Fields never contain tabs.
