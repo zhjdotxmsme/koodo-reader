@@ -1,0 +1,17 @@
+{
+  "locales": [
+    "en",
+    "zh-CN"
+  ],
+  "source": {
+    "en": {
+      "keys": 1377,
+      "sha256": "0440878538ba53614b30a40f9940ce4aff783da30d668d51f19f42919e4f5485"
+    },
+    "zh-CN": {
+      "keys": 1396,
+      "sha256": "d9ba066ea873784ed6558b40f5f3a1cc91c6e0d9b6654091de8131ab1f88e92e"
+    }
+  },
+  "syncedAt": "2026-09-24T01:21:33.690Z"
+}
