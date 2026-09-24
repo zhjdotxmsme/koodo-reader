@@ -369,7 +369,10 @@ object DesktopBridge {
         val byMd5 = HashMap<String, String>()
         books.forEach { b ->
             byKey[b.key] = b.name ?: ""
-            if (!b.md5.isNullOrEmpty()) byMd5[b.md5] = b.key
+            // `md5` comes from :core:data, i.e. another module, so its smart cast is
+            // not available — the null check has to go through a local val.
+            val md5 = b.md5
+            if (!md5.isNullOrEmpty()) byMd5[md5] = b.key
         }
         return DataImport.BookIndex(byKey, byMd5)
     }

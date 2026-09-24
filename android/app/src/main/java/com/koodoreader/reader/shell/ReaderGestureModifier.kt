@@ -137,8 +137,11 @@ fun ReaderGestureModifier(
 fun rememberReaderPageState(
     engine: GestureEngine,
     onResult: (GestureResult) -> Unit,
-): Pair<ReaderGestureModifier, Float> {
+): Pair<Modifier, Float> {
+    // `ReaderGestureModifier` is a @Composable function returning a Modifier, so the
+    // first component is typed `Modifier` (there is no type by that name). The offset
+    // has to be remembered, otherwise it resets on every recomposition.
     val modifier = ReaderGestureModifier(engine, onResult)
-    var offsetPx by mutableFloatStateOf(0f)
+    var offsetPx by remember { mutableFloatStateOf(0f) }
     return Pair(modifier, offsetPx)
 }

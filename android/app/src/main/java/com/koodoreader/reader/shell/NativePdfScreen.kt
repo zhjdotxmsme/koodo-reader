@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,6 +21,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,14 +80,17 @@ fun NativePdfScreen(
                     }
                 },
                 actions = {
+                    // Zoom is rendered as ± glyphs on purpose: this project depends only
+                    // on material-icons-core, and ZoomIn/ZoomOut/MenuBook live in
+                    // material-icons-extended (~20 MB of classes for the debug APK).
                     IconButton(onClick = { zoomPct = (zoomPct - 25).coerceAtLeast(50) }) {
-                        Icon(Icons.Filled.ZoomOut, contentDescription = "Zoom out")
+                        Text("−", style = MaterialTheme.typography.titleLarge)
                     }
                     IconButton(onClick = { zoomPct = (zoomPct + 25).coerceAtMost(400) }) {
-                        Icon(Icons.Filled.ZoomIn, contentDescription = "Zoom in")
+                        Text("+", style = MaterialTheme.typography.titleLarge)
                     }
                     IconButton(onClick = { /* TODO: open outline drawer */ }) {
-                        Icon(Icons.Filled.MenuBook, contentDescription = "Outline")
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Outline")
                     }
                     IconButton(onClick = { /* TODO: open search dialog */ }) {
                         Icon(Icons.Filled.Search, contentDescription = "Search")
