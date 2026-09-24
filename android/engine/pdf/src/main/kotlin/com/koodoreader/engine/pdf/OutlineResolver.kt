@@ -55,7 +55,9 @@ object OutlineResolver {
         if (json.isNullOrBlank()) return Tree(emptyList())
         return try {
             val root = JSONArray(json)
-            resolveChildren(root)
+            // `resolveChildren` returns the root entries; `Tree` is the wrapper
+            // `resolve` is declared to return.
+            Tree(resolveChildren(root))
         } catch (e: Exception) {
             // Malformed payload: degrade to no outline rather than crashing
             // the reader. The WebView side has its own logging.

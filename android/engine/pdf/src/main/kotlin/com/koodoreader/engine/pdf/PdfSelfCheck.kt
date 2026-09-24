@@ -105,7 +105,7 @@ object PdfSelfCheck {
             "search.sortedByPage",
             hits.zipWithNext().all { (a, b) -> a.pageNumber <= b.pageNumber },
         )
-        check("search.emptyQuery", engine.parseHits("[]", query = "").isEmpty)
+        check("search.emptyQuery", engine.parseHits("[]", query = "").isEmpty())
 
         // ── CfiPdfMapper round-trip ────────────────────────────────────────
         val rng = CfiPdfMapper.PdfRange(
@@ -185,7 +185,7 @@ object PdfSelfCheck {
         // ── PdfAnnotation row mapping ──────────────────────────────────────
         val ann = PdfAnnotation.build(
             bookKey = "bk",
-            cfi = CfiPdfMapper.serialise(rng),
+            cfiJson = CfiPdfMapper.serialise(rng),
             text = "highlighted text",
             note = "user note",
             color = "#FF00FF",

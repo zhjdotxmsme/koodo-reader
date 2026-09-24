@@ -51,6 +51,18 @@ dependencies {
     // (CfiPdfMapper.pageStepCfi); we don't depend on :engine:cfi because
     // the PDF address format is not the EPUB CFI string.
 
+    // `org.json` is an ANDROID PLATFORM API (android.jar), not a JDK one, but the
+    // pdf.js bridge files (CfiPdfMapper / OutlineResolver / PdfAnnotations /
+    // PdfSearchEngine / PdfHostBridge) parse its JSON with JSONObject/JSONArray.
+    // Without this the module does not compile at all as a JVM module.
+    //   - compileOnly: on Android the platform already ships org.json, so nothing
+    //     is packaged and there is no duplicate-class conflict at dex time;
+    //   - testImplementation: lets the pure-JVM unit tests link it too.
+    // A dependency-free alternative would be a hand-rolled reader like the
+    // `MiniJson.kt` the P6 modules ship (see android/feature/dictionary).
+    compileOnly 'org.json:json:20231013'
+    testImplementation 'org.json:json:20231013'
+
     // Test only.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

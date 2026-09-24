@@ -16,7 +16,7 @@ class PdfAnnotationsTest {
         val cfi = CfiPdfMapper.serialise(rng)
         val ann = PdfAnnotation.build(
             bookKey = "bk",
-            cfi = cfi,
+            cfiJson = cfi,
             text = "fox",
             note = "user note",
             color = "#FF00FF",
