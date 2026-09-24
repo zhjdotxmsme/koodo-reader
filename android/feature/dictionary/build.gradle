@@ -1,0 +1,76 @@
+// feature/dictionary — native MDX / MDD dictionary (P6).
+//
+// ANDROID LIBRARY because the module owns its Compose UI (词典管理 + 划词弹窗). The
+// parsing/lookup layers inside it are deliberately dependency-free JVM code
+// (package `…dictionary.mdx` + DictRepository / HtmlDefinitionRenderer /
+// DictDownloadManager), so they are unit-tested on the JVM exactly like
+// :engine:mobi / :engine:pdf — no Android SDK needed for the parser tests, which is
+// the "纯 JVM 可单测" requirement of the task card.
+//
+// PLUGIN VERSIONS: intentionally omitted. The root build.gradle declares
+// `com.android.application` / `org.jetbrains.kotlin.android` 8.2.2 / 1.9.24 with
+// `apply false`, which puts both plugin artifacts on the build classpath; requesting
+// them again *with* a version here would fail with "plugin request for plugin
+// already on the classpath must not include a version".
+//
+// REGISTRATION: add `include ':feature:dictionary'` to android/settings.gradle and
+// `implementation project(':feature:dictionary')` to :app. Those two files are
+// outside this task's allowed write set, so the module is delivered unregistered.
+//
+// TESTS: JUnit 4 (the AGP unit-test runner default; JUnit 5 would need the
+// de.theodormann/mannodermaus plugin). Every test lives in the pure-JVM packages:
+//     gradle :feature:dictionary:testDebugUnitTest
+// Without an Android SDK the same suite runs from the throwaway JVM project
+// documented in docs/p6-dictionary-architecture.md §7.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.koodoreader.feature.dictionary'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        // Same compiler as :app (compatible with Kotlin 1.9.24).
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+
+    testOptions {
+        unitTests {
+            // The pure-JVM tests must not silently pass on stubbed Android APIs.
+            returnDefaultValues = false
+        }
+    }
+}
+
+dependencies {
+    // Compose UI only (词典管理 + 划词弹窗). The parser itself needs nothing.
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-core'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    testImplementation 'junit:junit:4.13.2'
+}
