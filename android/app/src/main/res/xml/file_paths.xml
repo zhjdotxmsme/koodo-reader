@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths the P3 PDF reader exposes through its FileProvider
+  (see AndroidManifest.xml). Only the transient share exports are granted:
+  book files themselves are handed to the WebView track over loopback HTTP, and
+  the native reader renders them in-process, so no other subtree needs to leave
+  the sandbox.
+-->
+<paths>
+    <cache-path
+        name="pdf-shots"
+        path="pdf-shots/" />
+</paths>

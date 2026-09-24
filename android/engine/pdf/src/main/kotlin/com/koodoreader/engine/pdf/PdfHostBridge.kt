@@ -23,7 +23,12 @@ interface PdfHostBridge {
      * PDF version. The WebView side calls `pdfjs.getDocument(...)`,
      * resolves the `Promise`, and serialises the result.
      *
-     * @param pdfPath absolute path on the device filesystem.
+     * @param pdfPath the URL the host serves the file at — in the Android host
+     *   that is the loopback URL from `LocalAssetServer` (e.g.
+     *   `http://127.0.0.1:41234/__books__/x.pdf`), **not** a filesystem path:
+     *   the WebView has file access disabled and pdf.js fetches over HTTP. The
+     *   host owns the URL (and its ephemeral port) and the engine uses it
+     *   verbatim.
      * @param password null when the file is not password-protected; the
      *   [PasswordGate] supplies candidates otherwise.
      */

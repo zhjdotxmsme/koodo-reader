@@ -120,6 +120,28 @@ object OutlineResolver {
         }
     }
 
+    /**
+     * Flatten [tree] into the rows a list UI draws: pre-order DFS (document
+     * order) plus the nesting [Row.depth] the outline drawer indents by.
+     *
+     * Entries with `pageNumber == 0` are kept, not dropped: the drawer shows
+     * them disabled, matching the [Tree] contract above.
+     */
+    fun flatten(tree: Tree): List<Row> {
+        val out = ArrayList<Row>(tree.totalCount)
+        fun walk(entries: List<OutlineEntry>, depth: Int) {
+            for (e in entries) {
+                out += Row(e, depth)
+                walk(e.children, depth + 1)
+            }
+        }
+        walk(tree.entries, 0)
+        return out
+    }
+
+    /** One outline row: [entry] and its nesting [depth] (0 = root level). */
+    data class Row(val entry: OutlineEntry, val depth: Int)
+
     /** An outline tree. [entries] is the root level. */
     data class Tree(val entries: List<OutlineEntry>) {
         val isEmpty: Boolean get() = entries.isEmpty()

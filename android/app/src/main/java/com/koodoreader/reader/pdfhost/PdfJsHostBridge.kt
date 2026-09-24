@@ -45,6 +45,16 @@ class PdfJsHostBridge(
 
     private val webView: WebView = WebView(context).apply { configure() }
 
+    /**
+     * The engine WebView, for hosts that need to attach it to the view tree.
+     *
+     * The reader draws rasterised pages in Compose, so the WebView is never
+     * shown: attach it in a 1×1 invisible container. A WebView that is not
+     * attached to a window still evaluates JavaScript, but pdf.js's canvas
+     * rendering and worker startup are far better behaved when it is.
+     */
+    val view: android.view.View get() = webView
+
     /** Pending JS promise handlers keyed by call id. */
     private val pending: MutableMap<String, PendingCall> = HashMap()
 
@@ -74,12 +84,19 @@ class PdfJsHostBridge(
             method = "renderPage",
             args = listOf(pageNumber.toString(), targetWidthPx.toString()),
         )
-        // renderPage returns a base64 PNG string; the WebView side does the encode.
+        // renderPage returns a bare base64 PNG string; the WebView side strips
+        // the data-URL prefix and the engine passes strings through unquoted.
         return android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
     }
 
     override fun search(query: String): String =
-        runJs(method = "search", args = listOf(JSONObject.quote(query)))
+        runJs(
+            method = "search",
+            args = listOf(JSONObject.quote(query)),
+            // A full-document text walk is orders of magnitude slower than the
+            // other calls; the default 10 s budget times out on a long book.
+            timeoutMs = SEARCH_TIMEOUT_MS,
+        )
 
     override fun outline(): String = runJs(method = "outline", args = emptyList())
 
@@ -103,11 +120,14 @@ class PdfJsHostBridge(
 
     override fun paintHighlights(ranges: List<CfiPdfMapper.PdfRange>) {
         val payload = PdfLayerAnnotation.serialiseRects(ranges)
-        runJsFireAndForget("paintHighlights($payload)")
+        // Routed through the `call` surface: the engine exposes no global
+        // `paintHighlights` function, so the old raw snippet threw a
+        // ReferenceError inside the WebView that nobody could see.
+        runJsFireAndForget(method = "paintHighlights", args = listOf(payload))
     }
 
     override fun close() {
-        runCatching { runJsFireAndForget("close(") }
+        runJsFireAndForget(method = "close", args = emptyList())
         webView.post { webView.destroy() }
     }
 
@@ -116,6 +136,10 @@ class PdfJsHostBridge(
     /**
      * Load the engine bootstrap HTML; resume on completion. Call once
      * after the host server is reachable.
+     *
+     * The path is served by [com.koodoreader.reader.LocalAssetServer]'s
+     * `pdfengine` root (see [com.koodoreader.reader.AssetPaths]); the previous
+     * value (`/assets/pdfengine/index.html`) matched no asset in the APK.
      */
     fun bootstrap() {
         val latch = CountDownLatch(1)
@@ -124,9 +148,9 @@ class PdfJsHostBridge(
                 latch.countDown()
             }
         }
-        webView.post { webView.loadUrl("$baseUrl/assets/pdfengine/index.html") }
+        webView.post { webView.loadUrl("$baseUrl/$BOOTSTRAP_PATH") }
         if (!latch.await(BOOTSTRAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            throw RuntimeException("PDF engine bootstrap timed out")
+            throw RuntimeException("PDF engine bootstrap timed out ($baseUrl/$BOOTSTRAP_PATH)")
         }
     }
 
@@ -143,7 +167,7 @@ class PdfJsHostBridge(
         settings.textZoom = 100
     }
 
-    private fun runJs(method: String, args: List<String>): String {
+    private fun runJs(method: String, args: List<String>, timeoutMs: Long = JS_CALL_TIMEOUT_MS): String {
         val callId = java.util.UUID.randomUUID().toString()
         val argList = args.joinToString(",")
         val pending = PendingCall().also { pending[callId] = it }
@@ -155,7 +179,7 @@ class PdfJsHostBridge(
                 null,
             )
         }
-        if (!pending.latch.await(JS_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+        if (!pending.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
             this.pending.remove(callId)
             throw RuntimeException("PDF engine JS call '$method' timed out")
         }
@@ -164,8 +188,15 @@ class PdfJsHostBridge(
         return pending.payload
     }
 
-    private fun runJsFireAndForget(snippet: String) {
-        webView.post { webView.evaluateJavascript(snippet, null) }
+    private fun runJsFireAndForget(method: String, args: List<String>) {
+        val callId = java.util.UUID.randomUUID().toString()
+        val argList = args.joinToString(",")
+        webView.post {
+            webView.evaluateJavascript(
+                "window.__koodoPdf && window.__koodoPdf.call('$callId', '$method', [$argList])",
+                null,
+            )
+        }
     }
 
     /** Shim installed as `window.__koodoPdfHost`; the bootstrap HTML calls it. */
@@ -210,6 +241,12 @@ class PdfJsHostBridge(
     companion object {
         private const val BOOTSTRAP_TIMEOUT_MS = 10_000L
         private const val JS_CALL_TIMEOUT_MS = 10_000L
+
+        /** Full-document text search; see [PdfJsHostBridge.search]. */
+        private const val SEARCH_TIMEOUT_MS = 60_000L
+
+        /** Path (relative to the asset server root) of the engine bootstrap. */
+        private const val BOOTSTRAP_PATH = "pdfengine/index.html"
         private const val TAG = "PdfJsHostBridge"
 
         @Suppress("unused")

@@ -82,6 +82,9 @@ jobs:
       - name: Check bundled locales match src/assets/locales (i18n bridge guard)
         run: node scripts/sync-locales-android.js --check
 
+      - name: Test the pdf.js engine core (native PDF reader bridge)
+        run: node scripts/test-pdfengine.js
+
       - name: Build the web app
         env:
           GENERATE_SOURCEMAP: "false"

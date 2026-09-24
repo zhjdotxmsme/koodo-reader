@@ -28,7 +28,9 @@ import java.util.concurrent.RejectedExecutionException
  *
  * Features:
  *  - binds to 127.0.0.1 only (never exposed to the network), ephemeral port;
- *  - static assets from `assets/<assetRoot>` with correct MIME types;
+ *  - static assets from `assets/<root>` (see [AssetPaths.DEFAULT_ROOTS]: the
+ *    React island under `webapp` plus the pdf.js host under `pdfengine`) with
+ *    correct MIME types;
  *  - single-range `Range: bytes=a-b` support (206) so media/PDF fetches work;
  *  - SPA fallback to `index.html` for extension-less paths;
  *  - virtual paths mapped to real files ([exposeFile]) — used to hand the web
@@ -38,8 +40,17 @@ import java.util.concurrent.RejectedExecutionException
 class LocalAssetServer(
     private val assets: AssetManager,
     private val assetRoot: String = "webapp",
-    private val threadCount: Int = 4
+    private val threadCount: Int = 4,
+    /**
+     * Additional asset roots tried after [assetRoot]. Defaults to
+     * `pdfengine` so a server started for the React island also serves the
+     * native PDF reader's pdf.js host (see [AssetPaths]).
+     */
+    extraRoots: List<String> = listOf("pdfengine")
 ) {
+
+    /** Roots served from `assets/`, in order. */
+    private val roots: List<String> = (listOf(assetRoot) + extraRoots).distinct()
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -180,10 +191,10 @@ class LocalAssetServer(
     private fun serveAsset(out: OutputStream, path: String, range: String?, isHead: Boolean) {
         var bytes = readAsset(path)
         var servedPath = path
-        if (bytes == null && !path.substringAfterLast('/', "").contains('.')) {
+        if (bytes == null && AssetPaths.isClientRoute(path)) {
             // SPA fallback for extension-less client routes.
-            bytes = readAsset(INDEX_FILE)
-            servedPath = INDEX_FILE
+            bytes = readAsset(AssetPaths.INDEX_FILE)
+            servedPath = AssetPaths.INDEX_FILE
         }
         if (bytes == null) {
             writeStatus(out, 404, "Not Found")
@@ -225,11 +236,15 @@ class LocalAssetServer(
     }
 
     private fun readAsset(path: String): ByteArray? {
-        return try {
-            assets.open("$assetRoot/$path").use { input -> input.readBytes() }
-        } catch (ignored: Exception) {
-            null
+        for (candidate in AssetPaths.candidates(path, roots)) {
+            val bytes = try {
+                assets.open(candidate).use { input -> input.readBytes() }
+            } catch (ignored: Exception) {
+                null
+            }
+            if (bytes != null) return bytes
         }
+        return null
     }
 
     private fun writeBytes(
@@ -283,15 +298,7 @@ class LocalAssetServer(
 
     // ── helpers ─────────────────────────────────────────────────────────────
     /** Strip query/leading slashes and traversal segments; empty → index.html. */
-    private fun normalizePath(raw: String): String {
-        val withoutQuery = raw.substringBefore('?')
-        val parts = withoutQuery
-            .replace('\\', '/')
-            .split('/')
-            .filter { it.isNotEmpty() && it != "." && it != ".." }
-        if (parts.isEmpty()) return INDEX_FILE
-        return parts.joinToString("/")
-    }
+    private fun normalizePath(raw: String): String = AssetPaths.normalize(raw)
 
     /** Parse a single-range `bytes=a-b` header; null when absent/unsatisfiable. */
     private fun parseRange(range: String?, length: Long): Pair<Long, Long>? {
@@ -401,7 +408,6 @@ class LocalAssetServer(
 
     private companion object {
         const val LOOPBACK = "127.0.0.1"
-        const val INDEX_FILE = "index.html"
         const val BACKLOG = 64
         const val SOCKET_TIMEOUT_MS = 5000
         const val COPY_BUFFER = 64 * 1024

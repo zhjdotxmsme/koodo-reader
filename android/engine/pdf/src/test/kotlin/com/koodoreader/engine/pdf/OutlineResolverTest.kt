@@ -91,4 +91,46 @@ class OutlineResolverTest {
         // Before the first entry: returns null
         assertNull(OutlineResolver.nearestEntry(tree, 0))
     }
+
+    private val nestedTree = """
+        [{"title":"Chapter 1","pageNumber":1,"children":[
+          {"title":"1.1","pageNumber":2,"children":[
+            {"title":"1.1.1","pageNumber":3,"children":[]}
+          ]},
+          {"title":"1.2","pageNumber":5,"children":[]}
+        ]},
+         {"title":"Chapter 2","pageNumber":12,"children":[]}]
+    """.trimIndent()
+
+    @Test
+    fun flattenIsPreorderWithDepths() {
+        val rows = OutlineResolver.flatten(OutlineResolver.resolve(nestedTree))
+        assertEquals(5, rows.size)
+        assertEquals(listOf("Chapter 1", "1.1", "1.1.1", "1.2", "Chapter 2"), rows.map { it.entry.title })
+        assertEquals(listOf(0, 1, 2, 1, 0), rows.map { it.depth })
+    }
+
+    @Test
+    fun flattenOfEmptyTreeIsEmpty() {
+        assertTrue(OutlineResolver.flatten(OutlineResolver.resolve(null)).isEmpty())
+    }
+
+    @Test
+    fun flattenKeepsUnresolvedEntries() {
+        val rows = OutlineResolver.flatten(
+            OutlineResolver.resolve(
+                """[{"title":"Broken","pageNumber":0,"children":[]}]"""
+            )
+        )
+        // The drawer renders these disabled; dropping them would hide a real
+        // (if unresolvable) chapter from the reader.
+        assertEquals(1, rows.size)
+        assertEquals(0, rows[0].entry.pageNumber)
+    }
+
+    @Test
+    fun flattenMatchesTotalCount() {
+        val tree = OutlineResolver.resolve(nestedTree)
+        assertEquals(tree.totalCount, OutlineResolver.flatten(tree).size)
+    }
 }

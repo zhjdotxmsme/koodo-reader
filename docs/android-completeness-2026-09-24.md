@@ -108,7 +108,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | P0 基线 | 基线文档、脚本、schema.lock | ✅ | — | — | n/a |
 | P1 原生壳 + 数据层 | Compose 壳、Room、SAF 导入、书库/回收站/备份 | ✅ `:app` shell + `core:data/dbio/importer/common` | ✅ | `:app` 11 · core 82 | ✅ 书库 / 回收站 / 备份 |
 | **P2 EPUB 原生阅读器 ★** | 分页/主题/目录/进度/标注/脚注/内链 | 🟡 `engine:{cfi,layout,gesture,annotate,link,toc}` + 字体体系 | ✅ | layout 109 · link 72 · cfi 4 · gesture 40 · annotate 112 · toc 42 | ❌ **未接线**：`ShellNavHost` 只有 `"PDF"` 分支，其余格式落到 `ReaderPlaceholderScreen`；`NativeReaderScreen` 存在但**不可达** |
-| **P3 PDF 原生阅读器 ★** | pdf.js WebView 渲染、搜索、大纲、密码、批注 | ✅ `engine:pdf` + `pdfhost` + `NativePdfScreen` | ✅ | 61 | ✅ `format == "PDF"`；但工具栏 **大纲/搜索/导出快照仍是 TODO 空操作** |
+| **P3 PDF 原生阅读器 ★** | pdf.js WebView 渲染、搜索、大纲、密码、批注 | ✅ 本轮**真正接线**（此前只是路由到空壳屏幕，见 §10） | ✅ | 61+4 | ✅ `format == "PDF"`；工具栏**大纲/搜索/导出快照已可用**；**批注仍不可用**（栅格宿主无文本层，见 §10） |
 | P4 MOBI/AZW3 | PalmDOC + MOBI6/KF8 + EXTH | 🟡 `engine:mobi`（HUFF/CDIC 明确未实现，抛类型化错误） | ✅ | 74 | ❌ 未接线（走兜底岛） |
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
 | P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
@@ -142,7 +142,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | 5 | OCR 下载适配层 | OCR 无法按需下载模型 | ML Kit 的 options 不是 `OptionalModuleApi`，需改设计（改跟随 ML Kit 自身下载 / 换 bundled 制品） |
 | 6 | ~~CB7（7z）~~ 已修 / CBR（rar） | CB7 可原生读；CBR 仍不可 | CB7 已接 commons-compress（见 §9）；**CBR 按 ADR-002 明确不做原生**（无纯 JVM 可用 RAR5 解压器，继续走兜底岛） |
 | 7 | MOBI HUFF/CDIC | 部分老 mobi 读不了 | `engine:mobi` 明确未实现压缩 17480 |
-| 8 | PDF 工具栏 3 个 TODO | 大纲/搜索/导出快照不可用 | 接 `PdfHostBridge` 已有接口 |
+| 8 | ~~PDF 工具栏 3 个 TODO~~ | **已修（见 §10）**：查证后发现整条 PDF 链路从未运行——空壳屏幕 + 6 个「编译通过但永不生效」的缺陷；本轮全部接线 | — |
 | 9 | MHTML/HTML/FB2/DOCX | 4 种格式无原生实现 | 看板 D0（XHTML→TextBlock 扁平化）+ R1（core/archive） |
 | 10 | ~~`scripts/check-elf-16kb.js` 依赖 unzip/readelf~~ | **已修**：纯 Node 实现 + CI 接入（见 §8） | — |
 | 11 | 内置字体 8.25 MB | release 形态最大单项 | P8 L2（按需下载/子集化） |
@@ -192,7 +192,7 @@ node scripts/check-elf-16kb.js <app-debug.apk>        → 4 个 .so 全 PASS（p
 自检 runner（cfi/annotate/gesture/pdf/toc/locale）      → 全部 PASS（修复前 pdf/gesture 是坏的）
 ```
 
-仍未做（不在本轮范围）：§5 的缺口 1/2（P2 reader host、P6 六个模块入口——产品接线）、5/7/8/9/11，以及 §6 的全部真机项。
+仍未做（不在本轮范围）：§5 的缺口 1/2（P2 reader host、P6 六个模块入口——产品接线）、5/7/9/11，以及 §6 的全部真机项。
 
 ---
 
@@ -224,3 +224,48 @@ node scripts/check-elf-16kb.js <app-release-*.apk>     → 4 个 .so 全 PASS，
 体积代价：debug 31.25 → 33.54 MB（+2.29 MB，**无 R8**）；release 18.78 → 18.90 MB（**+0.12 MB**，commons-compress 被 R8 裁到只剩用到的一小部分）。`libdatastore_shared_counter.so` 仍是首个 `.so`（p_align 0x4000），**未引入任何新原生库**，16 KB 判定在 debug/release 两种形态下均不变。
 
 CBR 结论：**不做原生**。ADR-002 的矩阵里 CBR 标为 `DEFERRED`——纯 JVM 侧没有可用的 RAR5 解压器（junrar 只到 RAR4 且对 RAR5 无效，其余方案都带 `.so`），强行实装会同时破坏「零原生依赖」与「体积」两条约束，继续由兜底岛承担。
+
+---
+
+## 10 · 缺口修复进展（第三轮：P3 PDF 链路真正接线）
+
+缺口 8 原记录只有「工具栏 3 个 TODO」。查证后发现**整条 PDF 链路从未运行过**：`NativePdfScreen` 的正文是一段占位文本（"PDF native reader lands in P3"），`PdfJsHostBridge` 与 `PdfRendererSnapshot` 在 `:app` 里**没有任何实例化点**，`ShellNavHost` 只是把 `format == "PDF"` 路由到一个空壳。逐个复现出的缺陷（全部属「编译通过、永不生效」）：
+
+| # | 缺陷 | 后果 / 证据 |
+|---|---|---|
+| 1 | `assets/pdfengine/*` 没有对应资源根 | `LocalAssetServer` 只以 `assets/webapp` 为根，`PdfJsHostBridge.bootstrap()` 请求的 `/assets/pdfengine/index.html` 在 APK 内不存在（`assets/pdfengine/` 与 `assets/webapp/` 是并列目录）→ 引擎永远 404 |
+| 2 | pdf.js 用死 URL 取书 | 引擎里 `url: 'http://127.0.0.1/__books__/' + name` 硬编码 80 端口，忽略宿主实际绑定的临时端口，也忽略 `open()` 传入的路径 |
+| 3 | 字符串结果被二次 JSON 编码 | `onResult` 对所有返回值 `JSON.stringify`：`renderPage` 的 base64 被包成带引号的 JSON 字符串（Kotlin `Base64.decode` 直接解错），`search`/`outline` 的 JSON 文本同样被再包一层引号（`JSONArray(...)` 解析失败） |
+| 4 | 搜索扫不存在的 DOM | `collectMatches` 遍历 `.page-text-layer`，而本设计把页面画在离屏 canvas、从不生成文本层 → 搜索恒 0 结果；且 `executeCommand('find')` 之后同步取结果，时序也不成立 |
+| 5 | 三处调用不存在的东西 | `close()` 发的是 `"close("`（语法错误）；`paintHighlights` 直接 `evaluateJavascript("paintHighlights(...)")`，但引擎只暴露 `window.__koodoPdf.call`；`open` 返回的 `pageWidthPt/HeightPt` 恒为 Letter |
+| 6 | bootstrap 页引用了缺失资产 | `index.html` 请求 `./pdf_viewer.css`，该文件不在 `assets/pdfengine/` 中 |
+
+本轮修复：
+
+- **引擎逻辑独立成模块并可单测**：`assets/pdfengine/engine.mjs`（`index.html` 退化为薄引导）。`scripts/test-pdfengine.js` 用桩 pdf.js 在 Node 里跑 **56 项断言**（URL 逐字透传、base64 无 data-URL 前缀、大小写不敏感的全文档搜索且矩形为正、大纲解析与未解析项保留、payload 编码、边界语义，外加「index.html 不得引用缺失资产」的静态检查），已接入 CI（`release-android.yml` 新增一步）。
+- **资源根**：`LocalAssetServer` 支持多根（默认 `webapp` + `pdfengine`），路径判定抽成纯函数 `AssetPaths`（`:app` JVM 测试 7 项）。
+- **搜索真做**：按 `getTextContent()` 逐页扫文本，命中项的 `transform` 给出 PDF 用户空间矩形——`PdfSearchEngine.parseRects` 会**静默丢弃**空矩形或非正尺寸的命中，这条约束由 Node 测试钉住。跨 item 的匹配不拼接（已注明）。
+- **UI 接线**：`NativePdfScreen` 真正渲染（pdf.js 逐页栅格 → Compose 绘制）；页导航（点击左右 1/4 区 + 底部 ‹/›）；缩放 ±（渲染宽度 = 视口 × 缩放）；**大纲抽屉**（新增 `OutlineResolver.flatten` + 4 项引擎测试，未解析条目保留并置灰）；**搜索对话框**（结果列表 + 循环跳转 + "No result found"）；**导出当前页并分享**（`PdfRendererSnapshot` → `cacheDir/pdf-shots/` → `FileProvider`，manifest 新增 provider 与 `res/xml/file_paths.xml`）；加密 PDF 的密码重试对话框。
+- **宿主**：`NativeShellActivity` 启动 `LocalAssetServer` 并把书暴露为 `__books__/<name>`（`ReaderAssetHost`）；书籍文件解析抽成纯函数 `ReaderFiles`（`:app` JVM 测试 8 项：Room 记录路径优先 → `<key>.<ext>` 约定 → 前缀扫描，找不到返回 null 而非幽灵路径）。
+- **i18n**：复用既有桌面 key（`Back`/`Loading`/`PDF outline`/`PDF empty outline`/`Search in book`/`No result found`/`Enter password`/`Wrong password`/`Previous page`/`Next page`/`Share`/`Close`）。「引擎不可用」页文案为英文直写：Android 语言包由 `sync-locales-android.js --check` 从桌面同步，单边新增 key 会让 CI 失败。
+
+验证：
+
+```
+node scripts/test-pdfengine.js                        → 56/56 ✅
+gradle -p android :app:testDebugUnitTest              → 26/26 ✅（新增 AssetPathsTest 7 + ReaderFilesTest 8）
+gradle -p android :engine:pdf:test                    → 65/65 ✅（新增 flatten 4 项）
+gradle -p android --continue test                     → BUILD SUCCESSFUL
+                                                        1185 个唯一测试 / 0 失败 / 1496 次执行（debug+release 双跑）/ 22 module 全绿
+gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（33.54 MB）
+node scripts/check-elf-16kb.js <app-debug.apk>         → 4 个 .so 全 PASS，exit 0
+APK 内容核对（zip 清单 + merged manifest）              → assets/pdfengine/engine.mjs 在包内（pdfengine 共 174 项）；
+                                                        authority com.koodoreader.reader.fileprovider 已合并
+```
+
+**仍未做（明确边界，不是遗漏）**：
+
+- **PDF 批注/高亮不可用**：栅格宿主没有可选中的文本层，引擎的 `selectedRect()` 只能返回 null、`paintHighlights()` 返回 false（`engine.mjs` 顶部已写明并记日志）。要支持批注必须换宿主设计（显示 WebView + 真文本层，或 Compose 侧叠加文本层），属 P6 范围。
+- **多页连续滚动 / 双页 / 阅读位置记忆 / CFI 打通**：仍缺（`PdfViewMode`、`CfiPdfMapper` 已交付但未接线）。
+- **真机未验证**（按用户要求跳过）：WebView 能否 bootstrap、pdf.js 能否真的栅格化、分享能否唤起目标应用，本轮只到「可编译 + JVM/Node 单测 + APK 内容核对」这一层。
+

@@ -220,6 +220,9 @@ dependencies {
     implementation 'androidx.navigation:navigation-compose:2.7.7'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+    // FileProvider (P3 PDF page share) lives in androidx.core; declare it
+    // explicitly rather than relying on the activity-compose transitive edge.
+    implementation 'androidx.core:core-ktx:1.13.1'
     debugImplementation 'androidx.compose.ui:ui-tooling'
 
     // Local JVM unit tests (pure logic, e.g. LibraryLogicTest).

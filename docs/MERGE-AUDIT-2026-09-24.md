@@ -250,7 +250,8 @@ e: .../shell/ReaderGestureModifier.kt:140  Unresolved reference: ReaderGestureMo
 4. `engine:toc` 的 `ReadingPosition` JSON 编解码优先于其它 toc 失败项（写入用户数据）。
 5. 清理：9 个 worktree（含 2 个 locked）、10 个仍是 `9abe7904` 的 `task/*` 分支（其中 `task/p6-translate-tran` 无 worktree，是重复分支）。
 6. 补 `.gitignore` 后确认无构建产物被 `git add`；`docs/patches/p5-fb2-settings-gradle.patch` 已应用，勿重复 apply。
-7. **接线优先于继续铺模块**：目前只有 PDF 一条原生阅读链路可达，P6 六个模块与 P2 的 EPUB 链路都还悬在 `ShellNavHost` 之外（见 `docs/android-completeness-2026-09-24.md` §4）。
+7. **接线优先于继续铺模块**：P6 六个模块与 P2 的 EPUB 链路仍悬在 `ShellNavHost` 之外（见 `docs/android-completeness-2026-09-24.md` §4）。
+   - **勘误（后续一轮）**：当时写的「只有 PDF 一条原生阅读链路可达」只对到**路由**这一层。查证后 `NativePdfScreen` 是一段占位文本，`PdfJsHostBridge`/`PdfRendererSnapshot` 在 `:app` 里**没有任何实例化点**，且引擎侧还有 6 个「编译通过但永不生效」的缺陷（资源根、80 端口死 URL、字符串结果被 JSON 二次编码、搜索扫不存在的 DOM 等）。该链路已在本轮真正接线，逐条证据见 `docs/android-completeness-2026-09-24.md` §10。
 
 ## 6 · 边界（本次未做）
 

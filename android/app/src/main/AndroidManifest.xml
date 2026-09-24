@@ -136,6 +136,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <!--
+          P3: the native PDF reader's "share current page" exports a PNG into
+          `cacheDir/pdf-shots/` and hands it to the share sheet. The cache lives
+          inside the app sandbox, so a FileProvider is the only way another app
+          can read it. The authority is app-id-scoped to stay unique per build
+          type (see res/xml/file_paths.xml for the exposed subtree).
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>
