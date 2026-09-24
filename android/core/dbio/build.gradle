@@ -1,0 +1,40 @@
+// core/dbio — desktop ⇄ native data bridge (SQLite file format + backup bundle).
+//
+// PURE KOTLIN JVM MODULE (same rationale as :core:importer): the desktop
+// .db files are stock SQLite; reading/writing them is dependency-light JVM
+// work that we unit-test without the Android SDK. The single non-stdlib
+// dependency is org.xerial:sqlite-jdbc (bundles the SQLite engine for both
+// JVM and Android natives).
+//
+// The five table DDLs in DesktopDdl are copied VERBATIM from schema.lock
+// (the frozen desktop schema); scripts/check-dbio-ddl.js fails CI when they
+// drift. Column name sets are frozen by scripts/check-room-schema.js on the
+// Room entities.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
