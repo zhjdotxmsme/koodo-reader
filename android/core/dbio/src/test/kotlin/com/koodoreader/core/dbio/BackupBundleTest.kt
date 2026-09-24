@@ -32,6 +32,25 @@ class BackupBundleTest {
 
     // ------------------------------------------------------------- zip io
 
+    /**
+     * Writes a real export artifact for the desktop-read smoke:
+     * `node scripts/verify-desktop-read.js` opens it with the SAME sql.js
+     * engine the desktop restore path (src/utils/file/sqlUtil.ts) uses and
+     * asserts the rows survive. Output goes to the module build dir (never
+     * committed) and is tiny, so it always runs.
+     */
+    @Test
+    fun `export sample backup zip for the desktop-read smoke`() {
+        val out = File("build/export-sample/KoodoReader-Backup-sample.zip")
+        BackupBundle.write(
+            out = out,
+            tables = mapOf("books" to sampleBooks(), "notes" to sampleNotes()),
+            configJson = "{}",
+            covers = listOf(CoverRef.of("k1.jpeg", byteArrayOf(1, 2, 3, 4))),
+        )
+        assertTrue(out.isFile && out.length() > 0, "sample export missing: ${out.absolutePath}")
+    }
+
     @Test
     fun `zip write then open round trips tables and covers`() {
         val zipPath = File(dir, "KoodoReader-Backup-test.zip")
