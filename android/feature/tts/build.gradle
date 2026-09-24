@@ -1,0 +1,101 @@
+// android/feature/tts — P6 TTS: Android `TextToSpeech` engine enumeration,
+// speech-rate / pitch / volume configuration persistence, MediaSession media-key
+// control, foreground-service keep-alive (background reading), reading-position
+// resume, and the lock-screen control UI skeleton.
+//
+// Desktop counterpart: `src/utils/reader/ttsUtil.ts`, the
+// `src/components/textToSpeech/*` container and the 15 desktop voice plugins
+// (`plugins/main/voice/*`). Those plugins are DESKTOP-ONLY and are NOT ported:
+// the plugin keys survive here as *labels* (see TtsVoiceCatalog) so a config
+// carried over from the desktop app still resolves, while the actual audio comes
+// from the platform speech synthesizer plus any installed Android TTS engine
+// (`com.google.android.tts`, Samsung, …). See docs/p6-tts-semantics-mapping.md.
+//
+// WHY AN ANDROID LIBRARY MODULE: the service / MediaSession / DataStore / Compose
+// surfaces are Android APIs by definition. All *decision* logic (config codec,
+// voice catalog, engine ranking, sentence segmentation, resume matching) is kept
+// in pure Kotlin files with no `android.*` import, so it is covered by plain JVM
+// unit tests (`src/test/kotlin`, JUnit 4, no Robolectric, no device).
+//
+// REGISTRATION: this module is intentionally NOT wired into the host build by
+// this change (the card forbids editing android/settings.gradle,
+// android/build.gradle and android/app/build.gradle). Apply
+// docs/patches/p6-tts.patch — it is a 4-hunk patch that adds
+//   id 'com.android.library' version '8.2.2' apply false   (android/build.gradle)
+//   include ':feature:tts'                                 (android/settings.gradle)
+//   implementation project(':feature:tts')                 (android/app/build.gradle)
+//   + the manifest entries the foreground service needs    (AndroidManifest.xml)
+// The two plugin ids below therefore resolve without a local version: they come
+// from the root `plugins { … apply false }` block once the patch is applied.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.koodoreader.feature.tts'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        // Lock-screen control UI skeleton (TtsControlSheet.kt). The same Compose
+        // compiler extension the :app module pins for Kotlin 1.9.24.
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+
+    testOptions {
+        unitTests {
+            // The unit tests are pure-logic; this only keeps the (unused)
+            // android.jar stubs from throwing if a test ever touches a framework
+            // constant. No Robolectric, no instrumentation.
+            returnDefaultValues = true
+        }
+    }
+}
+
+dependencies {
+    // Sentence segmentation is fed by :engine:text (P5, already committed):
+    // `TextSourceSentenceSource` reads a chapter window through its `TextSource`
+    // and decodes it with a host-supplied decoder lambda.
+    //
+    // DELIBERATELY NOT DEPENDED ON: `:engine:toc` (P2). The resume anchor carries
+    // `TtsReadingPosition`, which mirrors `ReadingPosition` field-for-field, so the
+    // feature stays buildable while the TOC card is still in flight; the host-side
+    // one-line adapter is documented in docs/p6-tts-semantics-mapping.md §5.
+    implementation project(':engine:text')
+    // Listening text rules (desktop TTSUtil.applyTextRules parity).
+    implementation project(':engine:feature')
+
+    implementation 'androidx.core:core-ktx:1.13.1'
+    // MediaSessionCompat / PlaybackStateCompat — media keys + lock-screen card.
+    implementation 'androidx.media:media:1.7.0'
+    // TtsConfigRepository persistence (DoD [1]).
+    implementation 'androidx.datastore:datastore-preferences:1.1.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+
+    // Pure JVM unit tests (JUnit 4, mirroring :app's test setup).
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+}

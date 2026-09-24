@@ -1,0 +1,173 @@
+P6 TTS — register `:feature:tts` into the Android host build
+============================================================
+
+Task:   t-muexn66v-0z6jje — "P6：TTS（Android TTS + MediaSession/前台服务）"
+Module: android/feature/tts  (com.koodoreader.feature.tts, Android library)
+Base:   commit 9abe7904 (branch task/p6-tts-t-muexn66)
+
+WHY A PATCH INSTEAD OF THE EDITS
+--------------------------------
+The P6 execution constraints forbid this change from touching
+android/settings.gradle, android/build.gradle, android/app/build.gradle (and
+package.json / main.js). The module therefore ships unregistered, with its
+gradle plugin ids resolved from the root `plugins { … apply false }` block that
+hunk 1 adds. Apply the patch in the integration step:
+
+    cd android && git apply -3 ../docs/patches/p6-tts.patch
+    # or hand-apply the four hunks (they are small and self-explanatory)
+
+Then verify:
+
+    gradle :feature:tts:testDebugUnitTest        # needs the Android SDK (local.properties)
+    gradle :app:assembleDebug -Ptarget=native
+
+SCOPE OF THE PATCH
+------------------
+1. android/build.gradle                    — declare `com.android.library` 8.2.2 (apply false)
+2. android/settings.gradle                 — `include ':feature:tts'`
+3. android/app/build.gradle                — `implementation project(':feature:tts')`
+4. android/app/src/main/AndroidManifest.xml — foreground-service permission + `mediaPlayback`
+                                             type, POST_NOTIFICATIONS, the TTS_SERVICE
+                                             `<queries>` entry (Android 11+ package
+                                             visibility) and the service/receiver declarations
+5. src/assets/locales/en.json (optional)   — the four new i18n keys; run
+                                             `node scripts/sync-locales-android.js` afterwards
+                                             (ADR-004) so :core:common carries them on Android
+
+NOT part of the patch, on purpose:
+  * `:engine:toc` — `:feature:tts` links the reading position through its own
+    `TtsReadingPosition`, which mirrors `ReadingPosition` field-for-field, so it stays
+    buildable while the P2 TOC module is uncommitted. Wiring it later is a one-line
+    adapter (docs/p6-tts-semantics-mapping.md §5).
+  * `:engine:text` (P5) and `:engine:feature` (P6) are already included at the base
+    commit, and are the module's only project dependencies.
+
+The patch is hand-authored (no local Gradle/SDK run was possible in the worktree:
+there is no gradlew script and the SDK is not usable from this session), so treat
+the hunk line numbers as advisory and prefer `git apply -3` or manual application.
+
+HOST INTEGRATION CHECKLIST (after the patch)
+--------------------------------------------
+1. `gradle :feature:tts:testDebugUnitTest` — 55 JVM unit tests (no Robolectric, no
+   emulator; pure-logic files only, see docs/p6-tts-semantics-mapping.md §6).
+2. Bind from the reader host:
+   ```kotlin
+   bindService(Intent(this, ForegroundTtsService::class.java), conn, BIND_AUTO_CREATE)
+   // onServiceConnected:
+   val tts = (binder as ForegroundTtsService.LocalBinder).service()
+   tts.setTranslate { key -> localization.t(key) }          // :core:common Localization
+   tts.setNotificationIcon(R.drawable.ic_stat_koodo)        // host icon (framework icon by default)
+   tts.setReadingPositionProvider { myPositionAsTtsReadingPosition() }
+   tts.setHostCommandListener { cmd -> if (cmd == TtsMediaCommand.NEXT) reader.nextChapter() }
+   tts.loadChapterFromSource(bookKey, bookTitle, chapterTitle, chapterTextSource) { bytes ->
+       TextDecoder.decode(bytes)                            // :engine:text
+   }
+   tts.play()
+   ```
+3. Render `TtsControlSheet(tts.controlState(), tts::command /* … */)` from the reader UI
+   and pass `translate = localization::t` (i18n keys are the desktop ones).
+4. Android 13+: request POST_NOTIFICATIONS before the first listening session, otherwise
+   the foreground notification is present but the lock-screen card stays hidden.
+5. Keep `:feature:tts` out of the WebView track if desired — the module has no side
+   effects until the service is bound/started.
+
+Everything below this line is the patch itself; nothing follows the last hunk.
+
+
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,5 +1,9 @@
+ // Root build file for the Android host of Koodo Reader.
+ // Declares plugin versions only; the :app module applies them.
+ plugins {
+     id 'com.android.application' version '8.2.2' apply false
++    // Android library modules (e.g. :feature:tts — P6 TTS: TextToSpeech, MediaSession,
++    // foreground service, DataStore, Compose). Same AGP version as the application
++    // plugin above; without this line a subproject cannot apply 'com.android.library'.
++    id 'com.android.library' version '8.2.2' apply false
+     id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -61,3 +61,12 @@
+ // mapping / snapshot exporter are all algorithm-only, unit-tested without
+ // the Android SDK. The Compose WebView host (engine/pdfhost) lives in :app.
+ include ':engine:pdf'
++
++// TTS feature module (P6): Android TextToSpeech engine enumeration + voice labels,
++// DataStore-persisted rate/pitch/volume, MediaSession media-key transport,
++// foreground-service keep-alive for background listening, reading-position resume
++// and the lock-screen control UI skeleton.
++// Android library (it owns a Service / MediaSession / DataStore / Compose surfaces)
++// whose decision logic is pure JVM with JVM-only unit tests — see
++// docs/p6-tts-semantics-mapping.md §7.
++include ':feature:tts'
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -105,2 +105,6 @@
+     implementation project(':core:common')
++    // TTS (P6): engine enumeration, MediaSession, foreground service, resume.
++    // Depends on :engine:text (chapter TextSource) and :engine:feature (listening
++    // text rules); registration patch: docs/patches/p6-tts.patch.
++    implementation project(':feature:tts')
+     implementation project(':engine:cfi')
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -4,3 +4,18 @@
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ 
++    <!-- P6 TTS: keep speaking while the screen is off, and show the transport card. -->
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
++    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++
++    <!--
++      Android 11+ package visibility: without this query,
++      EngineEnumerator's PackageManager.queryIntentActivities(TTS_SERVICE) sees only
++      the default engine, so the voice/engine picker would silently degrade.
++    -->
++    <queries>
++        <intent>
++            <action android:name="android.intent.action.TTS_SERVICE" />
++        </intent>
++    </queries>
+@@ -127,3 +142,30 @@
+             </intent-filter>
+         </activity-alias>
++
++        <!--
++          P6 TTS: background listening (foreground service, mediaPlayback type) and
++          the lock-screen / media-key transport entry point. Both belong to
++          :feature:tts; the receiver filter mirrors
++          LockscreenControlsReceiver.ACTIONS (one table with TtsMediaCommandMapper).
++        -->
++        <service
++            android:name="com.koodoreader.feature.tts.ForegroundTtsService"
++            android:exported="false"
++            android:foregroundServiceType="mediaPlayback" />
++
++        <receiver
++            android:name="com.koodoreader.feature.tts.LockscreenControlsReceiver"
++            android:exported="true">
++            <intent-filter>
++                <action android:name="android.intent.action.MEDIA_BUTTON" />
++                <action android:name="com.koodoreader.tts.action.PLAY" />
++                <action android:name="com.koodoreader.tts.action.PAUSE" />
++                <action android:name="com.koodoreader.tts.action.PLAY_PAUSE" />
++                <action android:name="com.koodoreader.tts.action.STOP" />
++                <action android:name="com.koodoreader.tts.action.NEXT" />
++                <action android:name="com.koodoreader.tts.action.PREVIOUS" />
++                <action android:name="com.koodoreader.tts.action.FAST_FORWARD" />
++                <action android:name="com.koodoreader.tts.action.REWIND" />
++            </intent-filter>
++        </receiver>
+     </application>
+--- a/src/assets/locales/en.json
++++ b/src/assets/locales/en.json
+@@ -95,2 +95,6 @@
+   "Voice": "Voice",
+   "Speed": "Speed",
++  "Pitch": "Pitch",
++  "Volume": "Volume",
++  "Done": "Done",
++  "Text to speech": "Text to speech"
