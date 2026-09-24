@@ -51,6 +51,55 @@ class CoverRef(
 }
 
 /**
+ * A book file to bundle at export time. Mirrors [CoverRef] semantics:
+ * contents are streamed lazily so a 2 GB library never sits in memory.
+ *
+ * Native tracks expose local book files under `<filesDir>/books/<key>.<ext>`;
+ * the desktop `restore.ts` accepts `book/` entries and uses them to satisfy
+ * `BookEntity.path` rows pointing at the device's storage.
+ */
+class BookRef(
+    val name: String,
+    val size: Long,
+    private val opener: () -> java.io.InputStream,
+) {
+    fun openStream(): java.io.InputStream = opener()
+
+    companion object {
+        fun of(name: String, bytes: ByteArray): BookRef =
+            BookRef(name, bytes.size.toLong()) { bytes.inputStream() }
+
+        fun of(file: java.io.File): BookRef =
+            BookRef(file.name, file.length()) { file.inputStream() }
+    }
+}
+
+/**
+ * A font file to bundle at export time. Same streaming contract as
+ * [CoverRef]/[BookRef]. The desktop `backup.ts` does NOT include a `fonts/`
+ * directory (fonts live in `<dataPath>/fonts/` but are exported only when
+ * the user invokes "导出/导出字体"); the bridge accepts a `fonts/` entry on
+ * import and copies it into `<filesDir>/fonts/`. This ref lets the native
+ * track emit a desktop-shaped zip with the `fonts/` directory when needed
+ * — same on-disk layout, separate code path, no temp juggling.
+ */
+class FontRef(
+    val name: String,
+    val size: Long,
+    private val opener: () -> java.io.InputStream,
+) {
+    fun openStream(): java.io.InputStream = opener()
+
+    companion object {
+        fun of(name: String, bytes: ByteArray): FontRef =
+            FontRef(name, bytes.size.toLong()) { bytes.inputStream() }
+
+        fun of(file: java.io.File): FontRef =
+            FontRef(file.name, file.length()) { file.inputStream() }
+    }
+}
+
+/**
  * An opened desktop backup — either the desktop ZIP (a
  * `KoodoReader-Backup-` named zip with per-table `.db` files under `config/`
  * plus `cover/` and `book/` entries) or an unpacked directory with the same
@@ -269,13 +318,29 @@ object BackupBundle {
      * Write a desktop-readable backup ZIP (layout mirrors `backupFromPath`):
      * `config/config.json` (desktop restore REQUIRES this entry),
      * `config/<table>.db` per table (exact desktop DDL), `cover/<name>`.
-     * Book files are deliberately NOT included (user files, not data).
+     * Book files are deliberately NOT included by default — they are user
+     * media on the device and the desktop restore only re-imports them when
+     * a `book/` directory is present; pass [bookFiles] to mirror a desktop
+     * backup that did bundle them. `fonts/` is included only when [fontFiles]
+     * is non-empty (desktop "导出字体" style export). All three asset streams
+     * are passed as `() -> InputStream` so callers never hold the bytes.
+     *
+     * Books live under `book/` in the zip (NOT `books/`); the desktop
+     * restore iterates `book/<file>` and copies each into the storage
+     * location's `book/` directory. Same on-disk layout, both directions.
+     *
+     * [syncJson] lets the caller embed a `config/sync.json` (the desktop
+     * restore re-binds it to `ConfigService.setItem("syncRecord", ...)`);
+     * default is empty so existing callers stay byte-identical.
      */
     fun write(
         out: File,
         tables: Map<String, List<Row>>,
         configJson: String = "{}",
         covers: List<CoverRef> = emptyList(),
+        bookFiles: List<BookRef> = emptyList(),
+        fontFiles: List<FontRef> = emptyList(),
+        syncJson: String = "",
     ) {
         val work = java.nio.file.Files.createTempDirectory("dbio-write").toFile()
         try {
@@ -285,6 +350,11 @@ object BackupBundle {
                     zos.putNextEntry(ZipEntry("config/config.json"))
                     zos.write(configJson.toByteArray())
                     zos.closeEntry()
+                    if (syncJson.isNotEmpty()) {
+                        zos.putNextEntry(ZipEntry("config/sync.json"))
+                        zos.write(syncJson.toByteArray())
+                        zos.closeEntry()
+                    }
                     for (t in DesktopDdl.TABLES) {
                         val rows = tables[t].orEmpty()
                         val dbFile = File(work, "$t.db")
@@ -299,6 +369,20 @@ object BackupBundle {
                     }
                     for (ref in covers) {
                         zos.putNextEntry(ZipEntry("cover/${ref.name}"))
+                        ref.openStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                    // Books are streamed last: they dwarf covers/fonts and
+                    // committing config tables before them keeps progress
+                    // reports meaningful (a partial failure still yields a
+                    // valid desktop-readable zip up to the last finished book).
+                    for (ref in bookFiles) {
+                        zos.putNextEntry(ZipEntry("book/${ref.name}"))
+                        ref.openStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                    for (ref in fontFiles) {
+                        zos.putNextEntry(ZipEntry("fonts/${ref.name}"))
                         ref.openStream().use { it.copyTo(zos) }
                         zos.closeEntry()
                     }

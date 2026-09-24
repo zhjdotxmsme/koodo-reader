@@ -8,9 +8,14 @@ import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.data.entity.PluginEntity
 import com.koodoreader.core.data.entity.WordEntity
 import com.koodoreader.core.dbio.BackupBundle
+import com.koodoreader.core.dbio.BookRef
+import com.koodoreader.core.dbio.CoverRef
+import com.koodoreader.core.dbio.DataExport
+import com.koodoreader.core.dbio.DataImport
 import com.koodoreader.core.dbio.Row
 import com.koodoreader.core.dbio.TableSource
 import java.io.File
+import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -25,7 +30,12 @@ data class ImportReport(
     val failures: List<String>,
 )
 
-data class ExportReport(val file: File, val tables: Map<String, Int>, val covers: Int)
+data class ExportReport(
+    val file: File,
+    val tables: Map<String, Int>,
+    val covers: Int,
+    val books: Int,
+)
 
 /**
  * Bidirectional bridge between the native Room database (one file, five
@@ -38,7 +48,14 @@ data class ExportReport(val file: File, val tables: Map<String, Int>, val covers
  *    copied into the app dirs (streamed, memory-bounded).
  *  - native → desktop: a ZIP the desktop "恢复" dialog accepts as-is
  *    (`config/config.json` required entry + exact desktop DDL per table).
- *    Book files are NOT exported (user data stays on its original medium).
+ *    Book files are bundled so the desktop restore can satisfy `path`
+ *    values pointing at the device's `<filesDir>/books` location.
+ *
+ * P7 additions (data export/import):
+ *  - [noteRowForExport] / [wordRowForExport] map Room entities to the
+ *    desktop CSV/JSON shape (exportType, split color, joined tags).
+ *  - [applyImport] / [buildBookIndex] provide the inverse mapping. Both
+ *    are pure functions (no IO); the caller wraps them in coroutines.
  */
 object DesktopBridge {
 
@@ -110,6 +127,7 @@ object DesktopBridge {
         db: KoodoDatabase,
         coverDir: File,
         timestamp: Long,
+        booksDir: File? = null,
     ): ExportReport = withContext(Dispatchers.IO) {
         outDir.mkdirs()
         val tables: Map<String, List<Row>> = mapOf(
@@ -122,11 +140,19 @@ object DesktopBridge {
         val covers = coverDir.listFiles()
             .orEmpty()
             .filter { it.isFile }
-            .map { com.koodoreader.core.dbio.CoverRef.of(it) } // streamed, not held in memory
+            .map { CoverRef.of(it) } // streamed, not held in memory
+        // P7: bundle book files when the device has them — the desktop restore
+        // expects `book/<key>.<ext>` entries so imported rows' `path` resolves
+        // locally instead of dangling on a desktop absolute path.
+        val bookFiles: List<BookRef> = booksDir?.listFiles()
+            .orEmpty()
+            .filter { it.isFile }
+            .map { BookRef.of(it) }
+            ?: emptyList()
         // Desktop naming (backup.ts): KoodoReader-Backup-y-m-d-<epoch>.zip
         val out = File(outDir, "KoodoReader-Backup-local-$timestamp.zip")
-        BackupBundle.write(out, tables, "{}", covers)
-        ExportReport(out, tables.mapValues { it.value.size }, covers.size)
+        BackupBundle.write(out, tables, "{}", covers, bookFiles)
+        ExportReport(out, tables.mapValues { it.value.size }, covers.size, bookFiles.size)
     }
 
     // ------------------------------------------------------------ table IO
@@ -264,6 +290,168 @@ object DesktopBridge {
         "key" to w.key, "bookKey" to w.bookKey, "date" to w.date, "word" to w.word,
         "sentence" to w.sentence, "chapter" to w.chapter,
     )
+
+    // --------------------------------------------------------- data export
+
+    /**
+     * Shape one [NoteEntity] for the desktop CSV/JSON exporter. The
+     * `exportType` field is what the desktop `importData.ts` uses to
+     * distinguish notes vs highlights (highlights have `notes` empty).
+     */
+    fun noteRowForExport(
+        n: NoteEntity,
+        books: Map<String, BookEntity>,
+    ): DataExport.NoteRow {
+        val book = books[n.bookKey]
+        val isHighlight = n.notes.isNullOrEmpty()
+        val parsedDate = n.date?.let { DataExport.parseDate(it) } ?: Date(0)
+        return DataExport.NoteRow(
+            key = n.key,
+            bookKey = n.bookKey,
+            bookName = book?.name,
+            bookAuthor = book?.author,
+            bookMd5 = book?.md5,
+            chapter = n.chapter,
+            chapterIndex = n.chapterIndex,
+            text = n.text,
+            notes = n.notes, // null for highlights (desktop contract)
+            percentage = n.percentage,
+            color = n.color,
+            tag = parseTag(n.tag),
+            date = parsedDate,
+            exportType = if (isHighlight) DataExport.ExportType.HIGHLIGHT else DataExport.ExportType.NOTE,
+        )
+    }
+
+    /** Shape one [WordEntity] for dictionary history CSV/JSON. */
+    fun wordRowForExport(
+        w: WordEntity,
+        books: Map<String, BookEntity>,
+    ): DataExport.WordRow {
+        val book = books[w.bookKey]
+        return DataExport.WordRow(
+            key = w.key,
+            bookKey = w.bookKey,
+            bookName = book?.name,
+            bookAuthor = book?.author,
+            bookMd5 = book?.md5,
+            chapter = w.chapter,
+            word = w.word,
+            sentence = w.sentence,
+            date = w.date?.let { DataExport.parseDate(it) } ?: Date(0),
+        )
+    }
+
+    /**
+     * Reverse a `"a,b,c"` string back to a `List<String>`. Tags land in
+     * Room as either a desktop JSON array string `["a","b"]` or a plain
+     * comma list — both forms are accepted to keep parity with older
+     * imports.
+     */
+    private fun parseTag(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
+        val trimmed = raw.trim()
+        // JSON array form (Kotlin writes `["a","b"]` for tag column)
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            val inner = trimmed.substring(1, trimmed.length - 1)
+            if (inner.isBlank()) return emptyList()
+            return inner.split(",").map { it.trim().removeSurrounding("\"") }.filter { it.isNotEmpty() }
+        }
+        return trimmed.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Build a [DataImport.BookIndex] once per import call so `bookMd5`
+     * resolution is O(1) per row.
+     */
+    fun buildBookIndex(books: List<BookEntity>): DataImport.BookIndex {
+        val byKey = HashMap<String, String>()
+        val byMd5 = HashMap<String, String>()
+        books.forEach { b ->
+            byKey[b.key] = b.name ?: ""
+            if (!b.md5.isNullOrEmpty()) byMd5[b.md5] = b.key
+        }
+        return DataImport.BookIndex(byKey, byMd5)
+    }
+
+    /**
+     * Persist freshly decoded CSV/JSON rows back into Room. Pure mapping,
+     * no IO — caller decides the dispatcher.
+     */
+    suspend fun applyImport(fresh: List<DataImport.DecodedRow>, db: KoodoDatabase): Int {
+        var inserted = 0
+        db.withTransaction {
+            // Split per-table — same merge-by-primary-key semantics as
+            // desktop `importNotesData` (`saveRecord` skips duplicates).
+            val noteRows = mutableListOf<NoteEntity>()
+            val wordRows = mutableListOf<WordEntity>()
+            fresh.forEach { d ->
+                when (d.exportType) {
+                    DataImport.ExportType.NOTE,
+                    DataImport.ExportType.HIGHLIGHT -> noteRows.add(noteFromImport(d))
+                    DataImport.ExportType.DICTIONARY_HISTORY -> wordRows.add(wordFromImport(d))
+                    DataImport.ExportType.UNKNOWN -> Unit
+                }
+            }
+            if (noteRows.isNotEmpty()) {
+                db.noteDao().upsertAll(noteRows); inserted += noteRows.size
+            }
+            if (wordRows.isNotEmpty()) {
+                db.wordDao().upsertAll(wordRows); inserted += wordRows.size
+            }
+        }
+        return inserted
+    }
+
+    private fun noteFromImport(d: DataImport.DecodedRow): NoteEntity = NoteEntity(
+        key = d.raw["key"].orEmpty(),
+        bookKey = d.raw["bookKey"].orEmpty().ifBlank { null },
+        date = d.raw["date"]?.takeIf { it.isNotEmpty() },
+        chapter = d.raw["chapter"]?.takeIf { it.isNotEmpty() },
+        chapterIndex = d.raw["chapterIndex"]?.toLongOrNull(),
+        text = d.raw["text"]?.takeIf { it.isNotEmpty() },
+        cfi = d.raw["cfi"]?.takeIf { it.isNotEmpty() },
+        range = d.raw["range"]?.takeIf { it.isNotEmpty() },
+        notes = d.raw["notes"]?.takeIf { it.isNotEmpty() },
+        percentage = d.raw["percentage"]?.takeIf { it.isNotEmpty() },
+        color = d.raw["color"]?.let { rejoinColor(d.raw["styleType"], it) },
+        tag = serializeTag(d.raw["tag"]),
+    )
+
+    private fun wordFromImport(d: DataImport.DecodedRow): WordEntity = WordEntity(
+        key = d.raw["key"].orEmpty(),
+        bookKey = d.raw["bookKey"].orEmpty().ifBlank { null },
+        date = d.raw["date"]?.takeIf { it.isNotEmpty() },
+        word = d.raw["word"]?.takeIf { it.isNotEmpty() },
+        sentence = d.raw["sentence"]?.takeIf { it.isNotEmpty() },
+        chapter = d.raw["chapter"]?.takeIf { it.isNotEmpty() },
+    )
+
+    /** Pack `styleType-#RRGGBB` back to a Long for Room (parity with `splitColor`). */
+    private fun rejoinColor(styleType: String?, color: String?): Long? {
+        if (color.isNullOrBlank()) return null
+        val style = when (styleType?.lowercase()) {
+            "background" -> 0x10000000L.toLong()
+            "underline" -> 0x20000000L.toLong()
+            "bold" -> 0x30000000L.toLong()
+            "italic" -> 0x40000000L.toLong()
+            else -> 0x10000000L.toLong()
+        }
+        val rgb = when {
+            color.startsWith("#") && color.length == 7 -> color.substring(1).toLong(16)
+            else -> color.toLongOrNull() ?: 0L
+        }
+        return style or (rgb and 0xFFFFFFL)
+    }
+
+    /** JSON-array-tag the desktop stores; we mirror that exactly so the
+     *  next export preserves the literal shape. */
+    private fun serializeTag(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val parts = parseTag(raw)
+        if (parts.isEmpty()) return null
+        return parts.joinToString(prefix = "[", postfix = "]", separator = ",") { "\"$it\"" }
+    }
 
     // ---------------------------------------------------------------- utils
 
