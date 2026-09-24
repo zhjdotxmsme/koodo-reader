@@ -1,0 +1,134 @@
+p5-image 接线补丁（engine/image 注册到主仓构建）
+================================================
+
+适用范围：`android/settings.gradle`、`android/app/build.gradle`（以及可选的
+`android/engine/image/build.gradle` 依赖接线）。**本卡的工作树没有改这三个文件**
+—— 硬约束禁止并行期临时改动再 revert（8 个 sub 共用同一工作区，无法保证原子性）。
+因此注册步骤以本补丁文件的形式交付，由主线程/用户决定何时应用。
+
+模块与设计说明见 `docs/p5-image-engine-adr.md`（ADR-006）。
+单测在独立测试台 `.worktrees/.p5-testbed/` 运行（见 §5），不依赖本补丁。
+
+
+§1 android/settings.gradle —— 注册模块（必需，一行）
+----------------------------------------------------
+
+定位：文件末尾 `include ':engine:pdf'` 之后（该段注释块结束处）。
+
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -（文件末尾，':engine:pdf' 段之后）
+ include ':engine:pdf'
++
++// Native comic / image-sequence reader (P5, docs/p5-image-engine-adr.md):
++// CBZ（zip）/ CBT（tar, tar.gz）/ 散图目录已落地；CB7 = 计划（纯 Java，
++// 无 .so）；CBR 明确不做原生，维持兜底岛渲染（同 ADR-006 §4.2/§7）。
++// Pure JVM module（运行时依赖仅 :core:importer）—— `gradle :engine:image:test`
++// 不需要 Android SDK，也不引入任何 .so（16 KB 页对齐无关）。
++include ':engine:image'
+
+要点：
+- 只是**一行 include**，不改 `pluginManagement` / `dependencyResolutionManagement`；
+- `:engine:image` 用 `org.jetbrains.kotlin.jvm` + `java-library`（版本由根
+  `android/build.gradle` 的 `plugins { id 'org.jetbrains.kotlin.jvm' version '1.9.24' apply false }` 提供），
+  与 `:engine:cfi/:engine:text/:engine:pdf` 完全同构，不需要新增根级插件声明；
+- 撤销 = 删掉这一行（ADR-003 的回滚方式）。
+
+
+§2 android/app/build.gradle —— 让原生壳消费引擎（必需，一行）
+-------------------------------------------------------------
+
+定位：`dependencies { }` 里原生的 engine 依赖块（`implementation project(':engine:pdf')` 附近）。
+
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -（native engine 依赖块）
+     implementation project(':engine:pdf')
++    // 漫画/图片阅读（P5）：懒加载窗口 + zip/tar/tree 解包 + 单双页与缩放状态机。
++    // Compose 宿主（app/src/main/java/**/imagehost/）从这里取 ComicViewerModel。
++    implementation project(':engine:image')
+
+不需要新增 Compose 依赖：`:app` 已有 compose-bom 2024.06.00 + ui/foundation/material3
+（宿主模板只用到 foundation.ui、foundation.gestures、ui.graphics、runtime）。
+
+
+§3 Compose 宿主移植（把模板搬进 :app）
+-------------------------------------
+
+模板文件（当前被 `:engine:image` 排除出编译，见 ADR-006 §6）：
+  android/engine/image/src/main/kotlin/com/koodoreader/engine/image/host/ComicViewerHost.kt
+
+步骤：
+1. 移动到 `android/app/src/main/java/com/koodoreader/app/reader/imagehost/ComicViewerHost.kt`
+   （包名同步改为 `com.koodoreader.app.reader.imagehost`），删掉 `engine/image/build.gradle`
+   里的 `sourceSets { main { kotlin { exclude ... } } }` 排除块（此时它已无对象）。
+2. 打开书籍：
+   ```kotlin
+   val extractor = remember(path) { ArchiveExtractors.open(File(path)) }
+   val ioExecutor = remember { Executors.newSingleThreadExecutor { Thread(it, "comic-page-loader") } }
+   val loader = remember(extractor) { DefaultPageLoader(extractor, executor = ioExecutor) }
+   val model = remember(loader) { ComicViewerModel(loader) }
+   ComicViewerHost(model = model, decoder = BitmapFactoryDecoder, ioScope = scope)
+   ```
+3. 解码器实现 `ComicPageDecoder`：`BitmapFactory.decodeByteArray(page.bytes, 0, page.byteCount, opts)`，
+   用 `inSampleSize` 按 `targetWidth` 降采样；解码后即可丢弃 `page.bytes`（引擎仍持有驻留副本，
+   由窗口淘汰释放）。
+4. 路由守卫：打开前先看 `ArchiveExtractors.kindOf(file).support`
+   —— `DEFERRED`（CBR）/`PLANNED`（CB7）必须走兜底岛（`target=webview` 的 WebView 阅读页），
+   不要把 `UnsupportedArchiveException` 当控制流、也不要弹技术错误。
+5. 退出：`ComicViewerHost` 内部已有 `DisposableEffect { onDispose { model.close() } }`；
+   宿主额外记得 `ioExecutor.shutdown()`。
+6. 真机回归清单（本卡未做，见 ADR-006 §10）：真实 CBZ（含 sub 目录/大小写混合扩展名）、
+   CBT、散图目录各 ≥3 本；竖屏单页 / 横屏双页 / RTL 漫画；2K 彩页连续翻 100 页看内存曲线
+   （应稳定在 7 页驻留 + 宿主位图缓存）。
+
+
+§4 CB7（7z）接线（可选，P5b）
+----------------------------
+
+--- a/android/engine/image/build.gradle
++++ b/android/engine/image/build.gradle
+@@
+     api(project(":core:importer"))
++    // CB7/7z：纯 Java，无 .so，Apache-2.0（ADR-006 §4.1）。接线后
++    // SevenZExtractor.NATIVE_SUPPORTED 改 true 并补实现（见该文件 TODO）。
++    implementation 'org.apache.commons:commons-compress:1.27.1'
+
+注意：接线后 `gradle :engine:image:test` 需要能解析该依赖（首次需联网）。
+`SevenZExtractor.open()` 的实现骨架（页表过滤/排序/读页）在该文件的 TODO 注释里，
+与 `ZipExtractor` 同形；同时把 `ArchiveExtractorsTest` 里「7z 必须抛异常」的用例
+改成「能读出页表」。
+
+
+§5 验证命令
+-----------
+
+注册之前（工作树现状，独立测试台）：
+```powershell
+cd .worktrees/.p5-testbed
+$env:JAVA_HOME           = 'D:\jdk-17\jdk-17.0.13+11'
+$env:GRADLE_USER_HOME    = 'E:\open-source\koodo-reader\.worktrees\.gradle-home'   # 沙箱禁止写 ~/.gradle
+$env:GRADLE_RO_DEP_CACHE = 'C:\Users\54389\.gradle\caches'                         # 只读依赖缓存
+$gradle = "$env:USERPROFILE\.gradle\wrapper\dists\gradle-8.5-bin\5t9huq95ubn472n8rpzujfbqh\gradle-8.5\bin\gradle.bat"
+& $gradle :engine:image:test --tests "*PageLoaderTest*" --offline --console=plain
+& $gradle :engine:image:test --offline --console=plain
+```
+
+注册之后（主仓，标准路径）：
+```powershell
+cd android
+.\gradlew :engine:image:test --tests "*PageLoaderTest*"
+.\gradlew :engine:image:test
+```
+
+期望：67 tests / 67 passed（PageLoaderTest 14 项）。
+
+
+§6 未纳入本补丁的事（有意为之）
+-------------------------------
+
+- **不动** `android/app/build.gradle` 里的 `-Ptarget=webview|native` 双轨逻辑：
+  CBR/CB7 的兜底岛入口仍然需要它（ADR-006 §7）。
+- **不删**任何兜底岛资产：`public/lib/7z-wasm/**`、`public/lib/libunrar/**` 的下线前置条件
+  见 ADR-006 §7（CB7 要先接线，CBR 要先立项）。契约守卫 `nativeBridge.js` /
+  `folderBridge.js` / `androidBuild.test.js` 在 P8 前不得删除。

@@ -1,0 +1,72 @@
+// engine/image — native comic / image-sequence reader (P5).
+//
+// 承载格式：CBZ（zip）/ CBT（tar, 含 .tar.gz）/ 散图目录（SAF tree 导出后）已实现；
+// CB7（7z）与 CBR（rar）为骨架 + 明确路线（见 docs/p5-image-engine-adr.md §4）。
+//
+// PURE KOTLIN JVM MODULE（与 :engine:cfi / :engine:text / :engine:pdf 同一取舍）：
+// 「懒加载窗口策略 + 归档解包接口 + zip/tar/tree 实现 + 单双页排版策略 +
+// 缩放平移状态机」全部是纯逻辑，因此 `gradle test` 不需要 Android SDK。
+// Compose 宿主（ComicViewerHost）落在 :app 侧消费本模块，与
+// :engine:pdf → engine/pdfhost 的既有分工一致（ADR §6）。
+//
+// .so / 16 KB 页对齐策略（本模块当前 0 个 .so）：
+//   ① 不引入 libunrar（UnRAR license）、不引入 7-Zip-JBinding：两者都带 .so，
+//      且预编译产物未必按 16 KB 页对齐；Android 15+ 的 16 KB page size 设备
+//      （Google Play 2025-11 起要求）会直接拒绝加载未对齐 .so。
+//   ② 7z（CB7）走 Apache Commons Compress 的纯 Java SevenZFile —— 无 .so，
+//      无 16 KB 问题，因此「CB7 可以原生，且不需要 native lib」。
+//   ③ RAR（CBR）暂不原生：无可用的纯 Java、许可证可接受的 RAR5 解压实现，
+//      维持兜底岛渲染，直到 CBR 单独立项（ADR §4.2）。
+//   ④ 若将来必须引入 .so：必须用 NDK r27+ 且 `-Wl,-z,max-page-size=16384`
+//      自行编译，并用 ABI 拆分隔离体积，例如 app/build.gradle 里
+//          splits { abi { enable true; reset(); include 'arm64-v8a', 'armeabi-v7a' } }
+//      或把漫画引擎整体放进 dynamic feature module（ADR-003 §2 体积控制）。
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+    // java-library 提供 api(...) 配置：把 core:importer 的漫画导入规则
+    // （页序/图片扩展名）作为传递依赖暴露给消费方（:app 的 imagehost）。
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // P1 已落地的漫画导入规则是唯一事实源：页序过滤（图片扩展名清单）必须与
+    // 封面抽取 / books.page 完全一致，否则「封面 = 第 0 页」不成立。
+    // 具体衔接点：ImageEntries.EXTS = ComicCover.IMAGE_EXTS，
+    // 以及 ZipExtractorTest 里的行为断言（ComicCover.extract() 的封面字节
+    // 必须等于本模块 pages[0] 的字节）。
+    api(project(":core:importer"))
+
+    // Test only — 运行时零依赖（7z/rar 的依赖取舍见文件头 ②③）。
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Compose 宿主骨架是「移植模板」，不是本模块的编译单元：
+//   src/main/kotlin/com/koodoreader/engine/image/host/ComicViewerHost.kt
+// androidx.compose.* 以 AAR 发布，纯 JVM 模块无法解析；因此这里把它排除出
+// :engine:image 的 JVM 编译（否同 :engine:pdf 的 pdfhost 放在 :app）。
+// 移植步骤与需要的依赖见 docs/patches/p5-image.patch §3。
+sourceSets {
+    main {
+        kotlin {
+            exclude 'com/koodoreader/engine/image/host/**'
+        }
+    }
+}
