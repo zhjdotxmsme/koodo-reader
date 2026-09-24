@@ -230,8 +230,11 @@ object DataExport {
     /**
      * JSON encode a single row without reflection. Strings escape
      * backslash/quote/control; numerics emit raw digits; null maps to the
-     * literal `null` token. Numbers never appear quoted, matching the
-     * desktop's `JSON.stringify(data, null, 2)` behaviour.
+     * literal `null` token. Numbers never appear quoted.
+     *
+     * Output is COMPACT single-line JSON (`{"k":v,...}`): whitespace is not part of
+     * the desktop contract — `JSON.parse` / the native [DataImport] parser accept both
+     * — and an export can carry thousands of rows.
      */
     internal fun jsonEncode(row: Map<String, Any?>): String {
         fun enc(v: Any?): String = when (v) {
@@ -246,7 +249,7 @@ object DataExport {
                 .replace("\t", "\\t") + "\""
         }
         return row.entries.joinToString(prefix = "{", postfix = "}") { (k, v) ->
-            "\"${k.replace("\"", "\\\"")}\": ${enc(v)}"
+            "\"${k.replace("\"", "\\\"")}\":${enc(v)}"
         }
     }
 

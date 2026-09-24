@@ -196,8 +196,10 @@ class BackupBundleRoundTripTest {
         )
         assertTrue(out.name.startsWith("KoodoReader-Note-"))
         assertTrue(out.name.endsWith(".csv"))
-        // bare file, not a zip:
-        val first = out.inputStream().read()
+        // bare file, not a zip — the stream MUST be closed, otherwise Windows keeps the
+        // file locked and JUnit's @TempDir cleanup fails with "Failed to close extension
+        // context" (the export file is still open).
+        val first = out.inputStream().use { it.read() }
         assertTrue(first.toInt() != 0x50) // 'P' of PK\x03\x04
     }
 
@@ -207,11 +209,15 @@ class BackupBundleRoundTripTest {
             key,bookKey,bookMd5,bookName,exportType,date,chapter,text,notes,tag,color,styleType,chapterIndex,percentage
             n1,missing,aAAa,Book One,note,2025-01-01,c1,marked,user comment,"a,b",,#FEF3CD,background,1,5
             n2,,dEEd,Book Two,note,2025-01-02,c2,t2,,,
-        """.trimIndent().trimIndent() // ensure no leading whitespace surprise
+            n3,gone,ffff,Book Three,note,2025-01-03,c3,t3,,,
+        """.trimIndent()
         val parsed = DataImport.decodeCsv(csv)
-        assertEquals(2, parsed.size)
+        assertEquals(3, parsed.size)
         val books = DataImport.BookIndex(
-            byKey = mapOf("k1" to "Book One"),
+            // A real index is derived from ONE book list, so byKey covers every value of
+            // byMd5 — that invariant is what lets resolveBooks treat "resolved, but absent
+            // from byKey" as a missing book.
+            byKey = mapOf("k1" to "Book One", "k2" to "Book Two"),
             byMd5 = mapOf("aAAa" to "k1", "dEEd" to "k2"),
         )
         val (resolved, missing) = DataImport.resolveBooks(parsed, books)
@@ -219,7 +225,9 @@ class BackupBundleRoundTripTest {
         assertEquals("k1", resolved[0].raw["bookKey"])
         // n2: bookKey blank, md5 → k2 (library has k2 by md5)
         assertEquals("k2", resolved[1].raw["bookKey"])
-        assertTrue(missing.isEmpty())
+        // n3: neither the key nor the md5 is in the library → keeps its key and is reported
+        assertEquals("gone", resolved[2].raw["bookKey"])
+        assertEquals(listOf("Book Three"), missing)
     }
 
     @Test
