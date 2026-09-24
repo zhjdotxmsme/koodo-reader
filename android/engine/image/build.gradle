@@ -45,7 +45,16 @@ dependencies {
     // 必须等于本模块 pages[0] 的字节）。
     api(project(":core:importer"))
 
-    // Test only — 运行时零依赖（7z/rar 的依赖取舍见文件头 ②③）。
+    // CB7 / .7z（P5-CB7 补强，卡 t-mufbaoux-yjmwrl）：commons-compress 的 SevenZFile 是
+    // **纯 Java**（Apache-2.0，零 .so → 无 16 KB 页对齐问题），因此 CB7 可以原生读，
+    // 不像 CBR 那样受 UnRAR 许可证 + native 库限制。
+    //   - commons-compress：7z 容器 + Copy/LZMA/DEFLATE/BZIP2/BCJ2 等方法
+    //   - xz：LZMA / LZMA2 解码器（SevenZFile 必需的可选依赖；7z 默认就是用 LZMA2）
+    // 这两条是本模块**唯一**的运行时依赖（此前运行时零依赖，见文件头 ②③ 的取舍说明）。
+    implementation 'org.apache.commons:commons-compress:1.27.1'
+    implementation 'org.tukaani:xz:1.10'
+
+    // Test only.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

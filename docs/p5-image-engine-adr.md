@@ -68,17 +68,37 @@ seek(4) → 加载 7；卸载 0               驻留 {1..7}   ← 7 页上限，
 | **CBT** / `.tar` | ✅ 实现 | `TarExtractor`（`RandomAccessFile` 按偏移随机读） | ustar、GNU long name（`L`）、`prefix` 字段、八进制/base-256 尺寸 |
 | `.tar.gz` / `.tgz` | ✅ 实现（有取舍） | `TarExtractor`（打开时整体解压到内存） | gzip 无法随机访问；超 `MAX_GZIP_MATERIALISE_BYTES`（96 MB）直接拒绝并提示转 CBZ |
 | 散图目录（SAF tree / 文件夹漫画） | ✅ 实现 | `TreeExtractor` | 相对路径 natural 序；跳过隐藏项、`._` 资源分支、符号链接 |
-| **CB7** / `.7z` | 🟡 计划（依赖未接） | `SevenZExtractor`（骨架） | 见 §4.1 |
+| **CB7** / `.7z` | ✅ 实现（P5-CB7 补强） | `SevenZExtractor` | 纯 Java（commons-compress + xz），零 `.so`；见 §4.1 |
 | **CBR** / `.rar` | ⛔ 不做原生 | `RarExtractor`（骨架 + 理由） | 见 §4.2 |
 
 路由入口是 `ArchiveExtractors.kindOf(file)`：**魔数优先**（`.cbz` 里其实可能是 rar）、扩展名兜底；
 宿主看 `ArchiveKind.support`（`READY / PLANNED / DEFERRED / UNSUPPORTED`）决定是否回落兜底岛。
 
-### 4.1 CB7：可以原生，而且不需要 `.so`
+### 4.1 CB7：可以原生，而且不需要 `.so`（已接线）
 
-`org.apache.commons:commons-compress:1.27.1` 的 `SevenZFile` 是纯 Java（LZMA/LZMA2 都在 Java 侧）、
-Apache-2.0、约 1 MB、只读且无 `.so` ⇒ **没有 16 KB 页对齐问题**。本卡不接线的原因只有一个：
-`:engine:image` 目前运行时零依赖，接线会让离线单测链路依赖网络下载。接线步骤见 patch §2。
+`org.apache.commons:commons-compress:1.27.1` 的 `SevenZFile` 是纯 Java、Apache-2.0、只读、无 `.so`
+⇒ **没有 16 KB 页对齐问题**。P5-CB7 补强（卡 `t-mubaoux…` 系列，见 `docs/patches/p5-image-cb7.patch`）
+已完成接线：`ArchiveKind.SEVEN_ZIP.support = READY`，页表/读页与 `ZipExtractor` 同形
+（`ImageEntries` 过滤 + `NaturalOrder` 排序 ⇒ 「封面 = 第 0 页、页数与导入一致」在 CB7 上同样成立）。
+
+依赖两条，都是纯 Java：
+
+| 依赖 | 作用 |
+|---|---|
+| `org.apache.commons:commons-compress:1.27.1` | 7z 容器 + Copy/LZMA/DEFLATE/BZIP2/AES 解码 |
+| `org.tukaani:xz:1.10` | LZMA / LZMA2 解码器（`SevenZFile` 的可选依赖，7z 默认就用 LZMA2） |
+
+这是本模块**唯一**的运行时依赖（此前运行时零依赖；接线后 `gradle :engine:image:test` 首次需要下载）。
+
+**边界（诚实标注，已验证）**：
+
+- **BCJ2**（`-m0=BCJ2`，x86 可执行文件的多输入/输出流过滤器）：commons-compress 明确未实现
+  （`IOException: Multi input/output stream coders are not yet supported`），图像归档几乎不会用到
+  ⇒ 遇到即抛 `UnsupportedArchiveException`，提示路由到兜底岛（与 CBR 同口径，不假装支持）。
+- **AES 头部加密**（`-mhe=on`）：无密码连条目列表都读不出来 ⇒ 打开即失败并给出可执行提示。
+- 单页解压上限 `MAX_PAGE_BYTES = 64 MB`（与 `DefaultPageLoader` 的常驻上限同量级），超限报错不 OOM。
+- 页表夹具覆盖 5 种变体（Copy / LZMA / LZMA2 / BCJ2 / 加密头），见
+  `src/test/resources/sevenz/README.md`。
 
 ### 4.2 CBR：暂不原生（明确不做，不是遗漏）
 
@@ -120,7 +140,7 @@ Apache-2.0、约 1 MB、只读且无 `.so` ⇒ **没有 16 KB 页对齐问题**�
 | # | 资产 / 行为 | 当前角色 | 下线前置条件 | 证据命令 / 验证 | 回退方式 |
 |---|---|---|---|---|---|
 | 1 | 路由表行「CBZ/CBT → 兜底岛」 | WebView 渲染漫画 | CBZ/CBT 回归集通过 + 原生理赔通过 | `gradle :engine:image:test`；真机打开 `.cbz`/`.cbt` 各 3 本 | 把该格式的 `support` 改回非 `READY`，路由回兜底岛 |
-| 2 | `public/lib/7z-wasm/**`（1.8 MB wasm） | CB7 解码 | **`SevenZExtractor` 接线（patch §2）+ CB7 回归通过** | 接线后 `ArchiveExtractors.kindOf(x.cb7) == SEVEN_ZIP` 且 `pageCount>0` | 恢复该目录 + 路由回退（wasm 在 git 历史里） |
+| 2 | `public/lib/7z-wasm/**`（1.8 MB wasm） | CB7 解码（兜底岛） | **`SevenZExtractor` 已接线 ✅（P5-CB7 补强）；剩余前置：CB7 路由切换 + 真机回归** | `ArchiveExtractors.kindOf(x.cb7) == SEVEN_ZIP` 且 `pageCount>0`（单测已锁）；真机回归未做 | 恢复该目录 + 路由回退（wasm 在 git 历史里） |
 | 3 | `public/lib/libunrar/**`（174 KB wasm） | CBR 解码 | **CBR 单独立项**（§4.2：许可证 + `.so`）；当前**不下线** | — | 本就是保留项 |
 | 4 | 桌面 `ComicRender` / `comic-book.js`（打包进 `kookit-extra.min.mjs`） | 桌面/兜底岛漫画渲染 | P8 整体退役（ADR-003 ④），且 CB7/CBR 都原生或明确驻留 | P8 验收：主变体启动无 WebView 加载 | git 历史 |
 | 5 | 契约守卫 `nativeBridge.js` / `folderBridge.js` / `androidBuild.test.js` | 兜底岛↔原生壳兼容层 | **P8 前不得删除**（ADR-003 §1） | `node scripts/check-import-rules.js`、`yarn test` | — |
@@ -167,7 +187,8 @@ $env:GRADLE_RO_DEP_CACHE = 'C:\Users\54389\.gradle\caches'
 |---|---|---|
 | 真机回归（打开真实 CBZ/CBT 的手感、内存） | ❌ 未做 | 本机无 Android SDK/设备；窗口策略只有 JVM 单测覆盖 |
 | Compose 宿主编译 | ❌ 未做 | 模板文件被排除出本模块编译，移植到 `:app` 时需真编译一次 |
-| CB7 / CBR 真机路径 | ❌ 未做 | 依赖未接；错误信息已给出路由建议，测试锁定「必须提示兜底岛/计划依赖」 |
+| CB7 真机路径 | ⚠️ 部分 | **实现已完成**（纯 Java、零 `.so`），5 种变体单测覆盖；剩余：路由切换 + 真机打开一本 `.cb7`。BCJ2 过滤器明确不支持（走兜底岛，见 §4.1） |
+| CBR 真机路径 | ❌ 未做 | 明确不做原生（§4.2）；`RarExtractor` 给出路由建议，测试锁定「必须提示兜底岛」 |
 | 桌面参考实现逐行对齐 | ⚠️ 部分 | `ComicRender` 不可读（§1），页序/封面契约以 P1 为准，排版手感以 ADR 描述为准 |
 | `tar.gz` 内存解压 | ⚠️ 取舍 | 有 96 MB 上限 + 明确拒绝路径（已测） |
 | pax 扩展头 `path` 覆盖、tar 校验和验证 | ⚠️ 未实现 | 对漫画卷宗罕见；列入后续 |

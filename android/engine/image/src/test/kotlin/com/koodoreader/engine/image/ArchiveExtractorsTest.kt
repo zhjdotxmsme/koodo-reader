@@ -76,14 +76,19 @@ class ArchiveExtractorsTest {
     }
 
     @Test
-    fun `seven zip is planned with a concrete pure java dependency`() {
+    fun `seven zip is wired through the pure java dependency`() {
+        // CBR 仍是骨架（UnRAR 许可证 + native 库），CB7 已实装（P5-CB7 补强）：
+        // 这里用「魔数正确但内容不是 7z」的文件，验证失败路径给出的是**可执行**的错误，
+        // 而不是像接线前那样无条件抛「尚未接线」。
         val seven = file("book.cb7", bytesOf(0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x04))
 
         val error = assertThrows(UnsupportedArchiveException::class.java) { ArchiveExtractors.open(seven) }
 
-        assertTrue(error.message!!.contains("commons-compress"), "错误信息带出计划依赖: ${error.message}")
-        assertFalse(SevenZExtractor.NATIVE_SUPPORTED)
-        assertTrue(SevenZExtractor.PLANNED_DEPENDENCY.startsWith("org.apache.commons:commons-compress:"))
+        assertTrue(error.message!!.contains("打开失败"), "损坏的 7z 要报可诊断的理由: ${error.message}")
+        assertTrue(SevenZExtractor.NATIVE_SUPPORTED)
+        assertTrue(SevenZExtractor.DEPENDENCY.contains("commons-compress"))
+        // 依赖必须是纯 Java（无 .so）：这是 CB7 能原生、CBR 不能的分界线。
+        assertFalse(SevenZExtractor.DEPENDENCY.contains(".so"))
     }
 
     @Test
@@ -96,11 +101,17 @@ class ArchiveExtractorsTest {
     @Test
     fun `native readable kinds are exactly the implemented ones`() {
         assertEquals(
-            setOf(ArchiveKind.ZIP, ArchiveKind.TAR, ArchiveKind.TAR_GZIP, ArchiveKind.DIRECTORY),
+            setOf(
+                ArchiveKind.ZIP,
+                ArchiveKind.TAR,
+                ArchiveKind.TAR_GZIP,
+                ArchiveKind.SEVEN_ZIP,
+                ArchiveKind.DIRECTORY,
+            ),
             ArchiveExtractors.nativeReadableKinds(),
         )
         assertEquals(ArchiveKind.Support.DEFERRED, ArchiveKind.RAR.support)
-        assertEquals(ArchiveKind.Support.PLANNED, ArchiveKind.SEVEN_ZIP.support)
+        assertEquals(ArchiveKind.Support.READY, ArchiveKind.SEVEN_ZIP.support)
         assertEquals(ArchiveKind.Support.READY, ArchiveKind.ZIP.support)
         assertEquals(ArchiveKind.Support.UNSUPPORTED, ArchiveKind.UNKNOWN.support)
     }

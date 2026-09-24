@@ -72,8 +72,8 @@ enum class ArchiveKind(
     /** .tar.gz / .tgz（CBT 的压缩变体，见 TarExtractor 的体积上限取舍） */
     TAR_GZIP("tar.gz", setOf("tgz"), Support.READY),
 
-    /** CB7 / .7z —— 纯 Java 方案已定（commons-compress SevenZFile），待接线 */
-    SEVEN_ZIP("7z", setOf("cb7", "7z"), Support.PLANNED),
+    /** CB7 / .7z —— 纯 Java 方案已接线（commons-compress SevenZFile，见 [SevenZExtractor]） */
+    SEVEN_ZIP("7z", setOf("cb7", "7z"), Support.READY),
 
     /** CBR / .rar —— 暂不原生（许可证 + .so），维持兜底岛 */
     RAR("rar", setOf("cbr", "rar"), Support.DEFERRED),
@@ -131,8 +131,11 @@ private fun ByteArray.matches(offset: Int, vararg expected: Int): Boolean {
     return true
 }
 
-/** 容器类型已知但当前不能原生读（7z/rar）或数据损坏。 */
-class UnsupportedArchiveException(message: String) : IOException(message)
+/** 容器类型已知但当前不能原生读（rar）或数据损坏。 */
+class UnsupportedArchiveException(
+    message: String,
+    cause: Throwable? = null,
+) : IOException(message, cause)
 
 /**
  * 归档打开入口：魔数优先、扩展名兜底，然后分派到具体实现。
@@ -166,8 +169,8 @@ object ArchiveExtractors {
         ArchiveKind.ZIP -> ZipExtractor.open(file)
         ArchiveKind.TAR, ArchiveKind.TAR_GZIP -> TarExtractor.open(file)
         ArchiveKind.DIRECTORY -> TreeExtractor.open(file)
-        // 未接线的两种容器各有自己的骨架文件（错误信息也写在那里，避免两处漂移）
         ArchiveKind.SEVEN_ZIP -> SevenZExtractor.open(file)
+        // CBR 明确不做原生：错误信息写在它自己的骨架文件里（避免两处漂移）
         ArchiveKind.RAR -> RarExtractor.open(file)
         ArchiveKind.UNKNOWN -> throw UnsupportedArchiveException("无法识别的漫画容器: ${file.name}")
     }
