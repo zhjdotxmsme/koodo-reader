@@ -111,7 +111,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | **P3 PDF 原生阅读器 ★** | pdf.js WebView 渲染、搜索、大纲、密码、批注 | ✅ `engine:pdf` + `pdfhost` + `NativePdfScreen` | ✅ | 61 | ✅ `format == "PDF"`；但工具栏 **大纲/搜索/导出快照仍是 TODO 空操作** |
 | P4 MOBI/AZW3 | PalmDOC + MOBI6/KF8 + EXTH | 🟡 `engine:mobi`（HUFF/CDIC 明确未实现，抛类型化错误） | ✅ | 74 | ❌ 未接线（走兜底岛） |
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
-| P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBT 部分、**CB7/CBR 仅骨架**） | ✅ | 67 | ❌ 未接线 |
+| P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
 | P5.5 FB2/DOCX/HTML/MHTML | 单独立项评估 | ✅ 评估 + ADR-006（**仅文档**） | n/a | n/a | ❌ 4 个 include 是幽灵工程（已注释） |
 | P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | ❌ **无任何入口**（`ShellNavHost` 里没有对应屏幕） |
 | P7 本地备份 | zip 导入导出、数据导入导出（无云同步） | ✅ `BackupScreen` + `core:dbio` | ✅ | 22（3 失败） | ✅ |
@@ -140,7 +140,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
 | 5 | OCR 下载适配层 | OCR 无法按需下载模型 | ML Kit 的 options 不是 `OptionalModuleApi`，需改设计（改跟随 ML Kit 自身下载 / 换 bundled 制品） |
-| 6 | CB7（7z）/ CBR（rar） | 漫画格式两种不可原生读 | `SevenZExtractor` 接 commons-compress；CBR 需另立项 |
+| 6 | ~~CB7（7z）~~ 已修 / CBR（rar） | CB7 可原生读；CBR 仍不可 | CB7 已接 commons-compress（见 §9）；**CBR 按 ADR-002 明确不做原生**（无纯 JVM 可用 RAR5 解压器，继续走兜底岛） |
 | 7 | MOBI HUFF/CDIC | 部分老 mobi 读不了 | `engine:mobi` 明确未实现压缩 17480 |
 | 8 | PDF 工具栏 3 个 TODO | 大纲/搜索/导出快照不可用 | 接 `PdfHostBridge` 已有接口 |
 | 9 | MHTML/HTML/FB2/DOCX | 4 种格式无原生实现 | 看板 D0（XHTML→TextBlock 扁平化）+ R1（core/archive） |
@@ -192,4 +192,33 @@ node scripts/check-elf-16kb.js <app-debug.apk>        → 4 个 .so 全 PASS（p
 自检 runner（cfi/annotate/gesture/pdf/toc/locale）      → 全部 PASS（修复前 pdf/gesture 是坏的）
 ```
 
-仍未做（不在本轮范围）：§5 的缺口 1/2（P2 reader host、P6 六个模块入口——产品接线）、5/6/7/8/9/11，以及 §6 的全部真机项。
+仍未做（不在本轮范围）：§5 的缺口 1/2（P2 reader host、P6 六个模块入口——产品接线）、5/7/8/9/11，以及 §6 的全部真机项。
+
+---
+
+## 9 · 缺口修复进展（第二轮：CB7 实装）
+
+针对 §5 缺口 6 的 CB7 部分，`engine:image` 的 `SevenZExtractor` 从 47 行骨架换成真实实现（提交 `37e4c6ee`，纯 Java，**零新增 `.so`**）：
+
+| 项 | 内容 |
+|---|---|
+| 依赖 | `org.apache.commons:commons-compress:1.27.1` + `org.tukaani:xz:1.10`（两者都是纯 JVM；xz 是 commons-compress 解 LZMA/LZMA2 的运行期后端） |
+| 解析 | `SevenZFile.builder().setFile(file).get()` → `listPages` 分页表；`\` → `/` 归一化；`openPage` 每次重开句柄，`OwnedEntryStream` 负责关闭 |
+| 上限 | 单页 `MAX_PAGE_BYTES = 64 MiB`，超限抛类型化错误（防 zip-bomb） |
+| 明确边界 | **BCJ2**（多输入流编码器，commons-compress 不支持：`Multi input/output stream coders are not yet supported`）与**加密头**（AES）抛 `UnsupportedArchiveException`，由兜底岛接管；错误文案指向兜底岛 |
+| 路由 | `ArchiveExtractor` 中 `SEVEN_ZIP.support = Support.READY` |
+| 测试 | 新增 `SevenZExtractorTest` 11 个用例（LZMA/LZMA2/**COPY** 三种可读变体 + BCJ2 负例 + 加密头负例 + 截断 + 越界页码 + 路由 + 体积上限），`:engine:image` 78/78 |
+
+夹具：`android/engine/image/src/test/resources/sevenz/`（5 个 ~1.4 KB 归档，`README.md` 记录了用 7-Zip 复现的命令；BCJ2 与 AES 加密头两个夹具 commons-compress **写不出来**，是 7z.exe 生成的二进制）。
+
+验证：
+
+```
+gradle -p android :engine:image:test                   → 78/78 ✅
+gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（33.54 MB，+2.29 MB）
+node scripts/check-elf-16kb.js <app-debug.apk>         → 4 个 .so 全 PASS，exit 0
+```
+
+体积代价：debug APK 31.25 → 33.54 MB（无 R8），`libdatastore_shared_counter.so` 仍是首个 `.so`（p_align 0x4000），**未引入任何新原生库**，16 KB 判定不变。
+
+CBR 结论：**不做原生**。ADR-002 的矩阵里 CBR 标为 `DEFERRED`——纯 JVM 侧没有可用的 RAR5 解压器（junrar 只到 RAR4 且对 RAR5 无效，其余方案都带 `.so`），强行实装会同时破坏「零原生依赖」与「体积」两条约束，继续由兜底岛承担。

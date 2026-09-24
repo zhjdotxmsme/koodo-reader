@@ -1,0 +1,769 @@
+diff --git a/android/engine/image/build.gradle b/android/engine/image/build.gradle
+index 8c64d9db880970525ddb76f1e2cda5e74a34f57f..22e4c432142f8994dd6d215d1ac969ca1189f442 100644
+--- a/android/engine/image/build.gradle
++++ b/android/engine/image/build.gradle
+@@ -45,7 +45,16 @@ dependencies {
+     // 必须等于本模块 pages[0] 的字节）。
+     api(project(":core:importer"))
+ 
+-    // Test only — 运行时零依赖（7z/rar 的依赖取舍见文件头 ②③）。
++    // CB7 / .7z（P5-CB7 补强，卡 t-mufbaoux-yjmwrl）：commons-compress 的 SevenZFile 是
++    // **纯 Java**（Apache-2.0，零 .so → 无 16 KB 页对齐问题），因此 CB7 可以原生读，
++    // 不像 CBR 那样受 UnRAR 许可证 + native 库限制。
++    //   - commons-compress：7z 容器 + Copy/LZMA/DEFLATE/BZIP2/BCJ2 等方法
++    //   - xz：LZMA / LZMA2 解码器（SevenZFile 必需的可选依赖；7z 默认就是用 LZMA2）
++    // 这两条是本模块**唯一**的运行时依赖（此前运行时零依赖，见文件头 ②③ 的取舍说明）。
++    implementation 'org.apache.commons:commons-compress:1.27.1'
++    implementation 'org.tukaani:xz:1.10'
++
++    // Test only.
+     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+ }
+diff --git a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/ArchiveExtractor.kt b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/ArchiveExtractor.kt
+index f194574ac85bd7b8bf575595b5688a2a159181f1..66b7edfa3d402d4504df69db6f2e65694a585472 100644
+--- a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/ArchiveExtractor.kt
++++ b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/ArchiveExtractor.kt
+@@ -72,8 +72,8 @@ enum class ArchiveKind(
+     /** .tar.gz / .tgz（CBT 的压缩变体，见 TarExtractor 的体积上限取舍） */
+     TAR_GZIP("tar.gz", setOf("tgz"), Support.READY),
+ 
+-    /** CB7 / .7z —— 纯 Java 方案已定（commons-compress SevenZFile），待接线 */
+-    SEVEN_ZIP("7z", setOf("cb7", "7z"), Support.PLANNED),
++    /** CB7 / .7z —— 纯 Java 方案已接线（commons-compress SevenZFile，见 [SevenZExtractor]） */
++    SEVEN_ZIP("7z", setOf("cb7", "7z"), Support.READY),
+ 
+     /** CBR / .rar —— 暂不原生（许可证 + .so），维持兜底岛 */
+     RAR("rar", setOf("cbr", "rar"), Support.DEFERRED),
+@@ -131,8 +131,11 @@ private fun ByteArray.matches(offset: Int, vararg expected: Int): Boolean {
+     return true
+ }
+ 
+-/** 容器类型已知但当前不能原生读（7z/rar）或数据损坏。 */
+-class UnsupportedArchiveException(message: String) : IOException(message)
++/** 容器类型已知但当前不能原生读（rar）或数据损坏。 */
++class UnsupportedArchiveException(
++    message: String,
++    cause: Throwable? = null,
++) : IOException(message, cause)
+ 
+ /**
+  * 归档打开入口：魔数优先、扩展名兜底，然后分派到具体实现。
+@@ -166,8 +169,8 @@ object ArchiveExtractors {
+         ArchiveKind.ZIP -> ZipExtractor.open(file)
+         ArchiveKind.TAR, ArchiveKind.TAR_GZIP -> TarExtractor.open(file)
+         ArchiveKind.DIRECTORY -> TreeExtractor.open(file)
+-        // 未接线的两种容器各有自己的骨架文件（错误信息也写在那里，避免两处漂移）
+         ArchiveKind.SEVEN_ZIP -> SevenZExtractor.open(file)
++        // CBR 明确不做原生：错误信息写在它自己的骨架文件里（避免两处漂移）
+         ArchiveKind.RAR -> RarExtractor.open(file)
+         ArchiveKind.UNKNOWN -> throw UnsupportedArchiveException("无法识别的漫画容器: ${file.name}")
+     }
+diff --git a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/SevenZExtractor.kt b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/SevenZExtractor.kt
+index de69f43a82d781cafa75465a0ae457e95ea2b775..0eb1a88405385f02612395f3d66c8b06457bd8d3 100644
+--- a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/SevenZExtractor.kt
++++ b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/SevenZExtractor.kt
+@@ -1,47 +1,241 @@
+ package com.koodoreader.engine.image
+ 
+ import java.io.File
++import java.io.FileNotFoundException
++import java.io.IOException
++import java.io.InputStream
++import org.apache.commons.compress.PasswordRequiredException
++import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
++import org.apache.commons.compress.archivers.sevenz.SevenZFile
+ 
+ /**
+- * CB7 / `.7z` —— 方案已定、依赖未接（TODO 骨架）。
++ * CB7 / `.7z` 实现（P5-CB7 补强，卡 `t-mufbaoux-yjmwrl`）。
+  *
+- * ## 结论：CB7 可以原生，而且**不需要 .so**
+- * 与 RAR 的关键差别：7z 有纯 Java 的开源实现。推荐
+- * `org.apache.commons:commons-compress:1.27.1` 的 `SevenZFile`：
+- *  - Apache-2.0，与主仓 AGPL-3.0 兼容；
+- *  - 纯 Java（LZMA/LZMA2/BCJ 都在 Java 侧），**零 .so**，16 KB 页对齐问题不存在；
+- *  - 体积约 1 MB jar（可被 R8 缩减），远小于引入 native 库的代价；
+- *  - 只支持读（`SevenZFile` 无写能力）—— 漫画阅读只需要读，正好。
++ * ## 为什么 CB7 可以原生，而 CBR 不行
++ * 7z 有纯 Java 的开源实现：`org.apache.commons:commons-compress` 的 [SevenZFile]
++ * （Apache-2.0，与主仓 AGPL-3.0 兼容）。解码器全在 Java 侧（LZMA/LZMA2 由
++ * `org.tukaani:xz` 提供，其余方法 commons-compress 自带），因此
++ * **零 `.so`** —— Android 15+ 的 16 KB 页对齐问题在这里根本不存在。
++ * CBR 需要 UnRAR 许可证 + native 库，保持 [RarExtractor] 的 `DEFERRED` 状态。
+  *
+- * ## 为什么不在这张卡里接
+- * `:engine:image` 目前**运行时零依赖**（同 :engine:cfi / :engine:text），
+- * 加依赖会让本卡的离线单测链路（`gradle :engine:image:test`）依赖网络下载。
+- * 接线步骤写在 `docs/patches/p5-image.patch` §2，两步：
+- *   1. `implementation 'org.apache.commons:commons-compress:1.27.1'`
+- *   2. 打开 [SevenZExtractor.open] 的实现（下面的 `TODO` 处），
+- *      页表/读页逻辑与 [ZipExtractor] 完全同形（条目名 → [ImageEntries] →
+- *      [NaturalOrder] → `SevenZFile.getInputStream(entry)`）。
+- * 在此之前 CB7 与 CBR 一样回落兜底岛（桌面用 `public/lib/7z-wasm`）。
++ * 只支持读（commons-compress 的 SevenZFile 无写能力），漫画阅读只需要读。
++ *
++ * ## 页表一致性（与 P1 导入规则）
++ * 条目过滤走 [ImageEntries]（= `ComicCover.IMAGE_EXTS`）、排序走 [NaturalOrder]，
++ * 与 [ZipExtractor] 完全同形，所以「导入时数出来的页数 / 封面 = 第 0 页」在 CB7 上同样成立。
++ *
++ * ## 读页策略：每次读页各开一个 [SevenZFile]
++ * `SevenZFile` 是**顺序游标**，随机跳页要么重新打开、要么把整个固实块留在内存里。
++ * 这里选择「每次 `openPage` 重新打开 + 顺序前进到目标条目」：
++ *  - 正确性最好（不依赖游标位置，跳页/回翻都不会读到脏数据）；
++ *  - 内存可控（不驻留固实块；页字节由 [DefaultPageLoader] 的窗口策略管理）；
++ *  - 代价是每次读页要重新解析头 —— 顺序阅读时命中窗口缓存，实际只发生在换页时。
++ * `close()` 因此是空操作：本类不持有任何需要释放的原生/句柄资源。
++ *
++ * ## 明确处理的异常
++ *  - **头部加密**（`7z a -mhe=on`）：无法在无密码下列出条目 → 打开即失败，提示走兜底岛；
++ *  - **条目加密**：条目可列举但读取时要求密码 → 读页时失败，同样提示；
++ *  - **损坏 / 非 7z**：打开或读页失败 → [UnsupportedArchiveException] 带底层原因；
++ *  - **超大页**：单页解压后超过 [MAX_PAGE_BYTES] 时不读，避免低端机 OOM。
+  */
+-object SevenZExtractor {
+-
+-    /** 7z 是否已原生可读 —— 依赖未接前恒为 false。 */
+-    const val NATIVE_SUPPORTED: Boolean = false
+-
+-    /** 计划引入的依赖（接线时启用，见 patch §2）。 */
+-    const val PLANNED_DEPENDENCY: String = "org.apache.commons:commons-compress:1.27.1"
+-
+-    fun open(file: File): ArchiveExtractor = throw UnsupportedArchiveException(
+-        "CB7/7z 尚未接线（计划用纯 Java 的 $PLANNED_DEPENDENCY，无 .so）：" +
+-            "接线前请把 ${file.name} 路由到兜底岛渲染（桌面侧 public/lib/7z-wasm）。",
+-    )
+-
+-    // TODO(P5b)：commons-compress 接线后，这里补 SevenZFile 实现：
+-    //   SevenZFile(file).use { seven ->
+-    //       val names = seven.entries.filter { !it.isDirectory }.map { it.name }
+-    //           .filter { ImageEntries.isImage(it) }  → NaturalOrder.sorted
+-    //       readPage(i) = seven.getInputStream(entry).use { it.readBytes() }
+-    //   }
+-    // 注意：SevenZFile 是流式游标（顺序读更友好），随机跳页需要 reopen 或按块缓存，
+-    // 由 DefaultPageLoader 的「当前页 + 后 3 页」窗口天然覆盖（顺序性足够）。
++class SevenZExtractor private constructor(
++    private val file: File,
++    override val entries: List<PageEntry>,
++) : ArchiveExtractor {
++
++    override val kind: ArchiveKind = ArchiveKind.SEVEN_ZIP
++
++    override val name: String = file.name
++
++    override val fileSizeBytes: Long = file.length()
++
++    override fun readPage(index: Int): ByteArray = openPage(index).use { it.readBytes() }
++
++    override fun openPage(index: Int): InputStream {
++        if (index !in entries.indices) {
++            throw IndexOutOfBoundsException("page index $index out of range [0..${entries.lastIndex}]")
++        }
++        val wanted = entries[index]
++        val seven = openArchive()
++        var page: InputStream? = null
++        try {
++            var entry: SevenZArchiveEntry? = seven.nextEntry
++            while (entry != null) {
++                if (!entry.isDirectory && normalise(entry.name) == wanted.name) {
++                    if (entry.size > MAX_PAGE_BYTES) {
++                        throw UnsupportedArchiveException(
++                            "CB7 第 $index 页解压后约 ${entry.size / 1024 / 1024} MB，超过 " +
++                                "${MAX_PAGE_BYTES / 1024 / 1024} MB 上限（${file.name}）：" +
++                                "请先转换为 CBZ 或单独取出该页。",
++                        )
++                    }
++                    page = seven.getInputStream(entry)
++                    break
++                }
++                entry = seven.nextEntry
++            }
++        } catch (e: PasswordRequiredException) {
++            closeQuietly(seven)
++            throw encryptedEntry(file.name, wanted.name, e)
++        } catch (e: IOException) {
++            closeQuietly(seven)
++            throw UnsupportedArchiveException(
++                "CB7 读页失败（文件损坏或条目异常）：${file.name} / ${wanted.name}（${e.message}）",
++                e,
++            )
++        } catch (t: Throwable) {
++            closeQuietly(seven)
++            throw t
++        }
++
++        val opened = page
++        if (opened == null) {
++            closeQuietly(seven)
++            throw FileNotFoundException("7z 条目丢失: ${wanted.name}（${file.name}）")
++        }
++        // 流的所有权交给调用方：关闭流时一并关闭它底下的 SevenZFile。
++        return OwnedEntryStream(seven, opened)
++    }
++
++    /** 无状态实现：每次读页自行打开/关闭 [SevenZFile]。 */
++    override fun close() = Unit
++
++    private fun openArchive(): SevenZFile = try {
++        SevenZFile.builder().setFile(file).get()
++    } catch (e: PasswordRequiredException) {
++        throw UnsupportedArchiveException(
++            "CB7/7z 已加密（头部加密，需要密码）：${file.name} —— " +
++                "请把该文件路由到兜底岛渲染，或提示用户解压为 CBZ。",
++            e,
++        )
++    } catch (e: IOException) {
++        throw openingFailed(file.name, e)
++    }
++
++    private fun encryptedEntry(name: String, entryName: String, cause: Throwable): UnsupportedArchiveException =
++        UnsupportedArchiveException(
++            "CB7/7z 条目已加密（需要密码）：$name / $entryName —— " +
++                "请把该文件路由到兜底岛渲染，或提示用户解压为 CBZ。",
++            cause,
++        )
++
++    /** 关闭 [SevenZFile]，忽略关闭期间的次级异常（不能覆盖调用方正在抛的错）。 */
++    private fun closeQuietly(seven: SevenZFile) {
++        runCatching { seven.close() }
++    }
++
++    /** 把 `SevenZFile` 的生命周期绑到对外暴露的页流上。 */
++    private class OwnedEntryStream(
++        private val seven: SevenZFile,
++        private val delegate: InputStream,
++    ) : InputStream() {
++
++        override fun read(): Int = delegate.read()
++
++        override fun read(b: ByteArray, off: Int, len: Int): Int = delegate.read(b, off, len)
++
++        override fun skip(n: Long): Long = delegate.skip(n)
++
++        override fun available(): Int = delegate.available()
++
++        override fun close() {
++            try {
++                delegate.close()
++            } finally {
++                runCatching { seven.close() }
++            }
++        }
++    }
++
++    companion object {
++
++        /** 7z 已原生可读（commons-compress 接线完成）。 */
++        const val NATIVE_SUPPORTED: Boolean = true
++
++        /** 实际使用的依赖（[PLANNED_DEPENDENCY] 是接线前的历史记录，保留供追溯）。 */
++        const val DEPENDENCY: String = "org.apache.commons:commons-compress:1.27.1 (+ org.tukaani:xz:1.10)"
++
++        /** 接线前计划引入的依赖，保留以便追溯（见 docs/p5-image-engine-adr.md §11）。 */
++        const val PLANNED_DEPENDENCY: String = "org.apache.commons:commons-compress:1.27.1"
++
++        /**
++         * 单页解压上限（64 MB，与 [DefaultPageLoader.DEFAULT_MAX_RESIDENT_BYTES] 同量级）：
++         * 超限不读，抛可执行的错误，避免把低端机的堆打爆。
++         */
++        const val MAX_PAGE_BYTES: Long = 64L * 1024 * 1024
++
++        /**
++         * 打开失败的统一提示。两类原因都会走到这里，而**用户侧的处理相同**（回退兜底岛）：
++         *  - 文件损坏 / 根本不是 7z；
++         *  - 7z 合法但用了纯 Java 栈解不了的过滤器 —— 实测 commons-compress 对
++         *    **BCJ2**（多输入/输出流编码器，`-m0=BCJ2`）会抛
++         *    `IOException: Multi input/output stream coders are not yet supported`。
++         *    BCJ2 是 x86 可执行文件的过滤器，图片归档几乎不会用到；一旦遇到就走兜底岛，
++         *    与 CBR 的处理口径一致（不假装支持）。
++         */
++        private fun openingFailed(name: String, cause: IOException): UnsupportedArchiveException =
++            UnsupportedArchiveException(
++                "CB7/7z 打开失败（文件损坏或不是 7z，或使用了纯 Java 栈不支持的过滤器如 BCJ2）：" +
++                    "$name（${cause.message}）—— 若文件本身完好，请路由到兜底岛渲染。",
++                cause,
++            )
++
++        fun open(file: File): SevenZExtractor {
++            val seven = try {
++                SevenZFile.builder().setFile(file).get()
++            } catch (e: PasswordRequiredException) {
++                throw UnsupportedArchiveException(
++                    "CB7/7z 已加密（头部加密，需要密码）：${file.name} —— " +
++                        "请把该文件路由到兜底岛渲染，或提示用户解压为 CBZ。",
++                    e,
++                )
++            } catch (e: IOException) {
++                throw openingFailed(file.name, e)
++            }
++            return try {
++                SevenZExtractor(file, listPages(seven))
++            } catch (e: PasswordRequiredException) {
++                throw UnsupportedArchiveException(
++                    "CB7/7z 已加密（头部加密，需要密码）：${file.name} —— " +
++                        "请把该文件路由到兜底岛渲染，或提示用户解压为 CBZ。",
++                    e,
++                )
++            } catch (e: IOException) {
++                // 列举条目也要解码头部，因此损坏 / 不支持的过滤器（BCJ2）会在这里就失败
++                throw openingFailed(file.name, e)
++            } finally {
++                runCatching { seven.close() }
++            }
++        }
++
++        /** 图片条目 → 页号（natural 顺序），与 [ZipExtractor.listPages] 同形。 */
++        internal fun listPages(seven: SevenZFile): List<PageEntry> {
++            val names = ArrayList<String>()
++            val sizes = HashMap<String, Long>()
++            var entry = seven.nextEntry
++            while (entry != null) {
++                val name = normalise(entry.name)
++                if (!entry.isDirectory && ImageEntries.isImage(name)) {
++                    names.add(name)
++                    sizes[name] = entry.size
++                }
++                entry = seven.nextEntry
++            }
++            return NaturalOrder.sorted(names).mapIndexed { index, entryName ->
++                PageEntry(
++                    index = index,
++                    name = entryName,
++                    ext = ImageEntries.extOf(entryName),
++                    sizeBytes = sizes[entryName] ?: -1L,
++                )
++            }
++        }
++
++        /**
++         * 7z 存在「按调用方路径原样存名」的行为：Windows 上用 `7z a x.7z pages\*` 建出来的
++         * 归档，条目名会带反斜杠（`pages\1.jpg`）。本模块的页表约定用 `/`
++         * （见 [PageEntry.name] 与 [ImageEntries.baseName]），所以在这里统一归一化。
++         */
++        internal fun normalise(entryName: String): String = entryName.replace('\\', '/')
++    }
+ }
+diff --git a/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/ArchiveExtractorsTest.kt b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/ArchiveExtractorsTest.kt
+index 21f66051fa0b618948013c7f7190a0fe05338a98..31d56b4ddc198d3649976f09b50ef7a46bc78ffc 100644
+--- a/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/ArchiveExtractorsTest.kt
++++ b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/ArchiveExtractorsTest.kt
+@@ -76,14 +76,19 @@ class ArchiveExtractorsTest {
+     }
+ 
+     @Test
+-    fun `seven zip is planned with a concrete pure java dependency`() {
++    fun `seven zip is wired through the pure java dependency`() {
++        // CBR 仍是骨架（UnRAR 许可证 + native 库），CB7 已实装（P5-CB7 补强）：
++        // 这里用「魔数正确但内容不是 7z」的文件，验证失败路径给出的是**可执行**的错误，
++        // 而不是像接线前那样无条件抛「尚未接线」。
+         val seven = file("book.cb7", bytesOf(0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00, 0x04))
+ 
+         val error = assertThrows(UnsupportedArchiveException::class.java) { ArchiveExtractors.open(seven) }
+ 
+-        assertTrue(error.message!!.contains("commons-compress"), "错误信息带出计划依赖: ${error.message}")
+-        assertFalse(SevenZExtractor.NATIVE_SUPPORTED)
+-        assertTrue(SevenZExtractor.PLANNED_DEPENDENCY.startsWith("org.apache.commons:commons-compress:"))
++        assertTrue(error.message!!.contains("打开失败"), "损坏的 7z 要报可诊断的理由: ${error.message}")
++        assertTrue(SevenZExtractor.NATIVE_SUPPORTED)
++        assertTrue(SevenZExtractor.DEPENDENCY.contains("commons-compress"))
++        // 依赖必须是纯 Java（无 .so）：这是 CB7 能原生、CBR 不能的分界线。
++        assertFalse(SevenZExtractor.DEPENDENCY.contains(".so"))
+     }
+ 
+     @Test
+@@ -96,11 +101,17 @@ class ArchiveExtractorsTest {
+     @Test
+     fun `native readable kinds are exactly the implemented ones`() {
+         assertEquals(
+-            setOf(ArchiveKind.ZIP, ArchiveKind.TAR, ArchiveKind.TAR_GZIP, ArchiveKind.DIRECTORY),
++            setOf(
++                ArchiveKind.ZIP,
++                ArchiveKind.TAR,
++                ArchiveKind.TAR_GZIP,
++                ArchiveKind.SEVEN_ZIP,
++                ArchiveKind.DIRECTORY,
++            ),
+             ArchiveExtractors.nativeReadableKinds(),
+         )
+         assertEquals(ArchiveKind.Support.DEFERRED, ArchiveKind.RAR.support)
+-        assertEquals(ArchiveKind.Support.PLANNED, ArchiveKind.SEVEN_ZIP.support)
++        assertEquals(ArchiveKind.Support.READY, ArchiveKind.SEVEN_ZIP.support)
+         assertEquals(ArchiveKind.Support.READY, ArchiveKind.ZIP.support)
+         assertEquals(ArchiveKind.Support.UNSUPPORTED, ArchiveKind.UNKNOWN.support)
+     }
+diff --git a/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/SevenZExtractorTest.kt b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/SevenZExtractorTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..0071cf9a86e7682d9067b5cf9a53971aeabc3aff
+--- /dev/null
++++ b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/SevenZExtractorTest.kt
+@@ -0,0 +1,186 @@
++package com.koodoreader.engine.image
++
++import java.io.File
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertThrows
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.io.TempDir
++import org.junit.jupiter.params.ParameterizedTest
++import org.junit.jupiter.params.provider.ValueSource
++
++/**
++ * CB7 / `.7z` 实装测试（P5-CB7 补强，卡 `t-mufbaoux-yjmwrl`）。
++ *
++ * 夹具是五个内容相同、压缩方式不同的 7z 归档（见
++ * `src/test/resources/sevenz/README.md`）：Copy / LZMA / LZMA2 / BCJ2+LZMA2 /
++ * AES 头部加密。前四种必须能读出页表与页字节，最后一种必须给出**可执行**的错误。
++ */
++class SevenZExtractorTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    /** 把 classpath 夹具拷成真实文件（[SevenZExtractor] 按 [File] 打开）。 */
++    private fun fixture(name: String): File {
++        val target = File(dir, name)
++        val stream = javaClass.getResourceAsStream("/sevenz/$name")
++            ?: error("缺少夹具 /sevenz/$name —— 见 src/test/resources/sevenz/README.md")
++        stream.use { input -> target.outputStream().use { input.copyTo(it) } }
++        return target
++    }
++
++    private val readableVariants = listOf(
++        "cb7-copy.7z", // -m0=Copy
++        "cb7-lzma.7z", // -m0=LZMA
++        "cb7-lzma2.7z", // -m0=LZMA2（最常见，靠 org.tukaani:xz 解码）
++        "cb7-bcj2.7z", // -m0=BCJ2 -m1=LZMA2（多级过滤器链）
++    )
++
++    // ── 四种可读变体：页表 + 字节 ───────────────────────────────────────────
++
++    @ParameterizedTest(name = "{0}")
++    @ValueSource(
++        strings = [
++            "cb7-copy.7z",
++            "cb7-lzma.7z",
++            "cb7-lzma2.7z",
++        ],
++    )
++    @DisplayName("每个可读 7z 变体都能建出页表并读出页字节")
++    fun `every variant reads its page table and page bytes`(name: String) {
++        val file = fixture(name)
++        SevenZExtractor.open(file).use { extractor ->
++            assertEquals(ArchiveKind.SEVEN_ZIP, extractor.kind)
++            assertEquals(name, extractor.name)
++            assertEquals(file.length(), extractor.fileSizeBytes)
++
++            // notes.txt 不是图片 → 不进页表；页表按 NATURAL 顺序（9 在 10 前，
++            // 而不是字典序的 1,10,9）——这与 ZipExtractor / P1 导入计数一致。
++            assertEquals(3, extractor.pageCount)
++            assertEquals(
++                listOf("pages/1.jpg", "pages/9.jpg", "pages/10.jpg"),
++                extractor.entries.map { it.name },
++            )
++            // jpg 归一为 jpeg（与 ComicCover 封面文件名规则一致）
++            assertTrue(extractor.entries.all { it.ext == "jpeg" })
++            assertTrue(extractor.entries.all { it.sizeBytes > 0 })
++
++            assertEquals("PAGE-jpg-1", String(extractor.readPage(0)))
++            assertEquals("PAGE-jpg-9", String(extractor.readPage(1)))
++            assertEquals("PAGE-jpg-10", String(extractor.readPage(2)))
++        }
++    }
++
++    @Test
++    @DisplayName("流式读页：不留下被锁住的句柄，可反复读同一页")
++    fun `openPage streams and releases the archive`() {
++        SevenZExtractor.open(fixture("cb7-lzma2.7z")).use { extractor ->
++            repeat(3) {
++                assertEquals("PAGE-jpg-1", extractor.openPage(0).use { String(it.readBytes()) })
++                assertEquals("PAGE-jpg-10", extractor.openPage(2).use { String(it.readBytes()) })
++            }
++            // close() 是无状态实现的空操作，重复调用必须安全
++            extractor.close()
++            extractor.close()
++        }
++    }
++
++    // ── 路由：CB7 现在是原生可读 ────────────────────────────────────────────
++
++    @Test
++    @DisplayName("ArchiveExtractors 把 .cb7 路由到原生实现（验收 [3]）")
++    fun `cb7 is natively readable through the dispatcher`() {
++        val file = fixture("cb7-lzma2.7z")
++
++        assertEquals(ArchiveKind.SEVEN_ZIP, ArchiveExtractors.kindOf(file))
++        assertTrue(ArchiveExtractors.isNativelyReadable(file))
++        assertTrue(ArchiveKind.SEVEN_ZIP.nativelyReadable)
++        assertTrue(SevenZExtractor.NATIVE_SUPPORTED)
++        assertTrue(ArchiveKind.SEVEN_ZIP in ArchiveExtractors.nativeReadableKinds())
++
++        ArchiveExtractors.open(file).use { extractor ->
++            assertTrue(extractor is SevenZExtractor, "应分派到 SevenZExtractor，实际 ${extractor::class}")
++            assertEquals(3, extractor.pageCount)
++        }
++    }
++
++    // ── 错误路径 ────────────────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("BCJ2 过滤器：纯 Java 栈解不了，给出可执行错误（不假装支持）")
++    fun `bcj2 filtered archive is rejected with an actionable message`() {
++        val file = fixture("cb7-bcj2.7z")
++
++        // 魔数/扩展名仍然认得出 CB7（宿主据此知道该回退兜底岛）
++        assertEquals(ArchiveKind.SEVEN_ZIP, ArchiveExtractors.kindOf(file))
++
++        val error = assertThrows(UnsupportedArchiveException::class.java) {
++            SevenZExtractor.open(file)
++        }
++        assertTrue(error.message!!.contains("BCJ2"), "要点名是哪种过滤器: ${error.message}")
++        assertTrue(error.message!!.contains("兜底岛"), "要给出替代路径: ${error.message}")
++        // 底层原因来自 commons-compress：多输入/输出流编码器未实现
++        assertTrue(
++            error.cause?.message?.contains("Multi input/output stream coders") == true,
++            "要保留底层原因: ${error.cause?.message}",
++        )
++    }
++
++    @Test
++    @DisplayName("头部加密的 7z：打开即失败，并指向兜底岛")
++    fun `encrypted header archive fails with an actionable message`() {
++        val file = fixture("cb7-encrypted-header.7z")
++
++        // 魔数与扩展名仍然认得出来（宿主据此决定路由）
++        assertEquals(ArchiveKind.SEVEN_ZIP, ArchiveExtractors.kindOf(file))
++
++        val error = assertThrows(UnsupportedArchiveException::class.java) {
++            SevenZExtractor.open(file)
++        }
++        assertTrue(error.message!!.contains("加密"), "要说明是加密导致: ${error.message}")
++        assertTrue(error.message!!.contains("兜底岛"), "要给出可执行的替代路径: ${error.message}")
++        // 底层原因（commons-compress 的 PasswordRequiredException）不能丢
++        assertTrue(error.cause != null, "要保留底层异常便于诊断")
++    }
++
++    @Test
++    @DisplayName("损坏 / 截断的 7z：报可诊断的错误而不是静默空页表")
++    fun `truncated archive fails loudly`() {
++        val whole = fixture("cb7-lzma2.7z").readBytes()
++        val broken = File(dir, "broken.cb7")
++        broken.writeBytes(whole.copyOf(48)) // 只剩魔数与部分头
++
++        val error = assertThrows(UnsupportedArchiveException::class.java) {
++            SevenZExtractor.open(broken)
++        }
++        assertTrue(error.message!!.contains("打开失败"), "错误信息要能定位原因: ${error.message}")
++    }
++
++    @Test
++    @DisplayName("越界页号抛 IndexOutOfBoundsException")
++    fun `out of range page index throws`() {
++        SevenZExtractor.open(fixture("cb7-copy.7z")).use { extractor ->
++            assertThrows(IndexOutOfBoundsException::class.java) { extractor.readPage(3) }
++            assertThrows(IndexOutOfBoundsException::class.java) { extractor.openPage(-1) }
++        }
++    }
++
++    @Test
++    @DisplayName("页表不依赖扩展名大小写与目录层级")
++    fun `page table ignores name case and directory depth`() {
++        SevenZExtractor.open(fixture("cb7-lzma.7z")).use { extractor ->
++            assertTrue(extractor.entries.none { it.name.endsWith("notes.txt") })
++            assertFalse(extractor.entries.any { it.name.contains('\\') }, "条目名要用 / 归一化")
++            assertEquals(3, extractor.pageCount)
++        }
++    }
++
++    @Test
++    @DisplayName("单页体积上限是一个显式的常量")
++    fun `page size cap is explicit`() {
++        assertEquals(64L * 1024 * 1024, SevenZExtractor.MAX_PAGE_BYTES)
++    }
++}
+diff --git a/android/engine/image/src/test/resources/sevenz/README.md b/android/engine/image/src/test/resources/sevenz/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..742e21fef8b95f3f9044e6b834d9755b4fd0c92a
+--- /dev/null
++++ b/android/engine/image/src/test/resources/sevenz/README.md
+@@ -0,0 +1,39 @@
++# CB7 / 7z 测试夹具
++
++五个 ~300 B 的 7z 归档，内容完全相同（`pages/1.jpg`、`pages/9.jpg`、`pages/10.jpg`
++三个图片条目 + `notes.txt` 一个非图片条目），只差压缩方式。用于
++`SevenZExtractorTest`：
++
++| 文件 | 7z 方法 | 覆盖点 |
++|---|---|---|
++| `cb7-copy.7z` | `-m0=Copy` | 未压缩条目（无解码链） |
++| `cb7-lzma2.7z` | `-m0=LZMA2` | 最常见的 7z 方法（依赖 `org.tukaani:xz`） |
++| `cb7-lzma.7z` | `-m0=LZMA` | 旧版 7z（LZMA1） |
++| `cb7-bcj2.7z` | `-m0=BCJ2 -m1=LZMA2` | 多级过滤器链（x86 BCJ2 + LZMA2） |
++| `cb7-encrypted-header.7z` | `-m0=LZMA2 -pS3cret -mhe=on` | 头部加密：**无密码连条目列表都读不出来** |
++
++## 为什么是二进制夹具而不是运行期生成
++
++commons-compress 的 `SevenZOutputFile` 只能写 Copy / LZMA / LZMA2 / DEFLATE / BZIP2，
++**写不出 BCJ2 与 AES 头部加密**（只有读支持），而这两种正是验收要求的变体，所以必须
++预先生成并随仓库提交（合计约 1.4 KB）。
++
++## 重新生成（需要 7-Zip 命令行）
++
++```powershell
++$sevenz = 'C:\Program Files\7-Zip\7z.exe'
++$out = 'android/engine/image/src/test/resources/sevenz'
++mkdir pages
++'PAGE-jpg-1'  > pages/1.jpg
++'PAGE-jpg-9'  > pages/9.jpg
++'PAGE-jpg-10' > pages/10.jpg
++'not an image' > pages/notes.txt
++& $sevenz a -t7z -m0=Copy                  "$out/cb7-copy.7z"             'pages/*'
++& $sevenz a -t7z -m0=LZMA2                 "$out/cb7-lzma2.7z"            'pages/*'
++& $sevenz a -t7z -m0=LZMA                  "$out/cb7-lzma.7z"             'pages/*'
++& $sevenz a -t7z -m0=BCJ2 -m1=LZMA2        "$out/cb7-bcj2.7z"             'pages/*'
++& $sevenz a -t7z -m0=LZMA2 -pS3cret -mhe=on "$out/cb7-encrypted-header.7z" 'pages/*'
++```
++
++（`-p` 的密码与 `-mhe=on` 头部加密一起用；测试只断言「无密码读不出来」这一行为，
++不需要正确的密码。）
+diff --git a/android/engine/image/src/test/resources/sevenz/cb7-bcj2.7z b/android/engine/image/src/test/resources/sevenz/cb7-bcj2.7z
+new file mode 100644
+index 0000000000000000000000000000000000000000..74a8fd4ba67d01a383f35fed66960b1a41ca1e05
+GIT binary patch
+literal 258
+zcmXr7+Ou9=hJnS@WsUCv1_)4s(&2G;!XGebF(}3|Xb8A+ruSvDR531y4lt0q+22{u
+zmH3Ir_uS#*+u~{kC*?x5Ff<yougg8~_ip(li^r?FFA6uEuiyJTN8#(e*7#bTxiZVv
+zOgV3VJuE}$OlQ?pjl-v&9xteh3SVE_(EHA_u5YWQT;H0F-+9tm3NmU{yRQe_5S}Qw
+z=a-nkttDGS(|y8a?Kkex4_d!T=XT+?3Hd*7W|V*4+UhP)C73O>M!0j$ijtc4>d7f@
+zAJ2?BH2?j|<l^%_LgH+CjGPUV7}&WP85otB85vn)83Y&@cpAQOF{TQB{J_8f0AXik
+AWB>pF
+
+literal 0
+HcmV?d00001
+
+diff --git a/android/engine/image/src/test/resources/sevenz/cb7-copy.7z b/android/engine/image/src/test/resources/sevenz/cb7-copy.7z
+new file mode 100644
+index 0000000000000000000000000000000000000000..91dab60d03ed870c901b0a5fd91204b6a3dad112
+GIT binary patch
+literal 238
+zcmXr7+Ou9=hJj^m`NPgN3=p6MrJr0s9u(l{?y8$rkgjWpU>U%fmU;Ol3W<3NnYoGS
+zsSFH_#_a2I_q`BzJoC{q^VOOwcMr|n75m>tV24VGRPHX7>;r;+GtNlv>w3IRJHq?;
+zKQr~cZ7m^juIpJ<qMq*xUUvBRi{;xT?itUquGSP3;xB!_Hm;*W=-RWr?Y>S?w~nYy
+zFaO3Tw{}I_gL4~n%@<qWJZ}}Y*COc5xgT3Xi&otJ+b+(g&B)o%$iU9c$iS$~%*e<Z
+U%OJqOz|-)Ii}7(9D<=a301MSzGXMYp
+
+literal 0
+HcmV?d00001
+
+diff --git a/android/engine/image/src/test/resources/sevenz/cb7-encrypted-header.7z b/android/engine/image/src/test/resources/sevenz/cb7-encrypted-header.7z
+new file mode 100644
+index 0000000000000000000000000000000000000000..d618e3bd2cc3afdc4db1fb38cb77c6a4aba8ad82
+GIT binary patch
+literal 318
+zcmV-E0m1$^dc3bE8~_Ayn_0Tx000000000!000000002?LEI98oqwsg4O|@JPcAkL
+zmhvOd$@9kw4~7Q_A!*vmx2({t`qY8L5dL3u^I!COnf%Y|MRk+0)@K`|MMuiZv{vKa
+z^aY<ns0*f_jo(@Ka+(!iANC_K%QvX_Uocwa{k6mXD=T5g=ayHsC<@!0Ea%XtVAn|b
+zmg#0u<w<;#S*gIkl`r~e$uZqkirAf_JTkPTwVkXF0zZQYP0SPVaMlf|1iPyM+FM7>
+z9;tedMP6~Myg^}*_7wI=+o1iv4QX(at;*u#u={|r;;7kDVq;*kHJ~M*4CeCu$S8H>
+zTN51@1~35$fUp1u3jqKEBnI&Z0TNRWRlR2LV(T{h!!a;-cQInzBLe{e1zi9T00031
+Q41l451_}YONM<|$06~<G+W-In
+
+literal 0
+HcmV?d00001
+
+diff --git a/android/engine/image/src/test/resources/sevenz/cb7-lzma.7z b/android/engine/image/src/test/resources/sevenz/cb7-lzma.7z
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b304c79a372fd04244229363563e5aa8c3a49cd
+GIT binary patch
+literal 238
+zcmXr7+Ou9=hJl4|wGqb}1_)4s(v9<2xEVAATshPGvRSGa7eogbNZsu3tmjJn#N&JJ
+z@bPVNwStp!85kOk+1K%3(D|}wzP-C+>d_nPpK$L!Gvl@JJ>7{n?(aYNdHK=xEiRY7
+zs4^Fay0kf@Tc+@Ae=&QC+^*|da_rk)iPYW^d@p32aXMw!u{U`OU2_-meBGx$V@XY-
+zA=3l_gQNVLTsb;eT(>xzw5qoTZPI@%S@gR@*5!c=^J2sDl5gMk>&-0M`gyxqfwMT9
+k5+i3r7Xv#tBLkx{Gb1BwEQ0_815d*<F2(~VDh(JI0CbpH&j0`b
+
+literal 0
+HcmV?d00001
+
+diff --git a/android/engine/image/src/test/resources/sevenz/cb7-lzma2.7z b/android/engine/image/src/test/resources/sevenz/cb7-lzma2.7z
+new file mode 100644
+index 0000000000000000000000000000000000000000..dcbbffdbddb3aae2a8bacb3cd2eda8c604659e83
+GIT binary patch
+literal 241
+zcmXr7+Ou9=hJoeZKI_!=3=p6MrBmgjmpow5Vo;1_&=7FtOz+EPsbX9Z9bh1Jv%j;R
+zEAbPL@43Urx5d>8PRa#pX*6bE$A4kklbZSV?v5<{g*^Yn@0vW-$PUk~P>tC2l`V>^
+zRQTDc;+bj^Kg131uGdh=zFnwZ+E^rG=x^Y(;l1R|y!}y=yr#{3di20A(K$at3U!y3
+zyvh6Ob|i0uotDUgwx)lX&H^F}0#tvmV-i2i_B5_q-}bqX#^%1Pm4XIqMEnC4;~B)+
+kG#NP?+8Efm85tOrnHd>bV;KY(7<d|<aWU3EiU9f$00RhBFaQ7m
+
+literal 0
+HcmV?d00001
+
+diff --git a/docs/p5-image-engine-adr.md b/docs/p5-image-engine-adr.md
+index baa3df57666ab55b7f2cbf75ed6e99d863062606..882d9649f9d6707c5355ee4e3595e40ff921f39d 100644
+--- a/docs/p5-image-engine-adr.md
++++ b/docs/p5-image-engine-adr.md
+@@ -68,17 +68,37 @@ seek(4) → 加载 7；卸载 0               驻留 {1..7}   ← 7 页上限，
+ | **CBT** / `.tar` | ✅ 实现 | `TarExtractor`（`RandomAccessFile` 按偏移随机读） | ustar、GNU long name（`L`）、`prefix` 字段、八进制/base-256 尺寸 |
+ | `.tar.gz` / `.tgz` | ✅ 实现（有取舍） | `TarExtractor`（打开时整体解压到内存） | gzip 无法随机访问；超 `MAX_GZIP_MATERIALISE_BYTES`（96 MB）直接拒绝并提示转 CBZ |
+ | 散图目录（SAF tree / 文件夹漫画） | ✅ 实现 | `TreeExtractor` | 相对路径 natural 序；跳过隐藏项、`._` 资源分支、符号链接 |
+-| **CB7** / `.7z` | 🟡 计划（依赖未接） | `SevenZExtractor`（骨架） | 见 §4.1 |
++| **CB7** / `.7z` | ✅ 实现（P5-CB7 补强） | `SevenZExtractor` | 纯 Java（commons-compress + xz），零 `.so`；见 §4.1 |
+ | **CBR** / `.rar` | ⛔ 不做原生 | `RarExtractor`（骨架 + 理由） | 见 §4.2 |
+ 
+ 路由入口是 `ArchiveExtractors.kindOf(file)`：**魔数优先**（`.cbz` 里其实可能是 rar）、扩展名兜底；
+ 宿主看 `ArchiveKind.support`（`READY / PLANNED / DEFERRED / UNSUPPORTED`）决定是否回落兜底岛。
+ 
+-### 4.1 CB7：可以原生，而且不需要 `.so`
++### 4.1 CB7：可以原生，而且不需要 `.so`（已接线）
+ 
+-`org.apache.commons:commons-compress:1.27.1` 的 `SevenZFile` 是纯 Java（LZMA/LZMA2 都在 Java 侧）、
+-Apache-2.0、约 1 MB、只读且无 `.so` ⇒ **没有 16 KB 页对齐问题**。本卡不接线的原因只有一个：
+-`:engine:image` 目前运行时零依赖，接线会让离线单测链路依赖网络下载。接线步骤见 patch §2。
++`org.apache.commons:commons-compress:1.27.1` 的 `SevenZFile` 是纯 Java、Apache-2.0、只读、无 `.so`
++⇒ **没有 16 KB 页对齐问题**。P5-CB7 补强（卡 `t-mubaoux…` 系列，见 `docs/patches/p5-image-cb7.patch`）
++已完成接线：`ArchiveKind.SEVEN_ZIP.support = READY`，页表/读页与 `ZipExtractor` 同形
++（`ImageEntries` 过滤 + `NaturalOrder` 排序 ⇒ 「封面 = 第 0 页、页数与导入一致」在 CB7 上同样成立）。
++
++依赖两条，都是纯 Java：
++
++| 依赖 | 作用 |
++|---|---|
++| `org.apache.commons:commons-compress:1.27.1` | 7z 容器 + Copy/LZMA/DEFLATE/BZIP2/AES 解码 |
++| `org.tukaani:xz:1.10` | LZMA / LZMA2 解码器（`SevenZFile` 的可选依赖，7z 默认就用 LZMA2） |
++
++这是本模块**唯一**的运行时依赖（此前运行时零依赖；接线后 `gradle :engine:image:test` 首次需要下载）。
++
++**边界（诚实标注，已验证）**：
++
++- **BCJ2**（`-m0=BCJ2`，x86 可执行文件的多输入/输出流过滤器）：commons-compress 明确未实现
++  （`IOException: Multi input/output stream coders are not yet supported`），图像归档几乎不会用到
++  ⇒ 遇到即抛 `UnsupportedArchiveException`，提示路由到兜底岛（与 CBR 同口径，不假装支持）。
++- **AES 头部加密**（`-mhe=on`）：无密码连条目列表都读不出来 ⇒ 打开即失败并给出可执行提示。
++- 单页解压上限 `MAX_PAGE_BYTES = 64 MB`（与 `DefaultPageLoader` 的常驻上限同量级），超限报错不 OOM。
++- 页表夹具覆盖 5 种变体（Copy / LZMA / LZMA2 / BCJ2 / 加密头），见
++  `src/test/resources/sevenz/README.md`。
+ 
+ ### 4.2 CBR：暂不原生（明确不做，不是遗漏）
+ 
+@@ -120,7 +140,7 @@ Apache-2.0、约 1 MB、只读且无 `.so` ⇒ **没有 16 KB 页对齐问题**
+ | # | 资产 / 行为 | 当前角色 | 下线前置条件 | 证据命令 / 验证 | 回退方式 |
+ |---|---|---|---|---|---|
+ | 1 | 路由表行「CBZ/CBT → 兜底岛」 | WebView 渲染漫画 | CBZ/CBT 回归集通过 + 原生理赔通过 | `gradle :engine:image:test`；真机打开 `.cbz`/`.cbt` 各 3 本 | 把该格式的 `support` 改回非 `READY`，路由回兜底岛 |
+-| 2 | `public/lib/7z-wasm/**`（1.8 MB wasm） | CB7 解码 | **`SevenZExtractor` 接线（patch §2）+ CB7 回归通过** | 接线后 `ArchiveExtractors.kindOf(x.cb7) == SEVEN_ZIP` 且 `pageCount>0` | 恢复该目录 + 路由回退（wasm 在 git 历史里） |
++| 2 | `public/lib/7z-wasm/**`（1.8 MB wasm） | CB7 解码（兜底岛） | **`SevenZExtractor` 已接线 ✅（P5-CB7 补强）；剩余前置：CB7 路由切换 + 真机回归** | `ArchiveExtractors.kindOf(x.cb7) == SEVEN_ZIP` 且 `pageCount>0`（单测已锁）；真机回归未做 | 恢复该目录 + 路由回退（wasm 在 git 历史里） |
+ | 3 | `public/lib/libunrar/**`（174 KB wasm） | CBR 解码 | **CBR 单独立项**（§4.2：许可证 + `.so`）；当前**不下线** | — | 本就是保留项 |
+ | 4 | 桌面 `ComicRender` / `comic-book.js`（打包进 `kookit-extra.min.mjs`） | 桌面/兜底岛漫画渲染 | P8 整体退役（ADR-003 ④），且 CB7/CBR 都原生或明确驻留 | P8 验收：主变体启动无 WebView 加载 | git 历史 |
+ | 5 | 契约守卫 `nativeBridge.js` / `folderBridge.js` / `androidBuild.test.js` | 兜底岛↔原生壳兼容层 | **P8 前不得删除**（ADR-003 §1） | `node scripts/check-import-rules.js`、`yarn test` | — |
+@@ -167,7 +187,8 @@ $env:GRADLE_RO_DEP_CACHE = 'C:\Users\54389\.gradle\caches'
+ |---|---|---|
+ | 真机回归（打开真实 CBZ/CBT 的手感、内存） | ❌ 未做 | 本机无 Android SDK/设备；窗口策略只有 JVM 单测覆盖 |
+ | Compose 宿主编译 | ❌ 未做 | 模板文件被排除出本模块编译，移植到 `:app` 时需真编译一次 |
+-| CB7 / CBR 真机路径 | ❌ 未做 | 依赖未接；错误信息已给出路由建议，测试锁定「必须提示兜底岛/计划依赖」 |
++| CB7 真机路径 | ⚠️ 部分 | **实现已完成**（纯 Java、零 `.so`），5 种变体单测覆盖；剩余：路由切换 + 真机打开一本 `.cb7`。BCJ2 过滤器明确不支持（走兜底岛，见 §4.1） |
++| CBR 真机路径 | ❌ 未做 | 明确不做原生（§4.2）；`RarExtractor` 给出路由建议，测试锁定「必须提示兜底岛」 |
+ | 桌面参考实现逐行对齐 | ⚠️ 部分 | `ComicRender` 不可读（§1），页序/封面契约以 P1 为准，排版手感以 ADR 描述为准 |
+ | `tar.gz` 内存解压 | ⚠️ 取舍 | 有 96 MB 上限 + 明确拒绝路径（已测） |
+ | pax 扩展头 `path` 覆盖、tar 校验和验证 | ⚠️ 未实现 | 对漫画卷宗罕见；列入后续 |
