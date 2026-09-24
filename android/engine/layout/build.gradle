@@ -1,0 +1,58 @@
+// Native layout / pagination core (`engine/layout`).
+//
+// A PURE KOTLIN JVM MODULE on purpose (same rationale as :engine:cfi):
+//   - no Android dependency, so it can be unit-tested on any JVM without the
+//     Android SDK, and
+//   - it can be consumed by the reader/annotate modules without dragging in
+//     Android APIs.
+//
+// This is the "自绘分页" half of P2 (docs/android-native-migration.md P2): the
+// CSS-columns pagination algorithm that replaces the engine's browser DOM
+// positioning. The browser's layout engine cannot be reused from Kotlin, so the
+// pagination is re-implemented here against the CSS rules the desktop engine
+// relies on (column-width / line-height / letter-spacing / para-spacing /
+// widows-orphans / alignment). CFI addressing reuses :engine:cfi (no bespoke
+// position scheme).
+//
+// Text measurement is pluggable: the device build injects a TextPaint-backed
+// measurer, the JVM tests inject a deterministic one (TextMeasurers.mono /
+// .widthTable) so every assertion is reproducible.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // The CFI core, for CFI <-> LayoutPosition addressing (ADR-002: the CFI
+    // string stays the single address format shared with the desktop app).
+    implementation project(':engine:cfi')
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:cfi:selfCheck):
+//   gradle :engine:layout:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the native layout self-check (deterministic pagination + CFI round-trip) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.layout.LayoutSelfCheckKt'
+}

@@ -1,0 +1,66 @@
+// Image / footnote / in-book link core (`engine/link`).
+//
+// A PURE KOTLIN JVM MODULE (same rationale as :engine:cfi and :engine:gesture):
+//   - no Android dependency, so it can be unit-tested on any JVM without the
+//     Android SDK, and
+//   - it can be consumed by the Compose reader (app module) and by the
+//     future native rendering pipeline without dragging in Android APIs.
+//
+// This is the "看图 / 脚注 / EPUB 内链" (P2 image-viewing, footnotes, in-book
+// links) DATA + DECISION layer:
+//   - image event data model + size-limit policy aligned 1:1 with
+//     NativeEventDispatcher.openImage (15 MiB data-URI text bound),
+//   - footnote extraction model + chapter-scoped list + body<->footnote
+//     two-way CFI addressing,
+//   - EPUB link classification (# anchor / epubcfi: / http(s) / mailto /
+//     SAF-style storage URIs / other) with a whitelist policy and a
+//     "who handles this" routing decision (system browser intent,
+//     internal CFI jump, footnote dialog, or nothing).
+//
+// PROTOCOL MIRROR — the event names / payload fields below are defined to
+// match NativeEventDispatcher.kt in :app (single source of truth on the
+// Android side) and src/utils/android/nativeBridge.js on the JS side.
+//
+// Consumes :engine:cfi for epubcfi link validation (parse / parseOrNull).
+//
+// NOTE: wiring this module into the build (`include ':engine:link'` in
+// android/settings.gradle) is deliberately left to the owner of that file
+// so concurrent work on the other P2/P3 cards stays conflict-free.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // epubcfi: link validation reuses the CFI parser of :engine:cfi.
+    implementation project(':engine:cfi')
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:gesture:selfCheck):
+//   gradle :engine:link:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the image / footnote / link self-checks (policy, routing, CFI validation) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.link.LinkSelfCheckKt'
+}

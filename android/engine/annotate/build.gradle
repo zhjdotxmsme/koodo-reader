@@ -1,0 +1,62 @@
+// Highlight / note / bookmark core (`engine/annotate`).
+//
+// A PURE KOTLIN JVM MODULE (same rationale as :engine:cfi and :engine:link):
+//   - no Android dependency, so it can be unit-tested on any JVM without the
+//     Android SDK, and
+//   - it can be consumed by the Compose reader (app module) and by the
+//     future native rendering pipeline without dragging in Android APIs.
+//
+// This is the "高亮 / 笔记 / 书签" (P2 highlights, notes, bookmarks)
+// DATA + DECISION layer:
+//   - the three-state model (HIGHLIGHT / NOTE / BOOKMARK) behind the
+//     desktop selection menu,
+//   - every position is an EPUB CFI produced by :engine:cfi ONLY — this
+//     module never invents addresses (ADR-002: desktop <-> Android
+//     annotation positions must agree, target >= 99%),
+//   - column descriptors that stay column-for-column aligned with the
+//     desktop `notes` / `bookmarks` tables frozen in schema.lock,
+//   - a codec that maps the model to the Room column rows and to the
+//     fielded JSON records consumed/produced by backup-zip import/export.
+//
+// NOTE: wiring this module into the build (`include ':engine:annotate'` in
+// android/settings.gradle) is deliberately left to the owner of that file
+// so concurrent work on the other P2/P3 cards stays conflict-free.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Positions are engine/cfi CFIs only: parse / canonicalize / collapse /
+    // compare are all reused from the golden-vector-tested CFI core.
+    implementation project(':engine:cfi')
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:link:selfCheck):
+//   gradle :engine:annotate:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the highlight / note / bookmark self-checks (three-state model, CFI golden vectors, schema alignment, codec round-trip) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.annotate.AnnotateSelfCheckKt'
+}

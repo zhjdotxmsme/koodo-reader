@@ -1,0 +1,56 @@
+// Native gesture / interaction core (`engine/gesture`).
+//
+// A PURE KOTLIN JVM MODULE (same rationale as :engine:cfi and :engine:layout):
+//   - no Android dependency, so it can be unit-tested on any JVM without the
+//     Android SDK, and
+//   - it can be consumed by the Compose reader (app module) and by the
+//     future native rendering pipeline without dragging in Android APIs.
+//
+// This is the "自绘手势" (P2 native gesture) core:
+//   - fling inertia (matching Android's OverScroller exponential decay),
+//   - edge bounce (rubber-band, matching the system overscroll feel),
+//   - page-snap prediction (which page does a gesture land on?),
+//   - tap-zone detection (the desktop 3×3 touch-control grid, kookit
+//     touchUtil.getTouchAction),
+//   - reader mode state (PAGE_TURN / SCROLL / DOUBLE_PAGE).
+//
+// The Compose layer in :app wraps this engine with Modifier.pointerInput
+// and feeds it raw touch coordinates; the engine returns a sealed
+// GestureResult that the Compose layer interprets (page navigation,
+// scroll offset changes, selection, etc.).
+
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:cfi:selfCheck):
+//   gradle :engine:gesture:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the native gesture self-check (fling, overscroll, tap zones) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.gesture.GestureSelfCheckKt'
+}
