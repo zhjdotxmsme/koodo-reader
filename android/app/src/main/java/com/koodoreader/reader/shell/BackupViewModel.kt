@@ -26,6 +26,7 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
     private val db = KoodoDatabaseProvider.get(app)
     private val coverDir = File(app.filesDir, "cover")
     private val booksDir = File(app.filesDir, "books")
+    private val fontsDir = File(app.filesDir, "fonts")
     private val backupDir = File(app.cacheDir, "backup")
 
     private val _state = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
@@ -57,7 +58,7 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
             }
             val file = local.getOrThrow()
             val report = runCatching {
-                DesktopBridge.importBackup(file, db, booksDir, coverDir)
+                DesktopBridge.importBackup(file, db, booksDir, coverDir, fontsDir)
             }
             withContext(Dispatchers.IO) { file.parentFile?.deleteRecursively() }
             if (report.isFailure) {

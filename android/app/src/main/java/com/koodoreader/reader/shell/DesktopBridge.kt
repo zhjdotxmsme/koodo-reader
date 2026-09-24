@@ -49,6 +49,7 @@ object DesktopBridge {
         db: KoodoDatabase,
         booksDir: File,
         coverDir: File,
+        fontsDir: File? = null,
     ): ImportReport = withContext(Dispatchers.IO) {
         val failures = mutableListOf<String>()
         val reports = LinkedHashMap<String, TableReport>()
@@ -86,6 +87,18 @@ object DesktopBridge {
                     failures.add("book ${bf.name}: ${ok.exceptionOrNull()}")
                 } else {
                     bookCount++
+                }
+            }
+            // Bundled fonts (desktop zips don't include fonts/ — backup.ts dir
+            // list — so this only fires for custom/extended bundles).
+            if (fontsDir != null) {
+                for (ff in bundle.fontFiles) {
+                    val dest = File(fontsDir, sanitize(ff.name))
+                    val ok = runCatching {
+                        dest.parentFile?.mkdirs()
+                        java.io.FileOutputStream(dest).use { bundle.fontStream(ff.name, it) }
+                    }
+                    if (ok.isFailure) failures.add("font ${ff.name}: ${ok.exceptionOrNull()}")
                 }
             }
         }

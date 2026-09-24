@@ -27,6 +27,9 @@ data class CoverFile(val name: String, val size: Long)
 /** A book file entry (relative name under `book/`, e.g. `k93jd3.epub`). */
 data class BookFile(val name: String, val size: Long)
 
+/** A font file entry (relative name under `fonts/`, e.g. `lxgw_wenkai.ttf`). */
+data class FontFile(val name: String, val size: Long)
+
 /**
  * A cover to bundle at export time. Content is opened lazily (streamed into
  * the zip) so thousands of covers never sit in memory at once.
@@ -64,10 +67,12 @@ class BundleOpen internal constructor(
     val configJson: String?,
     val covers: List<CoverFile>,
     val bookFiles: List<BookFile>,
+    val fontFiles: List<FontFile>,
     private val workDir: File?,
     private val zipFile: File?,
     private val coverRoot: File?,
     private val bookRoot: File?,
+    private val fontRoot: File?,
 ) : AutoCloseable {
 
     override fun close() {
@@ -99,6 +104,22 @@ class BundleOpen internal constructor(
             val f = bookRoot?.let { File(it, name) }
                 ?: throw DesktopDbException("no book dir; missing entry: $name")
             if (!f.isFile) throw DesktopDbException("no book file: $name")
+            f.inputStream().use { it.copyTo(out) }
+        }
+    }
+
+    /** Stream a bundled font file into [out]. */
+    fun fontStream(name: String, out: OutputStream) {
+        if (zipFile != null) {
+            ZipFile(zipFile).use { zf ->
+                val e = zf.getEntry("fonts/$name")
+                    ?: throw DesktopDbException("no font entry: $name")
+                zf.getInputStream(e).use { it.copyTo(out) }
+            }
+        } else {
+            val f = fontRoot?.let { File(it, name) }
+                ?: throw DesktopDbException("no fonts dir; missing entry: $name")
+            if (!f.isFile) throw DesktopDbException("no font file: $name")
             f.inputStream().use { it.copyTo(out) }
         }
     }
@@ -136,6 +157,7 @@ object BackupBundle {
             var configJson: String? = null
             val covers = mutableListOf<CoverFile>()
             val books = mutableListOf<BookFile>()
+            val fonts = mutableListOf<FontFile>()
             val it = zf.entries()
             while (it.hasMoreElements()) {
                 val entry = it.nextElement()
@@ -166,6 +188,10 @@ object BackupBundle {
                         val rel = name.removePrefix("book/")
                         books.add(BookFile(rel, entry.size))
                     }
+                    name.startsWith("fonts/") -> {
+                        val rel = name.removePrefix("fonts/")
+                        fonts.add(FontFile(rel, entry.size))
+                    }
                     else -> Unit
                 }
             }
@@ -174,10 +200,12 @@ object BackupBundle {
                 configJson = configJson,
                 covers = covers,
                 bookFiles = books,
+                fontFiles = fonts,
                 workDir = work,
                 zipFile = zip,
                 coverRoot = null,
                 bookRoot = null,
+                fontRoot = null,
             )
         }
     }
@@ -198,15 +226,19 @@ object BackupBundle {
         val books = booksDir.listFiles()
             .orEmpty().filter { it.isFile }.map { BookFile(it.name, it.length()) }
         val configJsf = File(realRoot, "config.json")
+        val fontsDir = File(dir, "fonts")
         return BundleOpen(
             tables = resolveTables(dbFiles),
             configJson = configJsf.takeIf { it.isFile }?.readText(),
             covers = covers,
             bookFiles = books,
+            fontFiles = fontsDir.listFiles()
+                .orEmpty().filter { it.isFile }.map { FontFile(it.name, it.length()) },
             workDir = null,
             zipFile = null,
             coverRoot = if (coversDir.isDirectory) coversDir else null,
             bookRoot = if (booksDir.isDirectory) booksDir else null,
+            fontRoot = if (fontsDir.isDirectory) fontsDir else null,
         )
     }
 
