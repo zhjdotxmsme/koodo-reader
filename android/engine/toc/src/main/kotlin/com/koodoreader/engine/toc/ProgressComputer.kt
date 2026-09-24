@@ -1,5 +1,8 @@
 package com.koodoreader.engine.toc
 
+import com.koodoreader.engine.cfi.Cfi
+import com.koodoreader.engine.cfi.parseOrNull
+
 /**
  * Chapter descriptor used by [ProgressComputer].
  *
@@ -39,7 +42,13 @@ class ProgressComputer(private val spine: List<SpineChapter>) {
      * @throws IndexOutOfBoundsException when [spineIndex] is out of range.
      */
     fun compute(spineIndex: Int, cfi: String): Pair<Float, Float> {
-        require(spineIndex in spine.indices) { "spineIndex $spineIndex out of range [0,${spine.lastIndex}]" }
+        // The KDoc and every caller expect IndexOutOfBoundsException; `require` would
+        // have produced IllegalArgumentException instead.
+        if (spineIndex !in spine.indices) {
+            throw IndexOutOfBoundsException(
+                "spineIndex $spineIndex out of range [0,${spine.lastIndex}]",
+            )
+        }
 
         val charOffset = extractCharOffset(cfi)
         val chapterChars = spine[spineIndex].lengthChars
@@ -66,32 +75,43 @@ class ProgressComputer(private val spine: List<SpineChapter>) {
     /**
      * Extract the character offset from a chapter-local CFI.
      *
-     * A chapter-local CFI looks like `/4/2/2:10` (the `:10` is the offset).
-     * When the CFI has no offset component, returns 0.
+     * Two shapes are accepted, because the reader layer produces both:
      *
-     * Delegates to [com.koodoreader.engine.cfi] for parsing.
+     *  - the module's **shorthand**: a lone `/n` IS the character offset (`/0` = start
+     *    of the chapter, `/1000` = 1000 characters in). This is the form
+     *    [firstChapterPercent] / [lastTotalPercent] build, and the form the unit tests
+     *    and [TocSelfCheck] drive the engine with.
+     *  - a **real CFI** that carries an explicit character offset — `/4/2/2:1234` or
+     *    `/6/4!/4/2:10` → the `:offset` of the last step that has one.
+     *
+     * Anything else (a multi-step CFI with no explicit offset, or unparseable input)
+     * yields 0.
      */
     private fun extractCharOffset(cfi: String): Int {
-        // Delegate to the CFI engine: parse the local CFI and extract offset.
-        // A null return means no offset was present; treat as 0.
+        val trimmed = cfi.trim()
+        if (trimmed.isEmpty()) return 0
+
+        // Shorthand first: `parseOrNull("/1000")` would read 1000 as a STEP index.
+        BARE_OFFSET.matchEntire(trimmed)?.let { match ->
+            return match.groupValues[1].toIntOrNull() ?: 0
+        }
+
         return try {
-            val parsed = com.koodoreader.engine.cfi.parseOrNull(cfi)
-                ?: return 0
-            val point = when (parsed) {
-                is com.koodoreader.engine.cfi.Cfi.Point -> parsed
-                is com.koodoreader.engine.cfi.Cfi.Range -> parsed.start.lastOrNull()
+            val documents = when (val parsed = parseOrNull(trimmed)) {
+                null -> return 0
+                is Cfi.Point -> parsed.documents
+                is Cfi.Range -> parsed.start
             }
-            val lastStep = (point as? com.koodoreader.engine.cfi.Cfi.Point)
-                ?.documents?.lastOrNull()
-                ?.lastOrNull { it.offset != null }
-                ?: return 0
-            lastStep.offset ?: 0
+            documents.asSequence().flatten().lastOrNull { it.offset != null }?.offset ?: 0
         } catch (_: Exception) {
             0
         }
     }
 
     companion object {
+        /** The bare-offset shorthand: `/` followed by digits, nothing else. */
+        private val BARE_OFFSET = Regex("^/(\\d+)$")
+
         /**
          * Convenience: compute progress for the first character of the first
          * chapter (should be 0.0, 0.0).

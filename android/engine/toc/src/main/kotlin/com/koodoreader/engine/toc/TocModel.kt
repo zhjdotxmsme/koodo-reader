@@ -41,19 +41,27 @@ class TocModel private constructor(
         flatNodes.firstOrNull { it.href == href }
 
     /**
-     * Title-based search: exact or prefix-free.
+     * Title-based search, in two stages (case-insensitive):
+     *
+     *  1. if any node's title **equals** the query, only those are returned — a query
+     *     for `Kotlin` must not drag in `Kotlin Standard`;
+     *  2. otherwise every node whose title **starts with** the query is returned —
+     *     `Chapter` finds `Chapter One` / `Chapter Two` / `Chapter Three`.
+     *
+     * An empty query returns an empty list (a prefix search for `""` would otherwise
+     * match the whole TOC).
      *
      * @param title the query string.
-     * @return all nodes whose [TocNode.title] equals (case-insensitive) or
-     *   starts with [title] (case-insensitive prefix), ordered by pre-order
-     *   appearance.
+     * @return the matching nodes in pre-order appearance.
      */
     fun lookupByTitle(title: String): List<TocNode> {
-        val lower = title.lowercase()
-        return flatNodes.filter {
-            it.title.lowercase() == lower ||
-                it.title.lowercase().startsWith(lower)
-        }
+        val query = title.lowercase()
+        if (query.isEmpty()) return emptyList()
+
+        val exact = flatNodes.filter { it.title.lowercase() == query }
+        if (exact.isNotEmpty()) return exact
+
+        return flatNodes.filter { it.title.lowercase().startsWith(query) }
     }
 
     companion object {

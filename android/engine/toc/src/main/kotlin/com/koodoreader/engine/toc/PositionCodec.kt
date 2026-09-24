@@ -22,24 +22,24 @@ object PositionCodec {
 
     /**
      * Encode a [ReadingPosition] to a JSON string suitable for Room storage.
+     *
+     * Every key is quoted: JSON requires it, and the payload is meant to be read by
+     * the desktop side too — not only by [decode].
      */
     fun encode(pos: ReadingPosition): String = buildString {
         append('{')
         stringField(KEY_BOOK_KEY, pos.bookKey)
         append(',')
-        append(KEY_SPINE_INDEX)
-        append(':')
-        append(pos.spineIndex)
+        numberField(KEY_SPINE_INDEX, pos.spineIndex.toString())
         append(',')
         stringField(KEY_CFI, pos.cfi)
         append(',')
-        append(KEY_CHAPTER_PERCENT)
-        append(':')
-        append(pos.chapterPercent.toDouble())
+        // `Float.toString` is used instead of `toDouble()`: the latter widens the
+        // float and emits artefacts like 0.44999998807907104 for 0.45f, while
+        // Float.toString produces the shortest value that parses back identically.
+        numberField(KEY_CHAPTER_PERCENT, pos.chapterPercent.toString())
         append(',')
-        append(KEY_TOTAL_PERCENT)
-        append(':')
-        append(pos.totalPercent.toDouble())
+        numberField(KEY_TOTAL_PERCENT, pos.totalPercent.toString())
         append('}')
     }
 
@@ -54,6 +54,18 @@ object PositionCodec {
         append('"')
         append(escapeJsonString(value))
         append('"')
+    }
+
+    /**
+     * Encode a numeric field. The key still needs its quotes — this was the bug that
+     * made [encode] emit invalid JSON (`{"bookKey":"b",spineIndex:3,...}`).
+     */
+    private fun Appendable.numberField(key: String, rawValue: String) {
+        append('"')
+        append(key)
+        append('"')
+        append(':')
+        append(rawValue)
     }
 
     /**
@@ -175,8 +187,12 @@ object PositionCodec {
             s.startsWith("true", i) -> return "true" to (i + 4)
             s.startsWith("false", i) -> return "false" to (i + 5)
             s[i] == '"' -> {
+                // Return the *unquoted* content: the map holds raw field values and
+                // every consumer converts them itself (`toIntOrNull`, `toFloatOrNull`,
+                // or uses the string as-is for bookKey / cfi). Re-quoting here made
+                // `decode(encode(pos)).bookKey` come back as `"my-book"`.
                 val (str, end) = parseString(s, i)
-                return "\"$str\"" to end
+                return str to end
             }
             s[i].isDigit() || s[i] == '-' -> {
                 val startDigit = i

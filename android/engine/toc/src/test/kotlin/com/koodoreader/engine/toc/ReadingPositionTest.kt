@@ -68,6 +68,29 @@ class ReadingPositionTest {
         assertEquals(pos.totalPercent, decoded.totalPercent)
     }
 
+    /**
+     * Regression: the numeric keys used to be emitted without quotes, so the payload
+     * was invalid JSON for any real parser (and only this codec's own reader could
+     * read it back). Room / the desktop side need valid JSON.
+     */
+    @Test
+    fun `encode emits valid JSON with every key quoted`() {
+        val json = PositionCodec.encode(
+            ReadingPosition(
+                bookKey = "my-book",
+                spineIndex = 3,
+                cfi = "/4/2/2:1234",
+                chapterPercent = 0.45f,
+                totalPercent = 0.12f,
+            ),
+        )
+        assertEquals(
+            "{\"bookKey\":\"my-book\",\"spineIndex\":3,\"cfi\":\"/4/2/2:1234\"," +
+                "\"chapterPercent\":0.45,\"totalPercent\":0.12}",
+            json,
+        )
+    }
+
     // --- ReadingPosition validation ---
 
     @Test

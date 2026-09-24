@@ -79,23 +79,29 @@ class SearchIndex private constructor(
      *   [SearchHit.rank] from 0.
      */
     fun search(query: SearchQuery): List<SearchHit> {
-        if (query.query.isEmpty()) return emptyList()
+        val needle = query.query
+        if (needle.isEmpty()) return emptyList()
 
+        val ignoreCase = !query.caseSensitive
         val hits = mutableListOf<SearchHit>()
         var rank = 0
 
         for (ch in chapters) {
             val text = ch.text
-            val searchIn = if (query.caseSensitive) text else text.lowercase()
-            val searchFor = if (query.caseSensitive) query.query else query.query.lowercase()
 
             var pos = 0
-            while (true) {
-                pos = searchIn.indexOf(searchFor, pos)
-                if (pos == -1) break
+            while (pos <= text.length - needle.length) {
+                // Compare against the ORIGINAL text (case-insensitively when asked) so
+                // every reported offset — and therefore the CFI and the context slices —
+                // stays aligned. Searching a lowercased copy would drift whenever
+                // lowercasing changes the string length (e.g. 'İ'.lowercase() is 2 chars).
+                if (!text.regionMatches(pos, needle, 0, needle.length, ignoreCase)) {
+                    pos++
+                    continue
+                }
 
                 val matchStart = pos
-                val matchEnd = pos + query.query.length
+                val matchEnd = pos + needle.length
 
                 // Extract context before (up to CONTEXT_LEN chars, clamped to start)
                 val beforeStart = (matchStart - CONTEXT_LEN).coerceAtLeast(0)
@@ -125,6 +131,7 @@ class SearchIndex private constructor(
                 )
 
                 // Move past this match to find the next one in the same chapter
+                // (non-overlapping, like `String.indexOf` in the desktop engine).
                 pos = matchEnd
             }
         }

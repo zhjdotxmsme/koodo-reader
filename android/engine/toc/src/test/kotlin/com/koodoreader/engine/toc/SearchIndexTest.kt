@@ -1,6 +1,7 @@
 package com.koodoreader.engine.toc
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -55,7 +56,8 @@ class SearchIndexTest {
         val index = SearchIndex.build("book-x", makeChapters())
 
         val hits = index.search(SearchQuery("book-x", "kotlin", caseSensitive = false))
-        assertEquals(4, hits.size) // 1 in ch0 + 2 in ch1 + 1 in ch3
+        // The fixture has "Kotlin" 5 times: 1 in ch0, 3 in ch1, 1 in ch2.
+        assertEquals(5, hits.size)
     }
 
     @Test
@@ -63,7 +65,7 @@ class SearchIndexTest {
         val index = SearchIndex.build("book-x", makeChapters())
 
         val hits = index.search(SearchQuery("book-x", "Kotlin", caseSensitive = true))
-        assertEquals(3, hits.size) // "Kotlin" (capital K) appears 3 times
+        assertEquals(5, hits.size) // every occurrence in the fixture is capital-K "Kotlin"
     }
 
     @Test
@@ -82,20 +84,24 @@ class SearchIndexTest {
 
         val hits = index.search(SearchQuery("book-x", "Kotlin", caseSensitive = true))
         val ch1Hits = hits.filter { it.spineIndex == 1 }
-        assertEquals(2, ch1Hits.size) // "Kotlin" appears twice in chapter 2
+        assertEquals(3, ch1Hits.size) // "Kotlin" appears three times in chapter 2
     }
 
     @Test
     fun `same chapter multiple hits have distinct ranks`() {
         val index = SearchIndex.build("book-x", makeChapters())
 
+        // "is" occurs once in ch0 and several times in ch1 (also inside "concise" /
+        // "coexist"), which is exactly the multi-hit-per-chapter case we care about.
         val hits = index.search(SearchQuery("book-x", "is", caseSensitive = true))
-        // Chapter 1 has "is" twice: "is concise" and "is safe"
         val ch1Hits = hits.filter { it.spineIndex == 1 }
-        assertEquals(2, ch1Hits.size)
+        assertTrue(ch1Hits.size >= 2, "chapter 1 should have several hits, got ${ch1Hits.size}")
 
-        val ranks = ch1Hits.map { it.rank }.sorted()
-        assertEquals(listOf(1, 2), ranks) // first hit is rank 1 (chapter 0 has the first "is")
+        val ranks = ch1Hits.map { it.rank }
+        assertEquals(ranks.distinct().size, ranks.size, "ranks must be distinct: $ranks")
+        assertEquals(ranks.sorted(), ranks, "ranks must be ascending inside a chapter: $ranks")
+        // Ranks are global: chapter 1 keeps counting from chapter 0's hits.
+        assertEquals(hits.count { it.spineIndex < 1 }, ranks.first())
     }
 
     // --- Empty query ---
@@ -128,9 +134,10 @@ class SearchIndexTest {
         assertEquals(1, hits.size)
         val hit = hits[0]
 
-        assertEquals("modern programming ", hit.contextBefore)
+        // ±CONTEXT_LEN (40) window around the match; the whole 31-char prefix fits.
+        assertEquals("Kotlin is a modern programming ", hit.contextBefore)
         assertEquals("language", hit.matchedText)
-        assertEquals(". It runs on the JV", hit.contextAfter)
+        assertEquals(". It runs on the JVM.", hit.contextAfter)
     }
 
     @Test
@@ -163,7 +170,8 @@ class SearchIndexTest {
         assertEquals(1, hits.size)
         val hit = hits[0]
         assertEquals(" here.", hit.contextAfter)
-        assertEquals("", hit.contextAfter.takeLast(1).takeIf { it == "." } ?: "")
+        // Clamped: the window stops at the chapter end instead of running past it.
+        assertTrue(hit.contextAfter.length < 40, "context must be clamped at the end")
     }
 
     // --- CFI target generation ---
@@ -230,7 +238,8 @@ class SearchIndexTest {
         val index = SearchIndex.build("book-x", chapters)
 
         assertEquals(3, index.search(SearchQuery("book-x", "abc", caseSensitive = false)).size)
-        assertEquals(2, index.search(SearchQuery("book-x", "ABC", caseSensitive = false)).size)
+        // "ABCabcABC": case-insensitively all three groups match, whichever case is typed.
+        assertEquals(3, index.search(SearchQuery("book-x", "ABC", caseSensitive = false)).size)
         assertEquals(1, index.search(SearchQuery("book-x", "abc", caseSensitive = true)).size)
         assertEquals(2, index.search(SearchQuery("book-x", "ABC", caseSensitive = true)).size)
     }

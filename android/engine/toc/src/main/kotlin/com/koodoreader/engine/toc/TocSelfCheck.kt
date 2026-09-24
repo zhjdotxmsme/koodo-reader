@@ -125,13 +125,14 @@ fun main() {
         )
         val index = SearchIndex.build("book-x", chapters)
 
-        // Case-insensitive multi-hit
+        // Case-insensitive multi-hit: the fixture has "Kotlin" once in ch0, twice in
+        // ch1 and once in ch2 → 4 occurrences (this used to expect 3).
         val hits = index.search(SearchQuery("book-x", "kotlin", caseSensitive = false))
-        check(hits.size == 3) { "Expected 3 hits for 'kotlin', got ${hits.size}" }
+        check(hits.size == 4) { "Expected 4 hits for 'kotlin', got ${hits.size}" }
 
-        // Case-sensitive (only exact case)
+        // Case-sensitive (only exact case): every occurrence in the fixture is "Kotlin".
         val hitsCs = index.search(SearchQuery("book-x", "Kotlin", caseSensitive = true))
-        check(hitsCs.size == 2) { "Expected 2 case-sensitive hits for 'Kotlin', got ${hitsCs.size}" }
+        check(hitsCs.size == 4) { "Expected 4 case-sensitive hits for 'Kotlin', got ${hitsCs.size}" }
 
         // Multiple hits in same chapter
         val hitsK2 = index.search(SearchQuery("book-x", "Kotlin", caseSensitive = false))
