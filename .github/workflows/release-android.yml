@@ -73,8 +73,14 @@ jobs:
       - name: Check Room entities match schema.lock (native data-layer guard)
         run: node scripts/check-room-schema.js
 
-      - name: Check import rules match folderBridge.js (native import guard)
+      - name: Check import rules match desktop list + folderBridge subset (native import guard)
         run: node scripts/check-import-rules.js
+
+      - name: Check desktop DDL constants match schema.lock (native -> desktop bridge guard)
+        run: node scripts/check-dbio-ddl.js
+
+      - name: Check bundled locales match src/assets/locales (i18n bridge guard)
+        run: node scripts/sync-locales-android.js --check
 
       - name: Build the web app
         env:
@@ -139,12 +145,15 @@ jobs:
           # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
           gradle --version | grep -q "Gradle 8.5"
 
-      - name: "Native engine unit tests (CFI port: golden vectors + invariants)"
+      - name: "Native JVM unit tests (CFI port + import rules/pipeline + db bridge)"
         shell: bash
         run: |
           set -e
           cd android
           gradle :engine:cfi:test --no-daemon --console=plain
+          gradle :core:importer:test --no-daemon --console=plain
+          gradle :core:dbio:test --no-daemon --console=plain
+          gradle :core:common:test --no-daemon --console=plain
 
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
         run: node scripts/build-android.js --target webview --debug --abi arm64-v8a,armeabi-v7a --audit --verbose

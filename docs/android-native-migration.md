@@ -146,7 +146,7 @@ node scripts/build-android.js --target native,webview --no-split
 | 翻页延迟 P90 | < 50 ms |
 | 滚动手势 | 与系统一致（原生 fling） |
 | 内存峰值（10 万字 EPUB） | < 350 MB |
-| APK 体积（arm64，native 目标） | 先测基线，再定目标（不含兜底岛 webapp 时可显著下降） |
+| APK 体积（arm64，native 目标） | 先测基线，再定目标（不含兜底岛 webapp 时可显著下降）——基线实测 **20.03 MB**（debug、未拆 ABI，`docs/android-baseline.json`） |
 | 标注兼容 | 桌面 ↔ 安卓 双向位置一致率 ≥ 99% |
 
 ---
@@ -168,13 +168,31 @@ node scripts/build-android.js --target native,webview --no-split
 
 ## 10. Phase 0 Checklist
 
-- [ ] 引擎能力盘点（逐项跑现 WebView 版功能，产出清单）
+- [x] 引擎能力盘点（逐项跑现 WebView 版功能，产出清单）→ `docs/android-engine-capability-inventory.md`（附录 A 33 项逐项依据 + 基础设施盘点；方式=代码走查+守卫/单测证据，无设备故未做交互 QA）
 - [x] 逐文件 LOC 基线：`node scripts/android-baseline.js --modules`（kookit @ dev / foliate-js @ main → `docs/android-loc-baseline.json`）
 - [x] 桌面 `.db` schema 提取 → `schema.lock`：`node scripts/android-baseline.js --schema <data.db 路径>`（本机无档案时用 `--schema bootstrap`：shipped DDL 三重交叉验证 `.mjs` ↔ browser bundle ↔ 已安装 asar；sql.js 引擎、零原生依赖，产物可复现）
-- [ ] 性能基线（冷启动 / 打开 / 翻页 / 内存 / APK 体积）记录到 `docs/android-baseline.json`
+- [x] 性能基线（冷启动 / 打开 / 翻页 / 内存 / APK 体积）记录到 `docs/android-baseline.json`（APK 20.03 MB debug / JVM 1000 本压测通过已实测；冷启动/打开/翻页/内存 pending-device，测量配方已写入 JSON，待 t-mudyjpkr 真机回填）
 - [x] PDF 渲染库 POC 结论：**选定 pdf.js（引擎 WebView 内），排除 Pdfium（16KB 页 .so 未对齐、上游不维护）与 PdfBox-Android（慢渲染），PdfRenderer 留作导出/打印旁路**（静态 POC + 调研，真机数据回填 §4 → `docs/android-pdf-poc.md`）
 - [x] ADR-001 架构选型、ADR-002 定位与标注兼容策略、ADR-003 兜底岛生命周期（→ `docs/adr/ADR-001~003`）
 - [x] 桌面端功能对照表（附录 A）填写完成（33 项，桌面实现位置已按代码核实）
+
+---
+
+## 11. P1 收口与 P2 开工前置确认（2026-09-23）
+
+### 已确认就绪（本机全绿复验）
+
+| 项 | 证据 |
+|---|---|
+| 守卫矩阵 | `check-room-schema` / `check-import-rules` / `check-dbio-ddl` / `sync-locales-android --check` / `gen-cfi-golden --check` 全部通过 |
+| JVM 测试矩阵 | `:engine:cfi`（76 向量）/ `:core:importer`（41）/ `:core:dbio`（11）/ `:core:common`（8）+ `:app` 本地单测（11，LibraryLogic）全绿 |
+| 出包 | `:app:assembleDebug -Ptarget=native` 成功（20.03 MB debug，见 `docs/android-baseline.json`） |
+| P2 输入 | CFI 内核 bug-for-bug 对齐 + 黄金向量防漂移（ADR-002）；附录 A.2/A.3 范围明确；数据层与导入管线可支撑阅读器开发 |
+
+### 遗留（不阻断 P2，挂账跟踪）
+
+1. **真机依赖**（测量脚本已备 `scripts/measure-cold-start.js`，任一有设备的机器一条命令出 P90）：冷启动 P90 / 打开 EPUB / 翻页延迟 / 内存峰值四项回填 `docs/android-baseline.json`；1000 本真机导入复测；桌面 zip 恢复冒烟（Electron 侧 restore 一次）。
+2. **代码审查挂账 7 项**（见任务看板 t-mudyjpgw / t-mudyjpiw 评论）：迁移桥 path 改写【高】、封面流式导出、导入事务包裹等，建议在 P2 引擎依赖桌面数据回填前修毕。
 
 ---
 
@@ -186,13 +204,13 @@ node scripts/build-android.js --target native,webview --no-split
 
 | 能力 | 桌面端实现位置 | Android 原生目标 | 阶段 | 状态 |
 |---|---|---|---|---|
-| 书库/书架/收藏/回收站 | `src/pages/manager` + `src/containers/lists/*` | `app/shell`（P1 壳；成规模后拆 `feature/library`） | P1 | ◐ Compose 书架网格 + 阅读占位已落地（`-Ptarget=native` 启动）；排序/视图模式/收藏/回收站待做 |
-| 批量导入（本地目录） | `src/components/importLocal` | SAF + `core/data` | P1 | ◐ SAF 选目录→共享枚举→规则过滤→流式 MD5 查重→Room 分批入库已落地（`core/importer` 单一事实源 + `check-import-rules.js` 守卫 + 17 单测）；1000 本不 OOM 待真机回填、封面/元数据抽取待后续行 |
-| 封面生成/缓存 | `src/utils/file/coverUtil.ts` | `core/data` | P1 | ☐ |
-| 书籍拖拽排序/视图模式 | `src/utils/reader/bookDrag.ts`、`src/components/viewMode` | `feature/library` | P1 | ☐ |
-| 多语言（41 个 locale） | `src/assets/locales/*.json` | `core/common`（key 与桌面一致） | P1 | ☐ |
+| 书库/书架/收藏/回收站 | `src/pages/manager` + `src/containers/lists/*` | `app/shell`（P1 壳；成规模后拆 `feature/library`） | P1 | ◐ Compose 书架（网格/列表视图）+ 排序 5 项（名称/作者/格式/最近添加/手动）+ 收藏 + 回收站（软删除/恢复/彻底删除）已落地（`LibraryLogic` 纯 JVM + `LibraryPrefs`，语义对齐 bookDrag.ts；11 单测）；拖拽悬浮 ghost 打磨与书架（shelf）分组待做 |
+| 批量导入（本地目录+多选文件） | `src/components/importLocal` | SAF + `core/data` + `core/importer` | P1 | ◐ SAF 选目录/多选文件→共享枚举→规则过滤（桌面 18 格式清单，含 .xml）→书籍文件流式落盘（`filesDir/books`）→流式 MD5 查重→EPUB 元数据/CBZ 页码增强→Room 分批入库已落地（`core/importer` 单一事实源 + `check-import-rules.js` 守卫 + 41 单测，含 1000 本 JVM 压测）；真机 1000 本回填待「P1 验收」卡 |
+| 封面生成/缓存 | `src/utils/file/coverUtil.ts` | `core/data` + `core/importer` | P1 | ◐ EPUB（container→OPF→cover meta/回退 cover 图）与 CBZ（natural sort 首图）封面抽取已落地；`CoverStore` 按桌面 `<bookKey>.<ext>` 约定写入 `cover/` 目录并供书架展示；PDF/MOBI 等格式封面随 P2+ 引擎补全 |
+| 书籍拖拽排序/视图模式 | `src/utils/reader/bookDrag.ts`、`src/components/viewMode` | `feature/library` | P1 | ◐ 网格长按拖拽重排（落点=占据目标槽位，顺序持久化）+ 网格/列表视图切换已落地；拖拽到书架分组（shelfList）待做 |
+| 多语言（41 个 locale） | `src/assets/locales/*.json` | `core/common`（key 与桌面一致） | P1 | ◐ i18n 桥已落地：构建期 `sync-locales-android.js` 同步 en+zh-CN 子集进 assets（`--check` 守卫进 CI），`core/common` 纯 JVM 查表（FlatJson+Localization，回退链 所选→en→key），Compose `t(key)` + 语言切换持久化（跟随系统/中文/English）；子集策略见 ADR-004，其余 39 locale 按需加载推迟 P6+ |
 | 备份/恢复/数据导入导出 | `src/utils/file/backup.ts`、`restore.ts`、`importData.ts`、`export.ts` | `core/data`（zip 结构与桌面一致） | P7 | ☐ |
-| 本地数据库（books/notes/bookmarks/plugins/words + temp-*） | `src/assets/lib/kookit-extra.min.mjs`（schema 已固化于 `schema.lock`） | Room（列名逐一对齐） | P1 | ◐ `android/core/data` 实体/DAO 已落地，守卫 `check-room-schema.js`；待迁移与回填 |
+| 本地数据库（books/notes/bookmarks/plugins/words + temp-*） | `src/assets/lib/kookit-extra.min.mjs`（schema 已固化于 `schema.lock`） | Room（列名逐一对齐） | P1 | ◐ `android/core/data` 实体/DAO 已落地；桌面⇄原生双向桥已落地（`core/dbio`：SQLite 读写 + 桌面备份压缩包读写，桌面 DDL 逐字守卫 `check-dbio-ddl.js`；`core/data` + Backup 页面导入/导出；temp-* 策略=仅当正式表缺失/为空时恢复草稿、导出只写正式表；10 单测含双向 round-trip）；守卫 `check-room-schema.js` 全绿 |
 | 云同步 / WebDAV / S3 | `main.js` + 插件 | **不做** | — | ✗ |
 | 插件系统（dict/translation/voice 注册表） | `src/utils/plugins/*`（catalog/registry/records） | **不做**（核心源内置为 feature） | — | ✗ |
 
