@@ -75,6 +75,12 @@ class ImportPipeline(
     private val clock: () -> Long = { System.currentTimeMillis() },
     /** Injectable 0..999 random (tests): suffix of [BookRules.buildBookKey]. */
     private val random: () -> Int = { (0..999).random() },
+    /**
+     * Host-provided cover extractors for formats the pure-JVM module cannot
+     * handle (e.g. `"pdf"` → PdfRenderer on Android). Failures degrade to no
+     * cover, exactly like the built-in extractors.
+     */
+    private val extraCoverExtractors: Map<String, (File) -> BookCover?> = emptyMap(),
 ) {
 
     /**
@@ -159,6 +165,14 @@ class ImportPipeline(
                                 record = record.copy(page = comic.pageCount.toLong())
                             }
                             cover = comic.cover
+                        }
+                    }
+                    "mobi", "azw", "azw3" -> {
+                        cover = MobiCover.extract(dest)
+                    }
+                    else -> {
+                        extraCoverExtractors[ext]?.let { extractor ->
+                            cover = runCatching { extractor(dest) }.getOrNull()
                         }
                     }
                 }

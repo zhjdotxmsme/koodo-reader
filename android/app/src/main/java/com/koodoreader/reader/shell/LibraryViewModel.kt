@@ -287,7 +287,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val progressHook: (Int, Int) -> Unit = { done, total ->
                     _importState.value = ImportState.Running(done, total)
                 }
-                val result = ImportPipeline().process(
+                val result = ImportPipeline(
+                    extraCoverExtractors = mapOf(
+                        // PDF page-1 render needs the framework PdfRenderer —
+                        // not available to the pure-JVM importer module.
+                        "pdf" to { file -> com.koodoreader.reader.PdfCoverExtractor.extract(file) },
+                    ),
+                ).process(
                     pending = pending,
                     booksOut = booksDir,
                     existingMd5 = { md5 -> dao.getByMd5(md5).isNotEmpty() },
