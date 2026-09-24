@@ -236,7 +236,7 @@ node scripts/build-android.js --target native,webview --no-split
 | 目录/进度/导航 | `src/containers/panels/navigationPanel`、`progressPanel` + kookit `navigationUtil.ts`(1344) | `feature/reader` | P2 | ☐ |
 | 手势/触控/动画 | kookit `touchUtil.ts`(1082) / `animationUtil.ts`(342) | Compose 手势 + `engine/gesture` | P2 | ☐ |
 | 全书搜索 | `src/components/searchBox` + kookit 搜索管线 | `feature/reader` | P2 | ☐ |
-| 主题/字体/行距/边距/背景 | `src/utils/reader/themeUtil.ts`、`styleUtil.ts`、`backgroundUtil.ts`、`src/utils/file/fontUtil.ts`、`src/components/readerSettings` | `core/designsystem` | P2 | ☐ |
+| 主题/字体/行距/边距/背景 | `src/utils/reader/themeUtil.ts`、`styleUtil.ts`、`backgroundUtil.ts`、`src/utils/file/fontUtil.ts`、`src/components/readerSettings` | `core/designsystem` | P2 | ◐ 字体勘察完成（2026-09-23，任务卡 t-muew0ia6）：①桌面字体体系=fontList/customFonts 配置（FontItem{id,label,value,type}）+ fonts/ 目录字节（Electron）或 localforage data URL（浏览器）；②**WebView 兜底岛在安卓自洽**：字体字节存 WebView IndexedDB（`font_<key>`）、导入走 WebView 文件选择器（MainActivity 已接 onShowFileChooser），无需原生 /fonts 桥（该子项关闭）；③原生轨待 P2：字体清单单一事实源（fontList 键对齐）、系统字体枚举（API29+ SystemFonts/低版本 fonts.xml）、SAF 自定义导入（ttf/otf）、Typeface 缓存与 CJK 回退链（FontFallbackResolver，自绘分页前置）、桌面备份 fonts/ 迁移互通。规划详见任务看板同卡清单 |
 | 看图/脚注/内链 | `src/components/imageViewer`、`src/components/popups/*` + `NativeEventDispatcher` | `feature/reader` | P2 | ☐ |
 
 ### A.4 阅读增强（P6）
