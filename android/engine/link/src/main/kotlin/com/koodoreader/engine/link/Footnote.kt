@@ -211,7 +211,7 @@ object FootnoteExtractor {
         // Anchor → number map for the fallback cross-match (first defn wins per
         // anchor; later duplicates are ignored for resolution purposes only).
         val defNumberByAnchor: Map<String, Int> = defs
-            .filter { (_, n) -> n != null && it.first.anchor.isNotEmpty() }
+            .filter { (entry, n) -> n != null && entry.anchor.isNotEmpty() }
             .associate { (entry, n) -> entry.anchor to (n as Int) }
 
         // Linked definitions → the ordered (ascending number) chapter list.

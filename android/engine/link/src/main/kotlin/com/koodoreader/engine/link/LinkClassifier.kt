@@ -87,7 +87,12 @@ object LinkClassifier {
      */
     private fun epubCfiTarget(raw: String, inner: String): LinkTarget {
         val body = inner.trim()
-        if (body.isEmpty()) {
+        // EPUB CFI syntax requires the path to start with "/" (e.g.
+        // "/6/4[chap01ref]!/4/2"). `:engine:cfi` mirrors upstream epubcfi.js, whose
+        // tokenizer tolerates a body without it and returns an empty point, so the
+        // leading slash is checked here: a body like "2" must not become a
+        // navigable InternalJump.
+        if (body.isEmpty() || !body.startsWith("/")) {
             return LinkTarget(raw, LinkKind.EPUBCFI, cfiValid = false)
         }
         val parsed = parseOrNull(body) // CfiException → null, never throws
