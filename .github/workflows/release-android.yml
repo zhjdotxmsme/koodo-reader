@@ -145,22 +145,41 @@ jobs:
           # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
           gradle --version | grep -q "Gradle 8.5"
 
-      - name: "Native JVM unit tests (engine + core modules)"
+      - name: "Native unit tests — EVERY module (engine + core + feature + :app)"
         shell: bash
         run: |
           set -e
           cd android
-          gradle :engine:cfi:test --no-daemon --console=plain
-          gradle :engine:layout:test --no-daemon --console=plain
-          gradle :engine:feature:cleanTest :engine:feature:test --no-daemon --console=plain
-          gradle :engine:text:cleanTest :engine:text:test --no-daemon --console=plain
-          gradle :engine:mobi:cleanTest :engine:mobi:test --no-daemon --console=plain
-          gradle :core:importer:test --no-daemon --console=plain
-          gradle :core:dbio:test --no-daemon --console=plain
-          gradle :core:common:test --no-daemon --console=plain
+          # The full matrix, not a hand-maintained list. The previous list named 8 modules
+          # and silently skipped engine:annotate/link/toc/image/pdf, core:locale, all six
+          # feature:* modules and :app itself — which is exactly where 46 failing tests
+          # were hiding (docs/android-completeness-2026-09-24.md). Invoking the bare task
+          # name runs `test` in every subproject that has it, so a new module is covered
+          # the moment it is registered in settings.gradle.
+          gradle test --no-daemon --console=plain
 
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
         run: node scripts/build-android.js --target webview,native --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
+
+      - name: "16 KB page-size guard (every .so inside every built APK)"
+        shell: bash
+        run: |
+          set -e
+          # Pure Node (scripts/check-elf-16kb.js reads the ZIP and the ELF program headers
+          # itself): needs neither `unzip` nor `llvm-readelf`, so it runs on any runner.
+          # Android 15+ rejects a .so whose PT_LOAD segments are not 16 KB aligned, and
+          # Play requires it from 2025-11. The first .so in this APK arrived with
+          # androidx.datastore (P6-TTS) — see docs/android-baseline-after.json.
+          found=0
+          while IFS= read -r -d '' apk; do
+            found=1
+            echo "== $apk"
+            node scripts/check-elf-16kb.js "$apk"
+          done < <(find android/app/build/outputs/apk -type f -name '*.apk' -print0)
+          if [ "$found" = "0" ]; then
+            echo "::error::no APK found to check for 16 KB alignment"
+            exit 1
+          fi
 
       - name: Collect APK artifacts
         shell: bash

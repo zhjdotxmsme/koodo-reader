@@ -130,9 +130,10 @@ node scripts/build-android.js --target native,webview --no-split
 ```
 
 ### 7.3 CI
-- `release-android.yml` 现有 job 保持（webview 目标），新增原生单元测试步骤：`gradle :engine:cfi:test`（JVM 模块，不需要 Android SDK）。
+- `release-android.yml` 现有 job 保持（webview 目标），原生单元测试步骤改为**全量** `gradle test --no-daemon` —— 早期是一份手写的 8 个 module 清单，漏掉了 `engine:annotate/link/toc/image/pdf`、`core:locale`、六个 `feature:*` 与 `:app` 本身，46 个失败测试正是藏在「没被跑过」的这些 module 里（见 `docs/android-completeness-2026-09-24.md`）。裸任务名会在**每个**声明了该任务的 subproject 上执行，因此新 module 一注册进 `settings.gradle` 即被覆盖。
+- `:app:assembleDebug` 门禁由既有的 `node scripts/build-android.js --target webview,native --debug --abi …` 步骤承担（脚本内部即 `:app:assemble<BuildType>`，见 `src/utils/android/androidBuild.js`）；APK 出包后紧跟 **16 KB 页对齐守卫** `node scripts/check-elf-16kb.js <apk>`（纯 Node 实现，不再依赖 `unzip`/`readelf`，任何 runner 都能跑）。
 - Jest 侧保留 `nativeBridge.test.js` / `folderBridge.test.js` / `androidBuild.test.js` 作为**协议与构建守卫**。
-- 原生守卫脚本（Node 侧、CI 已接入）：`gen-cfi-golden.js --check`（CFI 黄金向量 vs 上游）、`check-room-schema.js`（Room 实体 vs `schema.lock` 逐列对齐）、`check-import-rules.js`（`:core:importer/BookRules.kt` vs `folderBridge.js` —— SAF 导入规则的 Kotlin 单一事实源与 WebView 轨 JS 镜像保持 lock-step，P8 WebView 下线前删 JS 侧）。
+- 原生守卫脚本（Node 侧、CI 已接入）：`gen-cfi-golden.js --check`（CFI 黄金向量 vs 上游）、`check-room-schema.js`（Room 实体 vs `schema.lock` 逐列对齐）、`check-import-rules.js`（`:core:importer/BookRules.kt` vs `folderBridge.js` —— SAF 导入规则的 Kotlin 单一事实源与 WebView 轨 JS 镜像保持 lock-step，P8 WebView 下线前删 JS 侧）、`check-elf-16kb.js`（APK 内每个 `.so` 的 `PT_LOAD` 是否 16 KB 对齐；首个 `.so` 随 `androidx.datastore`/P6-TTS 进入 APK）。
 - `-Ptarget=native` 已接线启动器：`AndroidManifest.xml` 的 `LauncherAlias`（activity-alias）经 manifest placeholder `${nativeLauncher}` 指向 `shell.NativeShellActivity`（Compose 壳：书架 + 阅读占位）或默认 `MainActivity`（WebView 宿主）；两个目标均已本地验证可编译出 APK（`gradle :app:assembleDebug [-Ptarget=native]`）。Compose 依赖当前两条轨都打入（简单优先），体积优化见 R7。
 
 ---
