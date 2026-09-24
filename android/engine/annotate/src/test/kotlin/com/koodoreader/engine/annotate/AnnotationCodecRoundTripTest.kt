@@ -163,16 +163,22 @@ class AnnotationCodecRoundTripTest {
 
     @Test
     fun `date parts round-trip correctly`() {
+        // The desktop keeps the epoch-millis timestamp in the `key` column and derives
+        // the `date` object from it, so key and createdAt must agree — that is exactly
+        // how the codec recovers createdAt (from `key`). A fixture where the two
+        // disagree cannot round-trip by construction.
+        val createdAt = 1704067200000L // 2024-01-01 00:00:00 UTC
         val original = Annotation.highlight(
-            key = "1700000000006",
+            key = createdAt.toString(),
             bookKey = "book",
             cfiStart = "epubcfi(/6/4!/4/2/1:0)",
             cfiEnd = "epubcfi(/6/4!/4/2/2:3)",
             selectedText = "date test",
-            createdAt = 1704067200000L, // 2024-01-01 00:00:00 UTC
+            createdAt = createdAt,
         )
 
         val decoded = AnnotationCodec.decode(AnnotationCodec.encode(original))
+        assertEquals(createdAt, decoded.createdAt)
         assertEquals(original.dateParts(), decoded.dateParts())
     }
 

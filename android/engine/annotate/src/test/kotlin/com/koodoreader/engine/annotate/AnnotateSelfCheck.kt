@@ -85,12 +85,12 @@ fun main() {
     check("bookmark isRange false", bm.isRange == false)
     check("bookmark label preserved", bm.label == "bookmark label")
 
-    // Factory: bookmark rejects range CFI
+    // Factory: bookmark rejects range CFI (a range needs three comma-separated parts)
     check("bookmark rejects range CFI", try {
         Annotation.bookmark(
             key = "x",
             bookKey = "b",
-            cfi = "epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)",
+            cfi = "epubcfi(/6/4!/4/2,/1:0,/3:5)",
         )
         false
     } catch (e: IllegalArgumentException) {
@@ -142,8 +142,10 @@ fun main() {
     println("")
     println("== CfiAnchor ==")
     val p1 = "epubcfi(/6/4!/4/2/1:0)"
-    val p2 = "epubcfi(/6/4!/4/2/2:5)"
-    val p3 = "epubcfi(/6/4!/4/2/3:0)"
+    // Character offsets only serialize on ODD (text-node) steps — a `:5` on step `/2` is
+    // dropped when the CFI is re-serialized, so every point here uses an odd index.
+    val p2 = "epubcfi(/6/4!/4/2/3:5)"
+    val p3 = "epubcfi(/6/4!/4/2/5:0)"
     val range1 = CfiAnchor.rangeCfi(p1, p2)
     check("isValid point CFI", CfiAnchor.isValid(p1))
     check("isValid range CFI", CfiAnchor.isValid(range1))

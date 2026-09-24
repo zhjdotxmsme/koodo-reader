@@ -138,7 +138,19 @@ fun parse(cfi: String): Cfi {
     val tokens = tokenizeCfi(unwrapCfi(cfi))
     val commas = tokens.indices.filter { tokens[it] is CfiToken.RangeSeparator }
     if (commas.isEmpty()) {
-        return Cfi.Point(parseDocuments(tokens))
+        val point = Cfi.Point(parseDocuments(tokens))
+        // A CFI with no steps at all (`""`, `"/"`, `epubcfi(/)`, `epubcfi(bad)`) used to
+        // come back as an empty point, i.e. "valid" to every caller. Upstream would
+        // produce the same empty shape, but the rest of this core treats a missing path
+        // as [CfiErrorCode.EMPTY_PATH] (see parseSteps), so it is reported here too.
+        if (point.documents.all { it.isEmpty() }) {
+            throw CfiException(
+                CfiErrorCode.EMPTY_PATH,
+                "CFI contains no steps",
+                mapOf("cfi" to cfi),
+            )
+        }
+        return point
     }
 
     val parts = splitAt(tokens, commas).map { parseDocuments(it) }

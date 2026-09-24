@@ -1,6 +1,7 @@
 package com.koodoreader.engine.annotate
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -90,12 +91,21 @@ class AnnotationKindTest {
             Annotation.bookmark(
                 key = "5",
                 bookKey = "b",
-                cfi = "epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)",
+                // A real range CFI has three comma-separated parts:
+                // `epubcfi(parent,start,end)` — a two-part form is rejected by
+                // :engine:cfi with CFI_RANGE_INCOMPLETE, which is not the error this
+                // test is about.
+                cfi = "epubcfi(/6/4!/4/2,/1:0,/2:5)",
             )
         } catch (e: IllegalArgumentException) {
             caught = e
         }
-        assertEquals("expected a point CFI for a bookmark", caught?.message?.substringBefore(":"))
+        // The message is "expected a point CFI for a bookmark, got a range: <cfi>"; the
+        // first colon sits after ", got a range", so assert on the stable prefix.
+        assertTrue(
+            caught?.message?.startsWith("expected a point CFI for a bookmark") == true,
+            "unexpected message: ${caught?.message}",
+        )
     }
 
     // ── Color mapping ──────────────────────────────────────────────────────

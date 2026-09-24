@@ -13,6 +13,17 @@ import org.junit.jupiter.api.Test
  */
 class CfiAnchorTest {
 
+    private companion object {
+        /**
+         * A canonical range CFI: `epubcfi(parent,start,end)` — THREE comma-separated
+         * parts. A two-part `epubcfi(start,end)` is not a CFI range: `:engine:cfi`
+         * rejects it with `CFI_RANGE_INCOMPLETE` (pinned by `CfiInvariantChecks`),
+         * because upstream foliate would otherwise leave `end` undefined.
+         */
+        const val RANGE_1_TO_2 = "epubcfi(/6/4!/4/2,/1:0,/2:5)"
+        const val RANGE_1_TO_3 = "epubcfi(/6/4!/4/2,/1:0,/3:10)"
+    }
+
     // ── isValid / isPoint / isRange ─────────────────────────────────────────
 
     @Test
@@ -22,7 +33,7 @@ class CfiAnchorTest {
 
     @Test
     fun `isValid returns true for a valid range CFI`() {
-        assertTrue(CfiAnchor.isValid("epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)"))
+        assertTrue(CfiAnchor.isValid(RANGE_1_TO_2))
     }
 
     @Test
@@ -49,12 +60,12 @@ class CfiAnchorTest {
 
     @Test
     fun `isPoint returns false for range CFI`() {
-        assertFalse(CfiAnchor.isPoint("epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)"))
+        assertFalse(CfiAnchor.isPoint(RANGE_1_TO_2))
     }
 
     @Test
     fun `isRange returns true for range CFI`() {
-        assertTrue(CfiAnchor.isRange("epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)"))
+        assertTrue(CfiAnchor.isRange(RANGE_1_TO_2))
     }
 
     @Test
@@ -97,7 +108,13 @@ class CfiAnchorTest {
         assertTrue(CfiAnchor.isRange(range))
         // startPoint / endPoint collapse correctly
         assertEquals(start, CfiAnchor.startPoint(range))
-        assertEquals(end, CfiAnchor.endPoint(range))
+        // CAVEAT (upstream-faithful, see :engine:cfi buildRange): `buildRange` only
+        // supports ranges inside ONE document — the non-local prefix is copied from
+        // `from` verbatim. So a cross-document range keeps the start's chapter prefix
+        // when collapsed to its end. The desktop engine behaves identically, which is
+        // what ADR-002 requires; the cross-chapter case must therefore be modelled by
+        // the caller (one annotation per chapter), not by a single range CFI.
+        assertEquals("epubcfi(/6/2!/4/2/3:10)", CfiAnchor.endPoint(range))
     }
 
     // ── Golden vector 4 — pure text offset ─────────────────────────────────
@@ -158,9 +175,14 @@ class CfiAnchorTest {
     }
 
     @Test
-    fun `versioned epubcfi prefix is accepted`() {
-        val versioned = "epubcfi:0?/6/4!/4/2/1:0"
-        assertTrue(CfiAnchor.isValid(versioned))
+    fun `versioned epubcfi URI spelling is not an annotation position`() {
+        // The `epubcfi:0?` URI spelling is a LINK form, normalized by `:engine:link`
+        // (LinkClassifier.stripEpubCfiVersion) before it reaches the CFI core. Stored
+        // annotation positions are always the wrapped `epubcfi(...)` form the desktop
+        // writes, so the annotation gateway deliberately rejects the URI spelling
+        // instead of carrying a second normalization site.
+        assertFalse(CfiAnchor.isValid("epubcfi:0?/6/4!/4/2/1:0"))
+        assertTrue(CfiAnchor.isValid("epubcfi(/6/4!/4/2/1:0)"))
     }
 
     // ── requirePoint ────────────────────────────────────────────────────────
@@ -175,7 +197,7 @@ class CfiAnchorTest {
     fun `requirePoint throws for a range CFI`() {
         var caught: IllegalArgumentException? = null
         try {
-            CfiAnchor.requirePoint("epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/2:5)")
+            CfiAnchor.requirePoint(RANGE_1_TO_2)
         } catch (e: IllegalArgumentException) {
             caught = e
         }
@@ -239,14 +261,12 @@ class CfiAnchorTest {
 
     @Test
     fun `startPoint collapses range to its start`() {
-        val range = "epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/3:10)"
-        assertEquals("epubcfi(/6/4!/4/2/1:0)", CfiAnchor.startPoint(range))
+        assertEquals("epubcfi(/6/4!/4/2/1:0)", CfiAnchor.startPoint(RANGE_1_TO_3))
     }
 
     @Test
     fun `endPoint collapses range to its end`() {
-        val range = "epubcfi(/6/4!/4/2/1:0,/6/4!/4/2/3:10)"
-        assertEquals("epubcfi(/6/4!/4/2/3:10)", CfiAnchor.endPoint(range))
+        assertEquals("epubcfi(/6/4!/4/2/3:10)", CfiAnchor.endPoint(RANGE_1_TO_3))
     }
 
     @Test
