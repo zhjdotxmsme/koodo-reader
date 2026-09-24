@@ -1,0 +1,374 @@
+diff --git a/.github/workflows/release-android.yml b/.github/workflows/release-android.yml
+index 63bc2f72866b1f8e06919f6692282eff44ba474c..e917cc3c688a5a7e279715877927de9b2fa4b99a 100644
+--- a/.github/workflows/release-android.yml
++++ b/.github/workflows/release-android.yml
+@@ -82,6 +82,9 @@ jobs:
+       - name: Check bundled locales match src/assets/locales (i18n bridge guard)
+         run: node scripts/sync-locales-android.js --check
+ 
++      - name: Check TTS manifest wiring matches the feature module (P6 guard)
++        run: node scripts/check-tts-manifest.js
++
+       - name: Test the pdf.js engine core (native PDF reader bridge)
+         run: node scripts/test-pdfengine.js
+ 
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index d8a4ed93c7cc66825d5a95a90449340241c42faa..fbf012f7a68aa4b98b46c2139b3d48a1037561ac 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -4,6 +4,27 @@
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ 
++    <!--
++      P6 TTS: reading aloud keeps playing with the screen off, which Android
++      only allows from a foreground service. The notification is what the
++      system shows for it, so API 33+ also needs POST_NOTIFICATIONS (requested
++      at runtime by the TTS host — see the P6 entry-point work).
++    -->
++    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
++
++    <!--
++      Android 11+ package visibility: without this <queries> entry
++      `TextToSpeech` cannot see the installed TTS engines, so the engine list
++      and voice catalog come back empty.
++    -->
++    <queries>
++        <intent>
++            <action android:name="android.intent.action.TTS_SERVICE" />
++        </intent>
++    </queries>
++
+     <!--
+       No storage permissions, by design: every import path is permission-free.
+       `content://` intents carry a system read grant; in-app pickers use the
+@@ -137,6 +158,38 @@
+             </intent-filter>
+         </activity-alias>
+ 
++        <!--
++          P6 TTS playback: a foreground service of type `mediaPlayback` so
++          reading aloud survives the screen going off. Not exported: only our
++          own notification actions and the receiver start it.
++        -->
++        <service
++            android:name="com.koodoreader.feature.tts.ForegroundTtsService"
++            android:exported="false"
++            android:foregroundServiceType="mediaPlayback" />
++
++        <!--
++          Lock-screen / headset media keys. The action list mirrors
++          `LockscreenControlsReceiver.ACTIONS` (platform MEDIA_BUTTON plus the
++          `com.koodoreader.tts.action.*` notification actions); the two must not
++          drift — `scripts/check-tts-manifest.js` enforces that in CI.
++        -->
++        <receiver
++            android:name="com.koodoreader.feature.tts.LockscreenControlsReceiver"
++            android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.MEDIA_BUTTON" />
++                <action android:name="com.koodoreader.tts.action.PLAY" />
++                <action android:name="com.koodoreader.tts.action.PAUSE" />
++                <action android:name="com.koodoreader.tts.action.PLAY_PAUSE" />
++                <action android:name="com.koodoreader.tts.action.STOP" />
++                <action android:name="com.koodoreader.tts.action.NEXT" />
++                <action android:name="com.koodoreader.tts.action.PREVIOUS" />
++                <action android:name="com.koodoreader.tts.action.FAST_FORWARD" />
++                <action android:name="com.koodoreader.tts.action.REWIND" />
++            </intent-filter>
++        </receiver>
++
+         <!--
+           P3: the native PDF reader's "share current page" exports a PNG into
+           `cacheDir/pdf-shots/` and hands it to the share sheet. The cache lives
+diff --git a/android/app/src/main/assets/locales/en.json b/android/app/src/main/assets/locales/en.json
+index accc7048d0c37551df47c7a109a4aa73ba14ce00..a39ec448eb1ba37ce8fcd0173d0020472bf96822 100644
+--- a/android/app/src/main/assets/locales/en.json
++++ b/android/app/src/main/assets/locales/en.json
+@@ -1385,5 +1385,9 @@
+   "Import books from folder": "Import books from folder",
+   "Backup / restore": "Backup / restore",
+   "Library is empty": "Library is empty",
+-  "Duplicate": "Duplicate"
++  "Duplicate": "Duplicate",
++  "Pitch": "Pitch",
++  "Volume": "Volume",
++  "Done": "Done",
++  "Text to speech": "Text to speech"
+ }
+diff --git a/android/app/src/main/assets/locales/manifest.json b/android/app/src/main/assets/locales/manifest.json
+index 71052f870ab720750995c0711b58abbc141fb3f2..6e5e37009fb5e930c2cf794b77d1cfab9a33507b 100644
+--- a/android/app/src/main/assets/locales/manifest.json
++++ b/android/app/src/main/assets/locales/manifest.json
+@@ -5,13 +5,13 @@
+   ],
+   "source": {
+     "en": {
+-      "keys": 1387,
+-      "sha256": "ae9b1064fdef87c27740bc9435059c7da6c679182af8c4458e90c1508547eddc"
++      "keys": 1391,
++      "sha256": "9defd267f78d8c9315cc3f5c117b03859ec342a92573b95cdd1b03005ac572fc"
+     },
+     "zh-CN": {
+-      "keys": 1397,
+-      "sha256": "8b08ad432b2e5d8ff42d49c8ad35998dc4d484d4c78dd8d326c873ed83ee2481"
++      "keys": 1401,
++      "sha256": "2cae39a6dee72428575a9fcecaffc33e55d18c991113ed5bda9d64709765ebb6"
+     }
+   },
+-  "syncedAt": "2026-09-24T10:29:46.772Z"
++  "syncedAt": "2026-09-24T16:29:59.544Z"
+ }
+\ No newline at end of file
+diff --git a/android/app/src/main/assets/locales/zh-CN.json b/android/app/src/main/assets/locales/zh-CN.json
+index 6e05db6bbba59452d8a540e34537a520d1f817c5..64f190790b78c031211f0c9a392d614a33d3ecf4 100644
+--- a/android/app/src/main/assets/locales/zh-CN.json
++++ b/android/app/src/main/assets/locales/zh-CN.json
+@@ -1395,5 +1395,9 @@
+   "Import books from folder": "从文件夹导入书籍",
+   "Backup / restore": "备份 / 恢复",
+   "Library is empty": "书库为空",
+-  "Duplicate": "重复"
++  "Duplicate": "重复",
++  "Pitch": "音调",
++  "Volume": "音量",
++  "Done": "完成",
++  "Text to speech": "语音朗读"
+ }
+diff --git a/android/feature/tts/src/main/kotlin/com/koodoreader/feature/tts/ForegroundTtsService.kt b/android/feature/tts/src/main/kotlin/com/koodoreader/feature/tts/ForegroundTtsService.kt
+index 2d30f8bc4a13b99ddd2ef0802b158cb5d03c23f6..ef528d481191fe2d4641bd1b9eaaba4c6f409df4 100644
+--- a/android/feature/tts/src/main/kotlin/com/koodoreader/feature/tts/ForegroundTtsService.kt
++++ b/android/feature/tts/src/main/kotlin/com/koodoreader/feature/tts/ForegroundTtsService.kt
+@@ -101,8 +101,13 @@ class ForegroundTtsService : Service(), TextToSpeech.OnInitListener {
+     /** Set by the host: i18n lookup (`com.koodoreader.core.common.Localization::t`). */
+     private var translate: ((String) -> String)? = null
+ 
+-    /** Notification small icon; the framework transport icon by default (no module resources). */
+-    private var notificationIcon: Int = android.R.drawable.ic_media_play
++    /**
++     * Notification small icon. Defaults to the module's monochrome
++     * `ic_tts_notification` (a notification icon is drawn as a silhouette, so a
++     * full-colour framework drawable would render as a blob); a host can
++     * override it via [setNotificationIcon].
++     */
++    private var notificationIcon: Int = R.drawable.ic_tts_notification
+ 
+     private var channelName: String = "Koodo Reader listening"
+ 
+diff --git a/android/feature/tts/src/main/res/drawable/ic_tts_notification.xml b/android/feature/tts/src/main/res/drawable/ic_tts_notification.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c34389f94a0fb80bcdbbc9c8cab11b768ef7d544
+--- /dev/null
++++ b/android/feature/tts/src/main/res/drawable/ic_tts_notification.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  TTS foreground-service notification small icon (P6-TTS-WIRE).
++
++  Android renders a notification's small icon as a silhouette: only the alpha
++  channel survives, and the framework transport drawable the service used to
++  fall back to (`android.R.drawable.ic_media_play`) is a full-colour asset that
++  turns into a solid blob in the status bar. A monochrome vector is the correct
++  shape for that slot.
++
++  Path: Material Symbols `volume_up` (Apache-2.0), 24dp viewport — the same
++  glyph family the Compose Material icons come from.
++-->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,9v6h4l5,5V4L7,9H3zM16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z" />
++</vector>
+diff --git a/scripts/check-tts-manifest.js b/scripts/check-tts-manifest.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..bddcc0e209f6bb6cf4ba150c347231b5d6d44a4e
+--- /dev/null
++++ b/scripts/check-tts-manifest.js
+@@ -0,0 +1,151 @@
++#!/usr/bin/env node
++/*
++ * check-tts-manifest.js — keep the P6 TTS wiring in `AndroidManifest.xml` in
++ * lock-step with the module that implements it.
++ *
++ * Why: `LockscreenControlsReceiver`'s doc comment claims its `ACTIONS` list and
++ * the manifest `<intent-filter>` "cannot drift", but until this guard existed
++ * nothing checked that — the receiver, its service and the TTS `<queries>`
++ * entry were simply missing from the manifest, so the whole P6 TTS track was
++ * unreachable while every test passed. A missing `<queries>` entry is
++ * especially quiet: `TextToSpeech` just reports no engines.
++ *
++ * Checks (the P6-TTS-WIRE acceptance list, machine-verified):
++ *   1. POST_NOTIFICATIONS / FOREGROUND_SERVICE /
++ *      FOREGROUND_SERVICE_MEDIA_PLAYBACK permissions are declared;
++ *   2. `<queries>` asks for `android.intent.action.TTS_SERVICE`;
++ *   3. `ForegroundTtsService` is declared with `foregroundServiceType=mediaPlayback`;
++ *   4. `LockscreenControlsReceiver` is declared, and its intent-filter actions
++ *      are exactly the receiver's `ACTIONS` (MEDIA_BUTTON + every
++ *      `TtsMediaCommand.action`).
++ *
++ * Usage: node scripts/check-tts-manifest.js [--verbose]   # exit 0/1
++ */
++'use strict';
++
++const fs = require('fs');
++const path = require('path');
++
++const ROOT = path.join(__dirname, '..');
++const MANIFEST = path.join(ROOT, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
++const COMMANDS = path.join(
++  ROOT, 'android', 'feature', 'tts', 'src', 'main', 'kotlin',
++  'com', 'koodoreader', 'feature', 'tts', 'TtsMediaCommand.kt',
++);
++const VERBOSE = process.argv.includes('--verbose');
++
++const failures = [];
++const notes = [];
++
++function read(file) {
++  if (!fs.existsSync(file)) {
++    console.error(`[check-tts-manifest] missing ${file}`);
++    process.exit(2);
++  }
++  return fs.readFileSync(file, 'utf8');
++}
++
++function check(name, ok, detail) {
++  if (ok) {
++    if (VERBOSE) console.log(`  PASS  ${name}`);
++  } else {
++    failures.push(`${name}${detail ? ' — ' + detail : ''}`);
++  }
++}
++
++/** `<action android:name="x" />` values inside one `<receiver>` block. */
++function receiverActions(manifest, receiverName) {
++  const blocks = manifest.split(/<receiver\b/).slice(1);
++  const block = blocks.find((b) => b.includes(receiverName));
++  if (!block) return null;
++  const end = block.indexOf('</receiver>');
++  const body = end >= 0 ? block.slice(0, end) : block;
++  const actions = [];
++  const re = /<action\s+android:name="([^"]+)"/g;
++  let m;
++  while ((m = re.exec(body)) !== null) actions.push(m[1]);
++  return actions;
++}
++
++function main() {
++  const manifest = read(MANIFEST);
++  const commands = read(COMMANDS);
++
++  for (const permission of [
++    'android.permission.POST_NOTIFICATIONS',
++    'android.permission.FOREGROUND_SERVICE',
++    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
++  ]) {
++    check(
++      `declares ${permission}`,
++      new RegExp(`<uses-permission\\s+android:name="${permission.replace(/\./g, '\\.')}"`).test(manifest),
++    );
++  }
++
++  check(
++    'queries the platform TTS service',
++    /<queries>[\s\S]*?<action\s+android:name="android\.intent\.action\.TTS_SERVICE"\s*\/>[\s\S]*?<\/queries>/.test(manifest),
++    'without <queries> Android 11+ hides every installed TTS engine',
++  );
++
++  check(
++    'declares ForegroundTtsService as a mediaPlayback foreground service',
++    /<service[\s\S]*?android:name="com\.koodoreader\.feature\.tts\.ForegroundTtsService"[\s\S]*?foregroundServiceType="mediaPlayback"[\s\S]*?\/>/.test(manifest),
++  );
++
++  // The receiver's expected actions: MEDIA_BUTTON (platform) + every enum value.
++  const expected = new Set(['android.intent.action.MEDIA_BUTTON']);
++  const actionRe = /"((?:com\.koodoreader\.tts\.action\.)[A-Z_]+)"/g;
++  let m;
++  while ((m = actionRe.exec(commands)) !== null) expected.add(m[1]);
++  check('the command table exposes actions to compare', expected.size > 1);
++
++  const declared = receiverActions(manifest, 'LockscreenControlsReceiver');
++  check('declares LockscreenControlsReceiver', declared !== null);
++  if (declared) {
++    const declaredSet = new Set(declared);
++    const missing = [...expected].filter((a) => !declaredSet.has(a)).sort();
++    const extra = [...declaredSet].filter((a) => !expected.has(a)).sort();
++    check(
++      'the receiver intent-filter matches LockscreenControlsReceiver.ACTIONS',
++      missing.length === 0 && extra.length === 0,
++      [
++        missing.length ? `missing: ${missing.join(', ')}` : '',
++        extra.length ? `not in ACTIONS: ${extra.join(', ')}` : '',
++      ].filter(Boolean).join(' | '),
++    );
++    if (declared.length !== declaredSet.size) {
++      notes.push(`intent-filter has ${declared.length - declaredSet.size} duplicate action(s)`);
++    }
++  }
++
++  // Index.html-free sanity note for reviewers: the icon the service references.
++  const service = path.join(
++    ROOT, 'android', 'feature', 'tts', 'src', 'main', 'kotlin',
++    'com', 'koodoreader', 'feature', 'tts', 'ForegroundTtsService.kt',
++  );
++  const icon = path.join(
++    ROOT, 'android', 'feature', 'tts', 'src', 'main', 'res', 'drawable',
++    'ic_tts_notification.xml',
++  );
++  if (fs.existsSync(service)) {
++    check(
++      'the service default icon exists as a vector drawable',
++      /R\.drawable\.ic_tts_notification/.test(read(service)) && fs.existsSync(icon),
++      'ForegroundTtsService must default to the module notification icon',
++    );
++  }
++
++  if (failures.length > 0) {
++    console.error(`[check-tts-manifest] ${failures.length} check(s) FAILED`);
++    for (const f of failures) console.error(`  - ${f}`);
++    process.exit(1);
++  }
++  for (const n of notes) console.warn(`[check-tts-manifest] note: ${n}`);
++  console.log(
++    `[check-tts-manifest] OK — permissions, <queries>, service and receiver ` +
++    `(${expected.size} actions) all declared`,
++  );
++}
++
++main();
+diff --git a/src/assets/locales/en.json b/src/assets/locales/en.json
+index accc7048d0c37551df47c7a109a4aa73ba14ce00..a39ec448eb1ba37ce8fcd0173d0020472bf96822 100644
+--- a/src/assets/locales/en.json
++++ b/src/assets/locales/en.json
+@@ -1385,5 +1385,9 @@
+   "Import books from folder": "Import books from folder",
+   "Backup / restore": "Backup / restore",
+   "Library is empty": "Library is empty",
+-  "Duplicate": "Duplicate"
++  "Duplicate": "Duplicate",
++  "Pitch": "Pitch",
++  "Volume": "Volume",
++  "Done": "Done",
++  "Text to speech": "Text to speech"
+ }
+diff --git a/src/assets/locales/zh-CN.json b/src/assets/locales/zh-CN.json
+index 6e05db6bbba59452d8a540e34537a520d1f817c5..64f190790b78c031211f0c9a392d614a33d3ecf4 100644
+--- a/src/assets/locales/zh-CN.json
++++ b/src/assets/locales/zh-CN.json
+@@ -1395,5 +1395,9 @@
+   "Import books from folder": "从文件夹导入书籍",
+   "Backup / restore": "备份 / 恢复",
+   "Library is empty": "书库为空",
+-  "Duplicate": "重复"
++  "Duplicate": "重复",
++  "Pitch": "音调",
++  "Volume": "音量",
++  "Done": "完成",
++  "Text to speech": "语音朗读"
+ }

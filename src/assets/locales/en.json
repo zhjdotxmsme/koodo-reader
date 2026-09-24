@@ -1385,5 +1385,9 @@
   "Import books from folder": "Import books from folder",
   "Backup / restore": "Backup / restore",
   "Library is empty": "Library is empty",
-  "Duplicate": "Duplicate"
+  "Duplicate": "Duplicate",
+  "Pitch": "Pitch",
+  "Volume": "Volume",
+  "Done": "Done",
+  "Text to speech": "Text to speech"
 }

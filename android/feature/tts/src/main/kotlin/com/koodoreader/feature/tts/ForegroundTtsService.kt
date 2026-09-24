@@ -101,8 +101,13 @@ class ForegroundTtsService : Service(), TextToSpeech.OnInitListener {
     /** Set by the host: i18n lookup (`com.koodoreader.core.common.Localization::t`). */
     private var translate: ((String) -> String)? = null
 
-    /** Notification small icon; the framework transport icon by default (no module resources). */
-    private var notificationIcon: Int = android.R.drawable.ic_media_play
+    /**
+     * Notification small icon. Defaults to the module's monochrome
+     * `ic_tts_notification` (a notification icon is drawn as a silhouette, so a
+     * full-colour framework drawable would render as a blob); a host can
+     * override it via [setNotificationIcon].
+     */
+    private var notificationIcon: Int = R.drawable.ic_tts_notification
 
     private var channelName: String = "Koodo Reader listening"
 

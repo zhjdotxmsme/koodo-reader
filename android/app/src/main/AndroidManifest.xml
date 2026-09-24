@@ -5,6 +5,27 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
+      P6 TTS: reading aloud keeps playing with the screen off, which Android
+      only allows from a foreground service. The notification is what the
+      system shows for it, so API 33+ also needs POST_NOTIFICATIONS (requested
+      at runtime by the TTS host — see the P6 entry-point work).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!--
+      Android 11+ package visibility: without this <queries> entry
+      `TextToSpeech` cannot see the installed TTS engines, so the engine list
+      and voice catalog come back empty.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <!--
       No storage permissions, by design: every import path is permission-free.
       `content://` intents carry a system read grant; in-app pickers use the
       Storage Access Framework. Direct `file://` reads are not supported under
@@ -136,6 +157,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <!--
+          P6 TTS playback: a foreground service of type `mediaPlayback` so
+          reading aloud survives the screen going off. Not exported: only our
+          own notification actions and the receiver start it.
+        -->
+        <service
+            android:name="com.koodoreader.feature.tts.ForegroundTtsService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!--
+          Lock-screen / headset media keys. The action list mirrors
+          `LockscreenControlsReceiver.ACTIONS` (platform MEDIA_BUTTON plus the
+          `com.koodoreader.tts.action.*` notification actions); the two must not
+          drift — `scripts/check-tts-manifest.js` enforces that in CI.
+        -->
+        <receiver
+            android:name="com.koodoreader.feature.tts.LockscreenControlsReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="com.koodoreader.tts.action.PLAY" />
+                <action android:name="com.koodoreader.tts.action.PAUSE" />
+                <action android:name="com.koodoreader.tts.action.PLAY_PAUSE" />
+                <action android:name="com.koodoreader.tts.action.STOP" />
+                <action android:name="com.koodoreader.tts.action.NEXT" />
+                <action android:name="com.koodoreader.tts.action.PREVIOUS" />
+                <action android:name="com.koodoreader.tts.action.FAST_FORWARD" />
+                <action android:name="com.koodoreader.tts.action.REWIND" />
+            </intent-filter>
+        </receiver>
 
         <!--
           P3: the native PDF reader's "share current page" exports a PNG into

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TTS foreground-service notification small icon (P6-TTS-WIRE).
+
+  Android renders a notification's small icon as a silhouette: only the alpha
+  channel survives, and the framework transport drawable the service used to
+  fall back to (`android.R.drawable.ic_media_play`) is a full-colour asset that
+  turns into a solid blob in the status bar. A monochrome vector is the correct
+  shape for that slot.
+
+  Path: Material Symbols `volume_up` (Apache-2.0), 24dp viewport — the same
+  glyph family the Compose Material icons come from.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,9v6h4l5,5V4L7,9H3zM16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z" />
+</vector>

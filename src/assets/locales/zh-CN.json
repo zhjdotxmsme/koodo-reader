@@ -1395,5 +1395,9 @@
   "Import books from folder": "从文件夹导入书籍",
   "Backup / restore": "备份 / 恢复",
   "Library is empty": "书库为空",
-  "Duplicate": "重复"
+  "Duplicate": "重复",
+  "Pitch": "音调",
+  "Volume": "音量",
+  "Done": "完成",
+  "Text to speech": "语音朗读"
 }
