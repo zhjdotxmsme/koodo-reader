@@ -1,0 +1,34 @@
+// engine/text — native TXT / MD engine (P5).
+//
+// PURE KOTLIN JVM MODULE: charset detection (chardet replacement), text
+// normalisation, chapter segmentation and a dependency-free Markdown subset
+// renderer. No Android dependency so the logic is unit-tested on the JVM.
+//
+// Reference: kookit `TxtRender` / `MdRender` + `textProcessor.ts`
+// (docs/android-native-migration.md P5).
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only — this module has zero runtime dependencies.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

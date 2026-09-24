@@ -1,0 +1,36 @@
+// engine/mobi — native MOBI / AZW / AZW3 parser (P4).
+//
+// PURE KOTLIN JVM MODULE (same rationale as :core:importer / :engine:cfi):
+// PalmDOC + HUFF/CDIC decompression, MOBI6/KF8 headers, EXTH metadata and
+// resource extraction are algorithm-heavy but dependency-free logic, so they
+// are unit-tested on any JVM without the Android SDK.
+//
+// Reference: kookit `MobiRender` + `mobi.js` (see docs/android-native-migration.md
+// P4 / R5). The WebView fallback island keeps serving MOBI until this engine
+// is wired into the reader.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only — this module has zero runtime dependencies.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

@@ -1,0 +1,36 @@
+// engine/feature — native reading enhancements (P6).
+//
+// PURE KOTLIN JVM MODULE: paragraph mode, RSVP speed reading, reading ruler
+// geometry, bionic-reading emphasis, text replacement rules (desktop config
+// parity) and selection-auto-turn decisions. Pure transformations + state, so
+// they are unit-testable without the Android SDK; the reader UI consumes them.
+//
+// Reference: kookit `paragraphModeUtil` / `speedReadingUtil` / `readingRulerUtil`
+// / `bionicUtil` / `textRuleUtil` / `selectionAutoTurn.ts`
+// (docs/android-native-migration.md P6).
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only — this module has zero runtime dependencies.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

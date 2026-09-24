@@ -30,7 +30,27 @@ include ':core:dbio'
 // scripts/sync-locales-android.js, see ADR-004).
 include ':core:common'
 
+//
+
 // Native reading-engine modules (Kotlin, no Android dependency) — see
 // docs/android-native-migration.md. They are plain JVM modules so `gradle test`
 // works without the Android SDK.
 include ':engine:cfi'
+
+// Native pagination (`自绘分页`): CSS-columns line breaking + page filling,
+// consumed by the reader. Depends on :engine:cfi for CFI addressing (ADR-002).
+include ':engine:layout'
+
+// Native gesture / interaction core: fling physics, edge bounce, tap zones,
+// reader mode state. Pure JVM, no Android dependency (same as :engine:cfi).
+include ':engine:gesture'
+
+// Native MOBI/AZW/AZW3 parser (P4): PalmDOC + HUFF/CDIC, MOBI6/KF8, EXTH.
+include ':engine:mobi'
+
+// Native TXT/MD engine (P5): charset detection + Markdown subset renderer.
+include ':engine:text'
+
+// Native reading enhancements (P6): paragraph mode, RSVP, ruler, bionic,
+// text replacement rules, selection auto-turn.
+include ':engine:feature'
