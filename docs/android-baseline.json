@@ -1,0 +1,71 @@
+{
+  "lockVersion": 1,
+  "generatedAt": "2026-09-23",
+  "provenance": {
+    "generator": "manual record (P0 checklist item: 性能基线), session-767f4133",
+    "environment": {
+      "os": "Windows 10 (dev machine, x64)",
+      "jdk": "17.0.20",
+      "gradle": "8.5",
+      "agp": "8.2.2",
+      "kotlin": "1.9.24",
+      "device": "none available (no adb device, no AVD on this machine)"
+    },
+    "commitAtRecording": "3065242f + uncommitted working tree (dbio/backup/import-cover work)",
+    "notes": "Device-dependent metrics are null with status=pending-device and a recorded measurement recipe so P1 验收 (t-mudyjpkr) can backfill them without re-deriving the method."
+  },
+  "apk": {
+    "status": "measured",
+    "valueMb": 20.03,
+    "unit": "MB",
+    "variant": "debug, universal ABI (no splits), -Ptarget=native",
+    "command": "gradle :app:assembleDebug -Ptarget=native",
+    "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+    "caveats": [
+      "Debug APK: unshrunk, includes debug overhead; release/minified arm64 split expected notably smaller.",
+      "Includes bundled webapp assets (兜底岛) until P8 removes them.",
+      "sqlite-jdbc (~1.5 MB jar + native libs) enters with core:dbio."
+    ]
+  },
+  "jvmImportThroughput": {
+    "status": "measured-jvm",
+    "metric": "1000 synthetic books imported end-to-end (copy + streaming MD5 + dedupe + EPUB/CBZ enrich)",
+    "result": "pass: 1000/1000 imported, 0 duplicates, unique md5/keys, files on disk, memory bounded (16 KB chunks, batch 50)",
+    "test": "com.koodoreader.core.importer.ImportPipelineTest `a thousand synthetic books import without duplicates and stay in memory-bounded`",
+    "elapsedMs": null,
+    "caveats": [
+      "JVM desktop-class CPU, not device ARM; per-book ms deliberately not extrapolated.",
+      "Timing printed by the test via stdout; enable showStandardStreams to capture."
+    ]
+  },
+  "device": {
+    "coldStartP90Ms": {
+      "status": "pending-device",
+      "target": 1500,
+      "recipe": "adb shell am start -W com.koodoreader.reader/com.koodoreader.reader.shell.NativeShellActivity; report TotalTime, 10 cold starts after force-stop, P90. Macrobenchmark once P2 lands."
+    },
+    "openEpubP90Ms": {
+      "status": "pending-device",
+      "target": 1200,
+      "fixture": "1 MB / 300-chapter EPUB",
+      "recipe": "P2 引擎落地后：logcat 时间戳（intent→首帧章节）；Macrobenchmark TrackedIntent 为终态方案"
+    },
+    "pageTurnP90Ms": {
+      "status": "pending-device",
+      "target": 50,
+      "recipe": "P2 后：touch-up→下一帧渲染完成（Choreographer frame callback 差值），100 次采样"
+    },
+    "memoryPeakMb": {
+      "status": "pending-device",
+      "target": 350,
+      "fixture": "10 万字 EPUB",
+      "recipe": "adb shell dumpsys meminfo <pkg>（PSS Total）翻完全书取峰值；终态用 Macrobenchmark + Perfetto"
+    }
+  },
+  "guards": {
+    "roomSchema": "scripts/check-room-schema.js — 5 tables aligned",
+    "importRules": "scripts/check-import-rules.js — desktop list lock-step",
+    "dbioDdl": "scripts/check-dbio-ddl.js — desktop DDL verbatim",
+    "cfiGolden": "scripts/gen-cfi-golden.js --check — 76 vectors"
+  }
+}
