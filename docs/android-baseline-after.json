@@ -1,0 +1,210 @@
+{
+  "lockVersion": 1,
+  "generatedAt": "2026-09-24",
+  "document": "P8 体积/性能基线（验收清单 [2] k-muexn6g8-rfzkcg）— 优化前实测 + 优化后待构建回填 + 每个杠杆的证据",
+  "provenance": {
+    "session": "P8 wrap-up sub-agent, task t-muexn6g8-xxvzbr",
+    "worktree": ".worktrees/p8-wrap-up (branch task/p8-wrap-up-xxvzbr, base commit 9abe7904)",
+    "predecessorBaseline": "docs/android-baseline.json — P0/P1 记录：APK 20.03 MB（debug、universal ABI、未拆、-Ptarget=native）",
+    "environment": {
+      "os": "Windows 10 (dev machine, x64)",
+      "androidSdk": "C:\\Users\\54389\\AppData\\Local\\Android\\Sdk (android/local.properties)",
+      "gradle": "8.5（android/gradle/wrapper/gradle-wrapper.properties）；本机 PATH 无 gradle CLI、无 gradlew、无 adb、无设备",
+      "javaOnPath": "11.0.14（项目要求 JDK 17）",
+      "agp": "8.2.2",
+      "kotlin": "1.9.24",
+      "compileSdk": 34,
+      "minSdk": 24
+    },
+    "measurementTool": "APK 内条目逐条读取（System.IO.Compression.ZipFile）：Length=未压缩字节，CompressedLength=压缩后字节",
+    "notes": "本文件只记录**可复现的实测**与**显式标注的估算**。凡未出包/未上真机的项一律 status=pending-*，并附一条命令即可复现的配方。"
+  },
+
+  "budgets": {
+    "coldStartP90Ms": 1500,
+    "openEpubP90Ms": 1200,
+    "pageTurnP90Ms": 50,
+    "memoryPeakMb": 350,
+    "_source": "docs/android-native-migration.md §8；scripts/ci-macro-benchmark.sh 从本文件的 budgets 读取阈值"
+  },
+
+  "before": {
+    "status": "measured-artifact",
+    "artifact": "android/app/build/outputs/apk/debug/app-debug.apk",
+    "builtAtLocal": "2026-09-24 11:22:40",
+    "sizeOnDiskMb": 24.95,
+    "compressedEntriesMb": 24.88,
+    "uncompressedEntriesMb": 58.0,
+    "entries": 432,
+    "command": "gradle :app:assembleDebug（webview+native 双轨共用 src/main/assets，故该 APK 同时含兜底岛与原生 PDF 资产目录）",
+    "breakdown": {
+      "assets/webapp": {
+        "rawMb": 21.11,
+        "compressedMb": 7.78,
+        "entries": 271,
+        "note": "兜底岛（staged web build，.gitignore:59）。最大单文件 assets/webapp/static/js/main.e6b24e94.js = 10.72 MB raw / 3.27 MB 压缩"
+      },
+      "classes*.dex": {
+        "rawMb": 22.16,
+        "compressedMb": 8.34,
+        "entries": 9,
+        "note": "debug 构建、minifyEnabled false、multidex（classes.dex 16.50 MB）。release+R8 后的体积未测"
+      },
+      "res": {
+        "rawMb": 14.11,
+        "compressedMb": 8.28,
+        "entries": 80
+      },
+      "res/font": {
+        "rawMb": 14.07,
+        "compressedMb": 8.25,
+        "entries": 2,
+        "files": {
+          "lxgw_wenkai_lite.ttf": { "rawMb": 13.23, "note": "占 res 原始字节 93.8%；FontCatalog.kt 的 bundled 阅读字体" },
+          "inter_variable.ttf": { "rawMb": 0.84 }
+        }
+      },
+      "assets/locales": {
+        "rawMb": 0.18,
+        "compressedMb": 0.06,
+        "entries": 3
+      },
+      "lib/**/*.so": {
+        "rawMb": 0.0,
+        "compressedMb": 0.0,
+        "entries": 0,
+        "note": "★ 关键实测：APK 内**零个原生库**（pdf.js 以纯 JS 交付，见 docs/android-pdf-poc.md）→ ABI 拆分的体积收益为 0"
+      },
+      "assets/pdfengine": {
+        "entries": 0,
+        "onDiskMb": 4.17,
+        "onDiskFiles": 173,
+        "note": "P3 的 pdf.js 宿主资产在源码树存在，但**不在**本 APK 内 → 该 APK 构建早于这批资产；任何一次重新出包都会把 ~4.2 MB（未压缩）计入"
+      }
+    },
+    "reconciliation": {
+      "vsPredecessorMb": 4.92,
+      "predecessorMb": 20.03,
+      "explanation": "无法用文件级差分证明（P0 的 20.03 MB APK 已不在本机）。可观测的增量来源：classes*.dex（P2 新增 engine/* 模块与 Compose 代码）、res/font、以及 staged 兜底岛资产的增长。此差值标为**假设**，不作为验收依据。"
+    },
+    "caveats": [
+      "debug 构建：未压缩、未 R8，dex 体积不代表发布形态。",
+      "universal ABI，但无 .so → 与「拆 ABI」无关。",
+      "含兜底岛资产（7.78 MB 压缩），P8 的目标之一就是把它从主变体剥离。",
+      "不含 assets/pdfengine（P3 资产晚于该次构建）。"
+    ]
+  },
+
+  "after": {
+    "status": "pending-build",
+    "reason": "本机无 gradle CLI / 无 Android SDK 调用的构建能力（PATH 只有 JDK 11），且硬约束禁止实改 android/app/build.gradle —— 优化以 patch 形式交付（docs/p8-rollout-patches/），体积必须在应用 patch 后出包实测。",
+    "deliverablePatches": [
+      "docs/p8-rollout-patches/android-app-build-gradle.patch（-PstripIsland / -PsplitAbi / benchmark build type / :feature:crash 依赖）",
+      "docs/p8-rollout-patches/android-settings-gradle.patch（:feature:crash、:benchmarks 注册）",
+      "docs/p8-rollout-patches/android-app-manifest.patch（<profileable> for Macrobenchmark）"
+    ],
+    "recipe": [
+      "1) 应用三个 patch：git apply docs/p8-rollout-patches/*.patch",
+      "2) 基线复测（不改任何开关）：cd android && gradle :app:assembleDebug -Ptarget=native → 记录 app-debug.apk 大小",
+      "3) 剥离兜底岛：gradle :app:assembleDebug -Ptarget=native -PstripIsland=true → unzip -l ... | grep webapp 必须为空",
+      "4) 发布形态：gradle :app:assembleRelease -Ptarget=native -Pkeystore=... （R8 + 签名）→ 与 debug 对比",
+      "5) 回填本文件 after.measured 字段，并把 status 改为 measured"
+    ],
+    "predicted": {
+      "stripIslandCompressedMb": 17.1,
+      "stripIslandFormula": "24.88 − 7.78（assets/webapp 压缩字节）",
+      "confidence": "high（等值于被移除条目的压缩字节之和）",
+      "note": "仍需一次真实出包验证 ①aapt2 ignoreAssetsPattern 是否递归剪掉 webapp ②zip 对齐/去重带来的二阶差异"
+    }
+  },
+
+  "savingsModel": [
+    {
+      "id": "L1",
+      "lever": "native 变体不再打包兜底岛资产（-PstripIsland=true）",
+      "expectedCompressedMb": 7.78,
+      "confidence": "measured（被移除条目实测；成包后需复核）",
+      "gatedOn": "intent 路由迁移 P8-F1（MainActivity 的 VIEW/SEND 仍指向兜底岛）",
+      "evidence": "assets/webapp/* 压缩字节合计 7.78 MB / 271 条目"
+    },
+    {
+      "id": "L2",
+      "lever": "内置中文字体 lxgw_wenkai_lite.ttf 改为按需下载/子集化",
+      "expectedCompressedMb": 7.9,
+      "confidence": "estimate（压缩后单文件字节未单独测；按 res/font 合计 8.25 MB 减去 inter 的占比推算）",
+      "gatedOn": "产品决策（离线可用性）；不属本次 patch",
+      "evidence": "res/font 原始 14.07 MB（lxgw 13.23 + inter 0.84），压缩 8.25 MB"
+    },
+    {
+      "id": "L3",
+      "lever": "release + R8（发布形态）",
+      "expectedCompressedMb": null,
+      "confidence": "unmeasured（需签名出包；本机无法执行）",
+      "gatedOn": "CI/本机 gradle + keystore",
+      "evidence": "debug dex 未压缩 22.16 MB / 压缩 8.34 MB；release minifyEnabled true 已在 build.gradle 配置"
+    },
+    {
+      "id": "L4",
+      "lever": "flavor 拆分（native 变体去掉 MainActivity/LocalAssetServer/NativeEventDispatcher，webview 变体去掉 Compose）",
+      "expectedCompressedMb": null,
+      "confidence": "unmeasured（需要 sourceSet 重构，见 docs/p8-rollout-checklist.md §3.4）",
+      "gatedOn": "P8.1：-Ptarget 标志改为真正的 product flavor",
+      "evidence": "当前两轨共用 :app 的 main sourceSet（app/src/main/java/... 同时含 shell/* 与 WebView 宿主）"
+    },
+    {
+      "id": "L5",
+      "lever": "ABI 拆分（-PsplitAbi=true）",
+      "expectedCompressedMb": 0,
+      "confidence": "measured（零 .so）",
+      "gatedOn": "无（已作为 opt-in 保留，等原生库引入时自动生效）",
+      "evidence": "APK 内 lib/**/*.so 条目数 = 0"
+    },
+    {
+      "id": "L6",
+      "lever": "App Bundle 交付（Play）",
+      "expectedCompressedMb": 0,
+      "confidence": "measured-by-inference（无 .so、无 per-density 大图差异时 AAB 收益主要来自资源裁剪）",
+      "gatedOn": "Play 上架决策",
+      "evidence": "res 14.11 MB 中 14.07 MB 是字体（非按密度）"
+    }
+  ],
+
+  "deviceMetrics": {
+    "status": "pending-device",
+    "automation": "scripts/ci-macro-benchmark.sh（P8 新增）→ android/benchmarks（Macrobenchmark 骨架）+ scripts/measure-cold-start.js（P90 交叉校验）",
+    "coldStartP90Ms": {
+      "target": 1500,
+      "source": "Macrobenchmark StartupBenchmark.coldStartup（StartupTimingMetric）+ measure-cold-start.js 的 am start -W P90",
+      "status": "pending-device"
+    },
+    "openEpubP90Ms": {
+      "target": 1200,
+      "fixture": "1 MB / 300 章 EPUB",
+      "source": "Macrobenchmark OpenEpubBenchmark.openEpubFirstFrame（TraceSectionMetric openBook）",
+      "status": "blocked-by-P8-F2",
+      "blocker": "阅读器尚未在打开路径包 android.os.Trace.beginSection(\"openBook\")；benchmark 用 assumeTrue 跳过而不是伪报"
+    },
+    "pageTurnP90Ms": {
+      "target": 50,
+      "source": "Macrobenchmark PageTurnBenchmark.pageTurnFrames（FrameTimingMetric P90）",
+      "status": "pending-device"
+    },
+    "memoryPeakMb": {
+      "target": 350,
+      "fixture": "10 万字 EPUB",
+      "source": "Macrobenchmark MemoryPeakBenchmark（dumpsys meminfo TOTAL PSS 采样）",
+      "status": "pending-device"
+    }
+  },
+
+  "guards": {
+    "existing": [
+      "scripts/measure-cold-start.js — 冷启动 P90（需要真机，已备）",
+      "scripts/check-elf-16kb.sh — .so 16KB 页对齐（当前 APK 无 .so，仍然保留）"
+    ],
+    "new": [
+      "scripts/ci-macro-benchmark.sh — 四项指标一条命令 + 与本文件 budgets 对比（无设备时 --allow-no-device 跳过）",
+      "android/feature/crash — 崩溃上报的红线（RedactionOnlyCallback 单测）"
+    ]
+  }
+}

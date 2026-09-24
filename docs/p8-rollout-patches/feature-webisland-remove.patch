@@ -1,0 +1,49 @@
+# =============================================================================
+# NOT A PATCH — 无需删除声明 (no-op declaration, P8 / t-muexn6g8-xxvzbr)
+# =============================================================================
+#
+# 本文件**不是**可应用的补丁：它不含任何 hunk，`git apply` 会直接失败
+# （"No valid patches in input"）。这是预期结果，不是错误。
+#
+# 结论：`android/feature/webisland`（Gradle 模块 `:feature:webisland`）在当前
+#       代码库中**不存在**，因此没有可删除的模块 → 下线 patch 为 N/A。
+#
+# -----------------------------------------------------------------------------
+# 证据（2026-09-24，worktree .worktrees/p8-wrap-up @ branch task/p8-wrap-up-xxvzbr,
+#       base commit 9abe7904）
+# -----------------------------------------------------------------------------
+#   1) 目录不存在
+#        $ ls android/                    → .gradle app build core engine gradle
+#        $ test -d android/feature        → false（无 android/feature 目录）
+#   2) 全仓无任何 webisland 引用
+#        $ grep -ri "webisland" android/  → 0 命中（*.gradle / *.kt / *.xml / *.kts）
+#        $ git ls-files android | grep -i webisland → 0
+#   3) 迁移方案把 `feature/webisland/` 画在**目标架构图**里
+#        docs/android-native-migration.md §3 `feature/ └── webisland/ ★ 兜底岛`
+#      是**规划**（P0 时点），实现上兜底岛从未被抽成独立模块。
+#
+# -----------------------------------------------------------------------------
+# 兜底岛的真实位置（= 将来真正下线时要动的文件，供后续 patch 参考）
+# -----------------------------------------------------------------------------
+#   A. 资产（gitignored，由 scripts/build-android.js 从 build/ 暂存）
+#        android/app/src/main/assets/webapp/**            实测 21.11 MB raw / 7.78 MB 压缩
+#   B. 宿主类（:app 的 main sourceSet，与原生轨同包）
+#        app/src/main/java/com/koodoreader/reader/MainActivity.kt          WebView 宿主 + JS 桥
+#        app/src/main/java/com/koodoreader/reader/LocalAssetServer.kt      127.0.0.1 回环静态服务
+#        app/src/main/java/com/koodoreader/reader/NativeEventDispatcher.kt 引擎 21 事件消费
+#        app/src/main/java/com/koodoreader/reader/FolderEnumerator.kt      两轨共享的目录枚举
+#   C. 清单
+#        app/src/main/AndroidManifest.xml  MainActivity 的 VIEW/SEND/koodo-reader:// intent-filter
+#   D. 协议守卫（ADR-003 纪律 1：退役完成前**不得删除**）
+#        src/utils/android/nativeBridge.js、folderBridge.js + 其 Jest 测试
+#        scripts/build-android.js --audit 的打包审计
+#   E. 注意：**不属于**兜底岛
+#        app/src/main/assets/pdfengine/**  → P3 原生 PDF 引擎的 pdf.js 宿主（-Ptarget=native 主路径）
+#        app/src/main/java/.../pdfhost/**  → 同上；"主变体不再加载 WebView" 的口径必须排除它
+#
+# -----------------------------------------------------------------------------
+# 下一步
+# -----------------------------------------------------------------------------
+#   真正可执行的下线动作 = ①资产剥离（opt-in，见 android-app-build-gradle.patch 的
+#   -PstripIsland）②intent 路由迁移 ③:app 源码按 flavor 拆分（P8.1）。
+#   完整步骤、顺序、回滚与验收见 docs/p8-rollout-checklist.md §1/§2 与 ADR-005。

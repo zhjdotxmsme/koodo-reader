@@ -1,0 +1,62 @@
+// Macrobenchmark suite (`benchmarks`) — P8 deliverable (t-muexn6g8-xxvzbr).
+// Covers the four acceptance metrics of docs/android-native-migration.md §8:
+// cold start P90 / open EPUB / page turn P90 / memory peak.
+//
+// A `com.android.test` module: never shipped, targets :app, self-instrumenting
+// (no separate test APK). Register it with android-settings-gradle.patch
+// (`include ':benchmarks'`); the app side needs the `benchmark` build type and
+// `<profileable android:shell="true"/>` — both in the app patches next to this
+// module's docs (docs/p8-rollout-patches/).
+//
+// Requirements to actually run it:
+//   - a physical device or emulator (API 29+ for startup profiling via
+//     <profileable>; frame metrics work from API 23),
+//   - the target app NOT debuggable (Macrobenchmark hard-fails otherwise),
+//   - a fixture EPUB pushed/imported into the app library, whose display title is
+//     passed as `-e benchmarkBookTitle "<title>"`.
+// Run through scripts/ci-macro-benchmark.sh rather than by hand.
+plugins {
+    id 'com.android.test'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.koodoreader.benchmarks'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 34
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    // Benchmark the real app module, using its `benchmark` build type
+    // (release-shaped + debug-signed + non-debuggable; see the app patch).
+    targetProjectPath = ':app'
+    experimentalProperties["android.experimental.self-instrumenting"] = true
+
+    buildTypes {
+        create('benchmark') {
+            debuggable false
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.test.ext:junit:1.2.1'
+    implementation 'androidx.test:runner:1.6.2'
+    implementation 'androidx.test:rules:1.6.1'
+    implementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+    implementation 'androidx.benchmark:benchmark-macro-junit4:1.2.4'
+}

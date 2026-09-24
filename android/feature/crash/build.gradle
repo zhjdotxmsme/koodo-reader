@@ -1,0 +1,40 @@
+// Crash monitoring core (`feature/crash`) — P8 deliverable (t-muexn6g8-xxvzbr).
+//
+// A PURE KOTLIN JVM MODULE on purpose:
+//   - everything here is plain JDK surface (interfaces, a redaction pass, a
+//     breadcrumb ring, `Thread.setDefaultUncaughtExceptionHandler` chaining), so
+//     it is unit-tested on any JVM — no Android SDK, no device, no backend;
+//   - NO crash backend is declared. Sentry / Firebase Crashlytics are opt-in
+//     adapters described in `CrashBackends.kt`; a build with no backend still
+//     compiles and runs (`NoopCrashBackend`), so this module never blocks a
+//     release or forces a third-party telemetry SDK into the APK.
+//
+// Wiring into the app: android-settings-gradle.patch (`include ':feature:crash'`)
+// plus android-app-build-gradle.patch (`implementation project(':feature:crash')`).
+// Android-side install point: `Application.onCreate` → `CrashMonitoring.install()`.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only. Zero runtime dependencies: no backend SDK, no telemetry client.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

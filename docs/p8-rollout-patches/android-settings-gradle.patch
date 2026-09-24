@@ -1,0 +1,19 @@
+diff --git a/android/settings.gradle b/android/settings.gradle
+index e45172f0..43922229 100644
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -61,3 +61,14 @@ include ':engine:feature'
+ // mapping / snapshot exporter are all algorithm-only, unit-tested without
+ // the Android SDK. The Compose WebView host (engine/pdfhost) lives in :app.
+ include ':engine:pdf'
++
++// Crash monitoring core (P8): backend-free interfaces + the redaction-only
++// before-send callback. Pure JVM on purpose — unit-testable without the Android
++// SDK, and the real Sentry / Firebase Crashlytics adapter stays opt-in
++// (android/feature/crash, docs/p8-rollout-checklist.md §4).
++include ':feature:crash'
++
++// Macrobenchmark suite (P8): cold start P90 / open EPUB / page turn / memory
++// peak. `com.android.test` module targeting :app — see
++// android/benchmarks and docs/p8-rollout-checklist.md §5.
++include ':benchmarks'
