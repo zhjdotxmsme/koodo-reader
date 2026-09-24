@@ -145,12 +145,16 @@ jobs:
           # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
           gradle --version | grep -q "Gradle 8.5"
 
-      - name: "Native JVM unit tests (CFI port + import rules/pipeline + db bridge)"
+      - name: "Native JVM unit tests (engine + core modules)"
         shell: bash
         run: |
           set -e
           cd android
           gradle :engine:cfi:test --no-daemon --console=plain
+          gradle :engine:layout:test --no-daemon --console=plain
+          gradle :engine:feature:cleanTest :engine:feature:test --no-daemon --console=plain
+          gradle :engine:text:cleanTest :engine:text:test --no-daemon --console=plain
+          gradle :engine:mobi:cleanTest :engine:mobi:test --no-daemon --console=plain
           gradle :core:importer:test --no-daemon --console=plain
           gradle :core:dbio:test --no-daemon --console=plain
           gradle :core:common:test --no-daemon --console=plain
