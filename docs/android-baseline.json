@@ -24,7 +24,7 @@
     "caveats": [
       "Debug APK: unshrunk, includes debug overhead; release/minified arm64 split expected notably smaller.",
       "Includes bundled webapp assets (兜底岛) until P8 removes them.",
-      "sqlite-jdbc (~1.5 MB jar + native libs) enters with core:dbio."
+      "sqlite-jdbc is test-only since the engine-pluggable fix — the APK carries NO extra runtime SQLite dependency (framework sqlite on device)."
     ]
   },
   "jvmImportThroughput": {

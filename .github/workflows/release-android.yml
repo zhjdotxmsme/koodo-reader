@@ -156,7 +156,7 @@ jobs:
           gradle :core:common:test --no-daemon --console=plain
 
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
-        run: node scripts/build-android.js --target webview --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
+        run: node scripts/build-android.js --target webview,native --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
 
       - name: Collect APK artifacts
         shell: bash
@@ -185,5 +185,5 @@ jobs:
           gh release delete "$GITHUB_REF_NAME" --yes >/dev/null 2>&1 || true
           gh release create "$GITHUB_REF_NAME" \
             --title "Koodo Reader $GITHUB_REF_NAME (Android)" \
-            --notes "Koodo Reader Android — self-signed debug APKs (arm64-v8a, armeabi-v7a). Install directly on a device (allow unknown sources)." \
+            --notes "Koodo Reader Android — self-signed debug APKs, dual-track (docs/android-native-migration.md): *-native*.apk = P1 native shell (bookshelf, SAF import, desktop .db backup bridge); the plain .apk = WebView full-feature track. arm64-v8a + armeabi-v7a. Install directly on a device (allow unknown sources)." \
             out/*.apk

@@ -192,7 +192,7 @@ node scripts/build-android.js --target native,webview --no-split
 ### 遗留（不阻断 P2，挂账跟踪）
 
 1. **真机依赖**（测量脚本已备 `scripts/measure-cold-start.js`，任一有设备的机器一条命令出 P90）：冷启动 P90 / 打开 EPUB / 翻页延迟 / 内存峰值四项回填 `docs/android-baseline.json`；1000 本真机导入复测；桌面 zip 恢复冒烟（Electron 侧 restore 一次）。
-2. **代码审查挂账 7 项**（见任务看板 t-mudyjpgw / t-mudyjpiw 评论）：迁移桥 path 改写【高】、封面流式导出、导入事务包裹等，建议在 P2 引擎依赖桌面数据回填前修毕。
+2. **代码审查挂账 7 项**（见任务看板 t-mudyjpgw / t-mudyjpiw 评论）：迁移桥 path 改写【高】、封面流式导出、导入事务包裹等——已全部修复（看板评论 c-muevdt3z / c-mueve3eq / c-mueve3eq 后续回报）。其中连带发现并修复一个构建审查发现的**运行时阻断问题**：core/dbio 原引入的 org.xerial sqlite-jdbc 无 Android 原生库（xerial#794，设备上 dlopen 失败）——已将 SQLite 引擎改为可插拔（`DesktopDbEngine`）：设备端用框架 `android.database.sqlite`（`AndroidDesktopDb` 随 App 启动安装），sqlite-jdbc 降级为 testImplementation 仅 JVM 测试使用，APK 不再携带该依赖。
 
 ---
 
