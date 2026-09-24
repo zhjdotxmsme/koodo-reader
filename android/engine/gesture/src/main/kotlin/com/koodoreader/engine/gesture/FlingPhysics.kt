@@ -1,5 +1,6 @@
 package com.koodoreader.engine.gesture
 
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
 
@@ -71,18 +72,25 @@ class FlingPhysics(
         require(minFlingVelocityPxPerS > minVelocityPxPerS)
     }
 
-    /** True if [initialVelocityPxPerS] would produce a visible fling. */
+    /**
+     * True if [initialVelocityPxPerS] would produce a visible fling.
+     *
+     * The MAGNITUDE is used: a fast backward fling is a fling too.
+     */
     fun isFling(initialVelocityPxPerS: Float): Boolean =
-        initialVelocityPxPerS.coerceAtLeast(0f) >= minFlingVelocityPxPerS
+        abs(initialVelocityPxPerS) >= minFlingVelocityPxPerS
 
     /**
      * Cumulative displacement (px) after [tMs] milliseconds of the fling,
      * starting from initial velocity [v0PxPerS].
      *
-     * @return displacement in the positive direction; caller applies sign.
+     * @return displacement in the positive direction (the sign of [v0PxPerS] is
+     *   applied by the caller); the magnitude of the velocity is what matters.
      */
     fun displacement(v0PxPerS: Float, tMs: Float): Float {
-        val v = v0PxPerS.coerceAtLeast(0f)
+        // `abs`, not `coerceAtLeast(0f)`: clamping a negative velocity to 0 made every
+        // backward fling travel no distance at all.
+        val v = abs(v0PxPerS)
         if (v == 0f) return 0f
         return (v / 1000f) * timeConstantMs * (1f - exp(-tMs.toDouble() / timeConstantMs).toFloat())
     }
@@ -93,7 +101,7 @@ class FlingPhysics(
      * @param v0PxPerS initial velocity (px/s, magnitude — sign applied by caller)
      */
     fun totalDistance(v0PxPerS: Float): Float {
-        val v = v0PxPerS.coerceAtLeast(0f)
+        val v = abs(v0PxPerS)
         if (v < minFlingVelocityPxPerS) return 0f
         return (v / 1000f) * timeConstantMs
     }
@@ -103,7 +111,7 @@ class FlingPhysics(
      * Returns 0 immediately if the initial velocity is below the threshold.
      */
     fun duration(v0PxPerS: Float): Float {
-        val v = v0PxPerS.coerceAtLeast(0f)
+        val v = abs(v0PxPerS)
         if (v < minFlingVelocityPxPerS) return 0f
         return timeConstantMs * ln((v / minVelocityPxPerS).toDouble()).toFloat()
     }

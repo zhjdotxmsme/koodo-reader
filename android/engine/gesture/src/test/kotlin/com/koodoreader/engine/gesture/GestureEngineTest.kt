@@ -67,7 +67,7 @@ class GestureEngineTest {
             viewportWidthPx = 400f, totalPages = 10,
             mode = GestureMode.PAGE_TURN, overscrollEnabled = false,
         ))
-        engine.overscroll.enabled = false
+        // The config flag alone must disable overscroll (the constructor applies it).
         engine.setCurrentPage(0)
         engine.onTouchDown(100f, 350f, 0L)
         val result = engine.onTouchUp(100f + 200f, 350f, velocityX = 500f, velocityY = 0f, 100L)

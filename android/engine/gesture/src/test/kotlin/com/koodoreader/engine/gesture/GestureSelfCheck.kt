@@ -6,8 +6,14 @@ import kotlin.system.exitProcess
 fun main() {
     var failures = 0
     fun check(name: String, condition: Boolean, detail: String = "") {
-        if (condition) { println("  OK  ") }
-        else { println("  FAIL  "); failures++ }
+        // The label used to be dropped, which made a failing self-check impossible to
+        // attribute ("FAIL   " with no name).
+        if (condition) {
+            println("  OK    $name")
+        } else {
+            println("  FAIL  $name${if (detail.isEmpty()) "" else " — $detail"}")
+            failures++
+        }
     }
 
     println("== FlingPhysics ==")
@@ -49,14 +55,18 @@ fun main() {
     check("tap left = PREV", e.onTap(10f, 350f) == TapAction.PREV_PAGE)
     check("tap right = NEXT", e.onTap(390f, 350f) == TapAction.NEXT_PAGE)
     e.setCurrentPage(4)
+    // A gesture only resolves after onTouchDown — the check used to call onTouchUp on a
+    // fresh engine, which returns NoOp because no drag is in progress.
+    e.onTouchDown(250f, 350f, 0L)
     val r1 = e.onTouchUp(50f, 350f, velocityX = -3000f, velocityY = 0f, 100L)
-    check("forward fling = PageTurn", r1 is GestureResult.PageTurn)
-    val r2 = e.onTouchUp(200f, 350f, velocityX = 0f, velocityY = 0f, 50L)
-    check("no motion = NoOp", r2 is GestureResult.NoOp)
+    check("forward fling = PageTurn", r1 is GestureResult.PageTurn, "got $r1")
+    e.onTouchDown(200f, 350f, 100L)
+    val r2 = e.onTouchUp(200f, 350f, velocityX = 0f, velocityY = 0f, 150L)
+    check("no motion = NoOp", r2 is GestureResult.NoOp, "got $r2")
 
     if (failures > 0) {
         println("")
-        println("FAIL  check(s)")
+        println("FAIL: $failures check(s) failed")
         exitProcess(1)
     }
     println("")

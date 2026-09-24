@@ -12,18 +12,32 @@ class GestureEngine(
     val tapRule = TapControlRule()
     private val velocityThresholdPxPerS: Float = 50f
 
+    init {
+        // The constructor used to ignore `config` entirely: `state` kept its defaults
+        // (mode = PAGE_TURN, totalPages = 1, maxScrollOffsetPx = 0) until `reconfigure`
+        // was called, so every engine built with a non-default config resolved page
+        // bounds and SCROLL mode against those defaults.
+        applyConfig(config)
+    }
+
     // ── public API ─────────────────────────────────────────────────────────
 
     fun reconfigure(newConfig: ReaderConfig) {
         config = newConfig
-        state.mode = newConfig.mode
-        state.totalPages = newConfig.totalPages
-        state.maxScrollOffsetPx = newConfig.maxScrollOffsetPx
-        if (state.currentPageIndex >= newConfig.totalPages) {
+        applyConfig(newConfig)
+    }
+
+    /** Mirror the config into [state] (shared by the constructor and [reconfigure]). */
+    private fun applyConfig(c: ReaderConfig) {
+        state.mode = c.mode
+        state.totalPages = c.totalPages
+        state.maxScrollOffsetPx = c.maxScrollOffsetPx
+        overscroll.enabled = c.overscrollEnabled
+        if (state.currentPageIndex >= c.totalPages) {
             state.currentPageIndex = 0
         }
-        if (state.scrollOffsetPx > newConfig.maxScrollOffsetPx) {
-            state.scrollOffsetPx = newConfig.maxScrollOffsetPx
+        if (state.scrollOffsetPx > c.maxScrollOffsetPx) {
+            state.scrollOffsetPx = c.maxScrollOffsetPx
         }
     }
 
@@ -159,7 +173,13 @@ class GestureEngine(
         }
 
         // Predict landing position using fling physics.
-        val landing = fling.predictLanding(curPos, v0, minPos, maxPos)
+        //
+        // SIGN: the page coordinate grows to the RIGHT (page 0 → page N), while the finger
+        // velocity follows the finger. A leftward swipe (negative v0x) is what turns to the
+        // NEXT page in LTR reading — the same convention the overscroll branch above uses
+        // (`dragX < 0` at the last page bounces on the right). So the fling is fed the
+        // inverted velocity: negative finger velocity → larger page coordinate.
+        val landing = fling.predictLanding(curPos, -v0, minPos, maxPos)
         val target = (landing / unit).toInt().coerceIn(0, state.totalPages - 1)
 
         if (target == state.currentPageIndex) return GestureResult.NoOp
@@ -202,8 +222,10 @@ class GestureEngine(
             return if (overscroll.enabled) GestureResult.Overscroll("bottom") else GestureResult.NoOp
         }
 
-        // Predict landing position.
-        val landing = fling.predictLanding(curOffset, v0, 0f, if (maxOffset > 0f) maxOffset else 0f)
+        // Predict landing position. Same sign convention as page turn: an upward swipe
+        // (negative v0y) scrolls FORWARD (offset grows), matching the "dragY > 0 at
+        // offset 0 bounces the top" rule above.
+        val landing = fling.predictLanding(curOffset, -v0, 0f, if (maxOffset > 0f) maxOffset else 0f)
         val target = landing.coerceIn(0f, if (maxOffset > 0f) maxOffset else 0f)
         state.scrollOffsetPx = target
         return GestureResult.ScrollTo(target)

@@ -42,10 +42,13 @@ enum class TapZone(val x: Int, val y: Int, val index: Int) {
  * }
  * ```
  *
- * In the standard desktop config:
- *  - Zone 1-4 (left third of the screen) → **PREV_PAGE**
- *  - Zone 6-9 (right third)             → **NEXT_PAGE**
- *  - Zone 2,5,8 (center column)         → **CENTER** (no page turn)
+ * In the standard desktop config the three areas map like this:
+ *  - A (previous page):  zones 1, 2, 4, 7  — the left column plus the top-middle cell
+ *  - B (next page):      zones 3, 6, 8, 9  — the right column plus the bottom-middle cell
+ *  - C (no page turn):   zone 5           — the centre, where the menu / selection UI lives
+ *
+ * The middle column is therefore split: the top-middle turns back, the bottom-middle
+ * turns forward, and only the exact centre is a "menu" tap.
  */
 enum class TapAction {
     /** Page previous (tap left area). */
@@ -65,11 +68,11 @@ data class TapControlRule(
     val zoneNext: Set<Int> = defaultNextZones(),
 ) {
     companion object {
-        /** 1,2,3,4,7 (left + top-left + bottom-left columns) → prev page. */
-        fun defaultPrevZones(): Set<Int> = setOf(1, 2, 3, 4, 7)
+        /** 1, 2, 4, 7 (left column + top-middle) → prev page. */
+        fun defaultPrevZones(): Set<Int> = setOf(1, 2, 4, 7)
 
-        /** 6,8,9 (right + top-right + bottom-right columns) → next page. */
-        fun defaultNextZones(): Set<Int> = setOf(6, 8, 9)
+        /** 3, 6, 8, 9 (right column + bottom-middle) → next page. */
+        fun defaultNextZones(): Set<Int> = setOf(3, 6, 8, 9)
     }
 
     /** [0,1] for prev, [2] for next, [-1] for none (matches kookit 0/1/-1). */
