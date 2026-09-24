@@ -113,7 +113,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
 | P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
 | P5.5 FB2/DOCX/HTML/MHTML | 单独立项评估 | ✅ 评估 + ADR-006（**仅文档**） | n/a | n/a | ❌ 4 个 include 是幽灵工程（已注释） |
-| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | ❌ **无任何入口**（`ShellNavHost` 里没有对应屏幕） |
+| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 的 manifest/`<queries>`/通知已接线（§11） | ✅ | 6 模块 289 全绿；locale 51（4 失败） | ❌ **仍无任何入口**（`ShellNavHost` 里没有对应屏幕；TTS 的服务与通知已可用，但没有启动它的 UI） |
 | P7 本地备份 | zip 导入导出、数据导入导出（无云同步） | ✅ `BackupScreen` + `core:dbio` | ✅ | 22（3 失败） | ✅ |
 | P8 收尾 | 兜底岛下线、体积优化、Crash、Macrobenchmark | ✅ crash + benchmarks + 4 个 patch；体积已实测 | ✅ | crash 15 | 🟡 默认构建**仍打包兜底岛**（等 P8-F1 intent 路由迁移）；`:benchmarks` 需真机 |
 
@@ -136,7 +136,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | # | 缺口 | 影响 | 阻断条件 |
 |---|---|---|---|
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
-| 2 | **P6 六个模块无入口** | TTS/词典/翻译/OCR/统计/简繁 交付了但用户摸不到 | 需要各自宿主屏幕 + 导航项 + manifest 接线（TTS 前台服务/通知/`<queries>` 未加） |
+| 2 | **P6 六个模块无入口** | TTS/词典/翻译/OCR/统计/简繁 交付了但用户摸不到 | 需要各自宿主屏幕 + 导航项 + manifest 接线（TTS 的 manifest/`<queries>`/通知/图标/i18n 已补，见 §11；**宿主屏幕仍缺**） |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
 | 5 | OCR 下载适配层 | OCR 无法按需下载模型 | ML Kit 的 options 不是 `OptionalModuleApi`，需改设计（改跟随 ML Kit 自身下载 / 换 bundled 制品） |
@@ -268,4 +268,35 @@ APK 内容核对（zip 清单 + merged manifest）              → assets/pdfen
 - **PDF 批注/高亮不可用**：栅格宿主没有可选中的文本层，引擎的 `selectedRect()` 只能返回 null、`paintHighlights()` 返回 false（`engine.mjs` 顶部已写明并记日志）。要支持批注必须换宿主设计（显示 WebView + 真文本层，或 Compose 侧叠加文本层），属 P6 范围。
 - **多页连续滚动 / 双页 / 阅读位置记忆 / CFI 打通**：仍缺（`PdfViewMode`、`CfiPdfMapper` 已交付但未接线）。
 - **真机未验证**（按用户要求跳过）：WebView 能否 bootstrap、pdf.js 能否真的栅格化、分享能否唤起目标应用，本轮只到「可编译 + JVM/Node 单测 + APK 内容核对」这一层。
+
+---
+
+## 11 · 缺口修复进展（第四轮：P6-TTS 接线收尾）
+
+对应看板卡 `t-mufbb7c8-gzipge`（P6-TTS-WIRE，卡内要求「不动 taskboard_move」）与 §5 缺口 2 的 TTS 部分。卡里列的 6 项此前**全部缺失**——TTS 模块 24 文件 4227 LOC 已交付，但服务没注册、引擎看不见、通知图标是彩色框架资源：
+
+| 卡内项 | 处理 |
+|---|---|
+| 权限 | `POST_NOTIFICATIONS` + `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK` |
+| `<queries>` | 声明 `android.intent.action.TTS_SERVICE`——Android 11+ 缺它时 `TextToSpeech` 直接报告「无引擎」，引擎列表/音色目录全空，且**不报错** |
+| 服务 | `com.koodoreader.feature.tts.ForegroundTtsService`，`foregroundServiceType="mediaPlayback"`，`exported=false` |
+| 接收器 | `LockscreenControlsReceiver` 注册，intent-filter 的 9 个 action 与 `ACTIONS`（`MEDIA_BUTTON` + 8 个 `TtsMediaCommand.action`）逐一对齐 |
+| 通知小图标 | 新增 `android/feature/tts/src/main/res/drawable/ic_tts_notification.xml`（Material `volume_up`，Apache-2.0，单色矢量）；`ForegroundTtsService` 默认图标从 `android.R.drawable.ic_media_play` 改为它——通知小图标只取 alpha，彩色框架资源在状态栏会糊成一团。宿主仍可用 `setNotificationIcon` 覆盖 |
+| i18n | 桌面 `src/assets/locales/{en,zh-CN}.json` 各新增 `Pitch` / `Volume` / `Done` / `Text to speech`（`TtsControlSheet` 已在用这 4 个 key，之前靠 `t()` 回退到英文），并跑 `sync-locales-android.js` 同步进 APK |
+
+**新增门禁**：`scripts/check-tts-manifest.js`（CI 一步）把上面 4 项接线变成机器可验证的约束——权限、`<queries>`、`mediaPlayback` 服务、以及 receiver 的 action 表与 `TtsMediaCommand` 枚举对齐。`LockscreenControlsReceiver` 的注释早就声称「manifest 与 ACTIONS 不会漂移」，但此前没有任何东西在检查它。
+
+验证：
+
+```
+node scripts/check-tts-manifest.js            → 9/9 ✅（负例：删掉一个 action → exit 1 并点名缺失项）
+node scripts/sync-locales-android.js --check  → OK（en 1391 / zh-CN 1401 keys）
+gradle -p android :feature:tts:test           → 全绿
+gradle -p android :app:assembleDebug -Ptarget=native → BUILD SUCCESSFUL
+merged manifest 核对                           → 3 个权限 + TTS_SERVICE + service(mediaPlayback) + receiver 全部在包内
+APK 内容核对                                   → res/drawable/ic_tts_notification.xml 已打包
+```
+
+**仍未做**：P6 六个模块的**宿主屏幕/导航入口**（缺口 2 的主体）——TTS 现在缺的只是一个启动它的 UI；Android 13+ 的 `POST_NOTIFICATIONS` 运行时请求也挂在同一处宿主里。另外 TTS 通知的 `Stop/Play/Pause/Resume/Previous/Next` 在 zh-CN 下仍回退英文（桌面 zh-CN 没有这几个 key），属 i18n 补全，不在本卡范围。
+
 
