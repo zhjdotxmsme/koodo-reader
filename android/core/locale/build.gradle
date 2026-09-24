@@ -1,0 +1,86 @@
+// core/locale — P6: 简繁转换（OpenCC 移植）+ 其余 39 locale 按需加载。
+//
+// PURE KOTLIN JVM MODULE (same rationale as :core:common / :core:designsystem):
+//   no Android dependency — the OpenCC conversion chain, the fallback chain and
+//   the runtime locale-pack loader are unit-testable on any JVM and reusable by
+//   the Compose shell and the native rendering pipeline.
+//
+// WHY PURE JVM FOR A "DataStore" FEATURE (see docs/p6-zh-locale-design.md §4):
+//   androidx.datastore is an Android/AAR dependency and this module must stay
+//   offline-buildable. Persistence is expressed as a *port*
+//   (ZhConvertSettingsStore) plus a desktop-parity Preferences codec; the app
+//   module binds it to DataStore<Preferences> with five lines of code that are
+//   documented in §4.1 (the app module is out of this task's file scope).
+//
+// DEPENDENCIES
+//   :core:common — FlatJson (flat locale JSON parsing) + Localization.normalize
+//                  + Localization.FALLBACK_LANGUAGE. Reused so the fallback
+//                  chain cannot drift from the P1 implementation.
+//
+// ALTERNATIVE ENGINE (documented, deliberately OFF the default classpath):
+//   com.github.houbb:opencc4j is the maintained JVM OpenCC port. The engine in
+//   this module is a native port (dictionary-driven MaxMatch chain, upstream
+//   OpenCC .txt dictionary format), so opencc4j is NOT required. Provenance is
+//   recorded in an isolated configuration; resolve it explicitly only if you
+//   choose the library path:
+//       ./gradlew :core:locale:resolveAlternativeEngine
+//   Repositories come from settings.gradle (dependencyResolutionManagement,
+//   FAIL_ON_PROJECT_REPOS) — never declare repositories here.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+configurations {
+    // Inert by default: nothing depends on it, so no artifact is ever fetched
+    // by a normal build (offline/CI safe). See the header note.
+    openccAlternative
+}
+
+dependencies {
+    implementation project(':core:common')
+
+    openccAlternative 'com.github.houbb:opencc4j:1.8.1'
+
+    // The library path replaces the native port — uncomment instead of the
+    // openccAlternative line above, then delete OpenCcDictionary/OpenCcSeed:
+    // implementation 'com.github.houbb:opencc4j:1.8.1'
+
+    // Test only — the module itself has no runtime dependency besides
+    // :core:common.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner:
+//   gradle :core:locale:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the locale/OpenCC self-checks (tri-state conversion, dictionary integrity, pack loading, fallback chain) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.core.locale.LocaleSelfCheckKt'
+}
+
+tasks.register('resolveAlternativeEngine') {
+    group = 'verification'
+    description = 'Resolves the documented alternative OpenCC implementation (opencc4j) without putting it on the build classpath.'
+    doLast {
+        configurations.openccAlternative.resolve().each { println("opencc4j alternative: ${it.name}") }
+    }
+}

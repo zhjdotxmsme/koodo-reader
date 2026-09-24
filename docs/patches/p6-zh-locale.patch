@@ -1,0 +1,4323 @@
+diff --git a/android/core/locale/build.gradle b/android/core/locale/build.gradle
+new file mode 100644
+index 00000000..14c1607d
+--- /dev/null
++++ b/android/core/locale/build.gradle
+@@ -0,0 +1,86 @@
++// core/locale — P6: 简繁转换（OpenCC 移植）+ 其余 39 locale 按需加载。
++//
++// PURE KOTLIN JVM MODULE (same rationale as :core:common / :core:designsystem):
++//   no Android dependency — the OpenCC conversion chain, the fallback chain and
++//   the runtime locale-pack loader are unit-testable on any JVM and reusable by
++//   the Compose shell and the native rendering pipeline.
++//
++// WHY PURE JVM FOR A "DataStore" FEATURE (see docs/p6-zh-locale-design.md §4):
++//   androidx.datastore is an Android/AAR dependency and this module must stay
++//   offline-buildable. Persistence is expressed as a *port*
++//   (ZhConvertSettingsStore) plus a desktop-parity Preferences codec; the app
++//   module binds it to DataStore<Preferences> with five lines of code that are
++//   documented in §4.1 (the app module is out of this task's file scope).
++//
++// DEPENDENCIES
++//   :core:common — FlatJson (flat locale JSON parsing) + Localization.normalize
++//                  + Localization.FALLBACK_LANGUAGE. Reused so the fallback
++//                  chain cannot drift from the P1 implementation.
++//
++// ALTERNATIVE ENGINE (documented, deliberately OFF the default classpath):
++//   com.github.houbb:opencc4j is the maintained JVM OpenCC port. The engine in
++//   this module is a native port (dictionary-driven MaxMatch chain, upstream
++//   OpenCC .txt dictionary format), so opencc4j is NOT required. Provenance is
++//   recorded in an isolated configuration; resolve it explicitly only if you
++//   choose the library path:
++//       ./gradlew :core:locale:resolveAlternativeEngine
++//   Repositories come from settings.gradle (dependencyResolutionManagement,
++//   FAIL_ON_PROJECT_REPOS) — never declare repositories here.
++plugins {
++    id 'org.jetbrains.kotlin.jvm'
++}
++
++java {
++    sourceCompatibility = JavaVersion.VERSION_17
++    targetCompatibility = JavaVersion.VERSION_17
++}
++
++kotlin {
++    jvmToolchain(17)
++}
++
++configurations {
++    // Inert by default: nothing depends on it, so no artifact is ever fetched
++    // by a normal build (offline/CI safe). See the header note.
++    openccAlternative
++}
++
++dependencies {
++    implementation project(':core:common')
++
++    openccAlternative 'com.github.houbb:opencc4j:1.8.1'
++
++    // The library path replaces the native port — uncomment instead of the
++    // openccAlternative line above, then delete OpenCcDictionary/OpenCcSeed:
++    // implementation 'com.github.houbb:opencc4j:1.8.1'
++
++    // Test only — the module itself has no runtime dependency besides
++    // :core:common.
++    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
++    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
++}
++
++tasks.named('test') {
++    useJUnitPlatform()
++    testLogging {
++        events 'passed', 'skipped', 'failed'
++        exceptionFormat 'full'
++    }
++}
++
++// Framework-free verification runner:
++//   gradle :core:locale:selfCheck
++tasks.register('selfCheck', JavaExec) {
++    group = 'verification'
++    description = 'Runs the locale/OpenCC self-checks (tri-state conversion, dictionary integrity, pack loading, fallback chain) without a test framework.'
++    classpath = sourceSets.test.runtimeClasspath
++    mainClass = 'com.koodoreader.core.locale.LocaleSelfCheckKt'
++}
++
++tasks.register('resolveAlternativeEngine') {
++    group = 'verification'
++    description = 'Resolves the documented alternative OpenCC implementation (opencc4j) without putting it on the build classpath.'
++    doLast {
++        configurations.openccAlternative.resolve().each { println("opencc4j alternative: ${it.name}") }
++    }
++}
+diff --git a/android/core/locale/src/main/assets/locales/.gitkeep b/android/core/locale/src/main/assets/locales/.gitkeep
+new file mode 100644
+index 00000000..e69de29b
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/FallbackKey.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/FallbackKey.kt
+new file mode 100644
+index 00000000..3c9ecbf3
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/FallbackKey.kt
+@@ -0,0 +1,50 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.Localization
++
++/**
++ * A react-i18next translation key, identical to the desktop keys
++ * ("key 与桌面一致", ADR-004) — and the **terminal step** of the fallback chain:
++ * when neither the selected locale nor English has the key, the key itself is
++ * rendered, exactly like the desktop does for a missing translation.
++ *
++ * Typing the chain entry point prevents "translate an already translated
++ * string" bugs: values are plain [String], keys must be wrapped explicitly.
++ */
++@JvmInline
++value class FallbackKey(val raw: String) {
++
++    init {
++        require(raw.isNotBlank()) { "translation key must not be blank" }
++    }
++
++    override fun toString(): String = raw
++
++    companion object {
++        /** Wraps [raw] (desktop key text). */
++        fun of(raw: String): FallbackKey = FallbackKey(raw)
++    }
++}
++
++/** Desktop-parity locale codes and preference values. */
++object LocaleCodes {
++
++    /** Fallback language of the chain (ADR-004: 所选 → en → key). */
++    const val FALLBACK: String = Localization.FALLBACK_LANGUAGE
++
++    /** Regression-mandated subset bundled with the APK (ADR-004). */
++    const val ZH_CN = "zh-CN"
++
++    /** Traditional-Chinese locales that select the TW conversion stage. */
++    val TRADITIONAL_CHINESE = listOf("zh-TW", "zh-HK", "zh-MO")
++
++    /** `LibraryPrefs.language` sentinel: follow the system locale. */
++    const val SYSTEM = "system"
++
++    /** `zh_cn` → `zh-CN`, blank → `en` (delegates to the P1 implementation). */
++    fun normalize(raw: String): String = Localization.normalize(raw)
++
++    /** True for any `zh*` locale. */
++    fun isChinese(code: String?): Boolean =
++        code != null && normalize(code).lowercase().startsWith("zh")
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleFallbackChain.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleFallbackChain.kt
+new file mode 100644
+index 00000000..7b9b83cc
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleFallbackChain.kt
+@@ -0,0 +1,121 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.Localization
++
++/** Which link of the fallback chain produced a translation. */
++enum class FallbackStep {
++    /** The selected locale pack (bundled or downloaded) had the key. */
++    SELECTED,
++
++    /** The selected pack missed — English (ADR-004 fallback language) had it. */
++    FALLBACK_LANGUAGE,
++
++    /** Nobody had it — the key text itself is returned, as on the desktop. */
++    KEY,
++}
++
++/** One resolved translation plus where it came from. */
++data class FallbackHit(
++    val step: FallbackStep,
++    val language: String?,
++    val value: String,
++) {
++    val isFallback: Boolean get() = step != FallbackStep.SELECTED
++}
++
++/**
++ * The ADR-004 lookup chain, made explicit and observable:
++ *
++ * ```
++ * selected locale  →  en  →  key itself
++ * ```
++ *
++ * The catalogs are read through a provider on every lookup, so packs installed
++ * later by [LocaleRuntimeLoader] participate **without rebuilding the chain**
++ * and without touching `core:common`'s [Localization] (whose `t()` semantics
++ * this class mirrors 1:1 — asserted by `LocaleFallbackChainTest` against the
++ * real desktop `en.json` / `zh-CN.json`).
++ *
++ * Not thread-safe by design (a reader owns one instance); [language] is mutable
++ * so a live language switch re-targets the chain instantly.
++ */
++class LocaleFallbackChain private constructor(
++    private val provider: () -> Map<String, Map<String, String>>,
++    language: String,
++) {
++    /** Catalogs keyed by normalized locale code. */
++    constructor(
++        catalogs: Map<String, Map<String, String>>,
++        language: String,
++    ) : this({ catalogs }, language)
++
++    /** Live view over the runtime loader's registry (packs may appear later). */
++    constructor(
++        registry: LocaleCatalogRegistry,
++        language: String,
++    ) : this({ registry.snapshot() }, language)
++
++    var language: String = Localization.normalize(language)
++        set(value) {
++            field = Localization.normalize(value)
++        }
++
++    /**
++     * Full lookup: selected → en → key. Never throws, never returns blank for a
++     * non-blank key (a present-but-empty translation is returned as-is, exactly
++     * like the desktop, which renders the empty string).
++     */
++    fun lookup(key: FallbackKey): FallbackHit {
++        val catalogs = provider()
++        catalogs[language]?.get(key.raw)?.let {
++            return FallbackHit(FallbackStep.SELECTED, language, it)
++        }
++        if (language != FALLBACK_LANGUAGE) {
++            catalogs[FALLBACK_LANGUAGE]?.get(key.raw)?.let {
++                return FallbackHit(FallbackStep.FALLBACK_LANGUAGE, FALLBACK_LANGUAGE, it)
++            }
++        }
++        return FallbackHit(FallbackStep.KEY, null, key.raw)
++    }
++
++    /** Translated value of [key]. */
++    fun resolve(key: FallbackKey): String = lookup(key).value
++
++    /** Translated value of a raw desktop key. */
++    fun resolve(raw: String): String = resolve(FallbackKey(raw))
++
++    /** True when the selected locale has [key] (no fallback involved). */
++    fun has(key: FallbackKey): Boolean = provider()[language]?.containsKey(key.raw) == true
++
++    /** Resolves [keys] preserving order. */
++    fun resolveAll(keys: List<FallbackKey>): Map<String, String> {
++        val out = LinkedHashMap<String, String>(keys.size)
++        for (key in keys) out[key.raw] = resolve(key)
++        return out
++    }
++
++    /**
++     * Ordered diagnostic view of the chain for [selected]:
++     * `[selected, "en", "<key>"]` — the third element is the synthetic key step.
++     */
++    fun chainFor(selected: String = language): List<String> =
++        listOf(Localization.normalize(selected), FALLBACK_LANGUAGE, KEY_STEP)
++
++    /** Locale codes currently available to the chain. */
++    fun languages(): List<String> = provider().keys.sorted()
++
++    /**
++     * The P1 implementation for this exact state — lets the shell keep using
++     * `Localization.t()` while the chain stays the single source of truth for
++     * the order (parity is unit-tested).
++     */
++    fun toLocalization(): Localization = Localization(provider(), language)
++
++    companion object {
++        /** Fallback language of the chain (desktop: English). */
++        const val FALLBACK_LANGUAGE: String = Localization.FALLBACK_LANGUAGE
++
++        /** Synthetic third step used by [chainFor] diagnostics. */
++        const val KEY_STEP = "<key>"
++    }
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocalePackStore.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocalePackStore.kt
+new file mode 100644
+index 00000000..2da0a356
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocalePackStore.kt
+@@ -0,0 +1,225 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.FlatJson
++import java.io.File
++import java.nio.charset.StandardCharsets
++import java.nio.file.Files
++import java.nio.file.StandardCopyOption
++import java.security.MessageDigest
++
++/**
++ * Sources and sinks of locale catalogs.
++ *
++ * The three ports mirror the three places a catalog can live:
++ *
++ *  - [LocaleAssetSource] — **bundled**: `assets/locales/<code>.json` inside the
++ *    APK, synced from `src/assets/locales` by `scripts/sync-locales-android.js`
++ *    (ADR-004: only `en` + `zh-CN` today).
++ *  - [LocalePackStore] — **downloaded**: `<filesDir>/locales/packs/<code>.json`
++ *    with a hash index, so a pack survives restarts and can be verified.
++ *  - [LocalePackDownloader] — **network**: implemented by the app (OkHttp /
++ *    DownloadManager); the module never opens a socket itself.
++ *
++ * All APIs are synchronous: callers use `Dispatchers.IO`. That keeps this
++ * module free of coroutines/Android dependencies (see build.gradle header).
++ */
++
++/** Bundled catalog source (APK assets). */
++interface LocaleAssetSource {
++
++    /** Catalog JSON for [code], or null when this build does not bundle it. */
++    fun read(code: String): String?
++
++    /** Locale codes present in the bundle. */
++    fun list(): List<String>
++}
++
++/** Downloaded locale packs on disk. */
++interface LocalePackStore {
++
++    /** Installed pack JSON for [code], or null when not installed. */
++    fun read(code: String): String?
++
++    /** Installs [json] for [code] and records [sha256]; returns the new index entry. */
++    fun write(code: String, json: String, sha256: String): LocalePackInfo
++
++    /** Installed packs, sorted by code. */
++    fun installed(): List<LocalePackInfo>
++
++    /** Removes an installed pack; true when something was removed. */
++    fun delete(code: String): Boolean
++}
++
++/** One installed/downloaded locale pack. */
++data class LocalePackInfo(
++    val code: String,
++    val sha256: String,
++    val bytes: Int,
++) {
++    /** Index entry format: `<sha256>:<bytes>` (flat JSON string map). */
++    fun encode(): String = "$sha256:$bytes"
++
++    companion object {
++        /** Parses an index entry; null when malformed. */
++        fun decode(code: String, entry: String): LocalePackInfo? {
++            val idx = entry.lastIndexOf(':')
++            if (idx <= 0) return null
++            val sha = entry.substring(0, idx)
++            val bytes = entry.substring(idx + 1).toIntOrNull() ?: return null
++            if (sha.isEmpty()) return null
++            return LocalePackInfo(code, sha, bytes)
++        }
++    }
++}
++
++/** Blocking network fetch for one locale pack. Implemented by the app layer. */
++interface LocalePackDownloader {
++
++    /**
++     * Fetches `<code>.json` and returns its text. Implementations should throw
++     * on any failure; the loader turns that into [LocaleEnsureResult.Failed].
++     */
++    fun download(code: String, expectedSha256: String?): String
++}
++
++/** SHA-256 helper (no dependency). */
++object Sha256 {
++
++    fun hex(text: String): String = hex(text.toByteArray(StandardCharsets.UTF_8))
++
++    fun hex(bytes: ByteArray): String {
++        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
++        val sb = StringBuilder(digest.size * 2)
++        for (b in digest) {
++            val v = b.toInt() and 0xFF
++            sb.append(HEX[v ushr 4]).append(HEX[v and 0x0F])
++        }
++        return sb.toString()
++    }
++
++    private const val HEX = "0123456789abcdef"
++}
++
++/** Map-backed bundled source (JVM tests, embedded catalogs). */
++class MapLocaleAssetSource(private val catalogs: Map<String, String>) : LocaleAssetSource {
++
++    override fun read(code: String): String? = catalogs[code]
++
++    override fun list(): List<String> = catalogs.keys.sorted()
++}
++
++/** Map-backed pack store (JVM tests). */
++class InMemoryLocalePackStore : LocalePackStore {
++
++    private val packs = LinkedHashMap<String, String>()
++    private val index = LinkedHashMap<String, LocalePackInfo>()
++
++    override fun read(code: String): String? = packs[code]
++
++    override fun write(code: String, json: String, sha256: String): LocalePackInfo {
++        packs[code] = json
++        val info = LocalePackInfo(code, sha256, json.toByteArray(StandardCharsets.UTF_8).size)
++        index[code] = info
++        return info
++    }
++
++    override fun installed(): List<LocalePackInfo> = index.values.sortedBy { it.code }
++
++    override fun delete(code: String): Boolean {
++        index.remove(code)
++        return packs.remove(code) != null
++    }
++}
++
++/**
++ * Filesystem pack store — `<root>/<code>.json` plus a flat-JSON hash index
++ * (`<root>/index.json`, `{"am":"<sha256>:<bytes>"}`). Writes are atomic
++ * (temp file + rename), so a crash never leaves a half-written pack behind.
++ */
++class FilesLocalePackStore(private val root: File) : LocalePackStore {
++
++    override fun read(code: String): String? {
++        val file = packFile(code)
++        return if (file.isFile) file.readText(StandardCharsets.UTF_8) else null
++    }
++
++    override fun write(code: String, json: String, sha256: String): LocalePackInfo {
++        if (!root.isDirectory && !root.mkdirs()) {
++            throw IllegalStateException("cannot create locale pack dir: ${root.path}")
++        }
++        val bytes = json.toByteArray(StandardCharsets.UTF_8)
++        val tmp = File(root, "$code.json.tmp")
++        tmp.writeBytes(bytes)
++        moveInto(tmp, packFile(code))
++        val info = LocalePackInfo(code, sha256, bytes.size)
++        val index = readIndex().toMutableMap()
++        index[code] = info
++        writeIndex(index)
++        return info
++    }
++
++    override fun installed(): List<LocalePackInfo> {
++        val entries = readIndex()
++        val out = ArrayList<LocalePackInfo>(entries.size)
++        for ((code, entry) in entries) {
++            LocalePackInfo.decode(code, entry)?.let { if (packFile(code).isFile) out.add(it) }
++        }
++        return out.sortedBy { it.code }
++    }
++
++    override fun delete(code: String): Boolean {
++        val removed = packFile(code).delete()
++        val index = readIndex().toMutableMap()
++        if (index.remove(code) != null) writeIndex(index)
++        return removed
++    }
++
++    /** Absolute path of an installed pack (diagnostics/tests). */
++    fun packPath(code: String): String = packFile(code).path
++
++    private fun packFile(code: String): File = File(root, "$code.json")
++
++    private fun indexFile(): File = File(root, "index.json")
++
++    /** Atomic rename when the filesystem supports it, plain replace otherwise. */
++    private fun moveInto(tmp: File, target: File) {
++        try {
++            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
++        } catch (e: java.io.IOException) {
++            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
++        } catch (e: UnsupportedOperationException) {
++            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
++        }
++    }
++
++    private fun readIndex(): Map<String, String> {
++        val file = indexFile()
++        if (!file.isFile) return emptyMap()
++        return runCatching { FlatJson.parse(file.readText(StandardCharsets.UTF_8)) }
++            .getOrDefault(emptyMap())
++    }
++
++    private fun writeIndex(index: Map<String, String>) {
++        if (!root.isDirectory && !root.mkdirs()) {
++            throw IllegalStateException("cannot create locale pack dir: ${root.path}")
++        }
++        val body = index.entries.sortedBy { it.key }
++            .joinToString(",", "{", "}") { (code, entry) -> "\"${escape(code)}\":\"${escape(entry)}\"" }
++        val tmp = File(root, "index.json.tmp")
++        tmp.writeText(body, StandardCharsets.UTF_8)
++        moveInto(tmp, indexFile())
++    }
++
++    private fun escape(value: String): String = buildString(value.length) {
++        for (ch in value) {
++            when (ch) {
++                '"' -> append("\\\"")
++                '\\' -> append("\\\\")
++                '\n' -> append("\\n")
++                '\r' -> append("\\r")
++                '\t' -> append("\\t")
++                else -> append(ch)
++            }
++        }
++    }
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoader.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoader.kt
+new file mode 100644
+index 00000000..16feb25c
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoader.kt
+@@ -0,0 +1,411 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.FlatJson
++import java.nio.charset.StandardCharsets
++
++/** Where a catalog in the registry came from. */
++enum class LocaleSourceKind {
++    /** Shipped in the APK (`assets/locales`, ADR-004 subset). */
++    BUNDLED,
++
++    /** Installed at runtime from a downloaded pack. */
++    DOWNLOADED,
++}
++
++/**
++ * Runtime locale registry: the single live view of "which catalogs exist right
++ * now". [LocaleFallbackChain] reads it through [snapshot] (O(1) — the immutable
++ * snapshot is rebuilt on mutation only), so a pack that finishes downloading is
++ * immediately visible to every `t()` call without rebuilding anything.
++ */
++class LocaleCatalogRegistry {
++
++    private val catalogs = LinkedHashMap<String, Map<String, String>>()
++    private val kinds = LinkedHashMap<String, LocaleSourceKind>()
++    private var view: Map<String, Map<String, String>> = emptyMap()
++
++    /** Registers/overwrites a catalog; returns true when it was new. */
++    fun put(code: String, catalog: Map<String, String>, kind: LocaleSourceKind): Boolean {
++        val normalized = LocaleCodes.normalize(code)
++        val isNew = !catalogs.containsKey(normalized)
++        catalogs[normalized] = catalog
++        kinds[normalized] = kind
++        rebuild()
++        return isNew
++    }
++
++    fun get(code: String): Map<String, String>? = catalogs[LocaleCodes.normalize(code)]
++
++    fun kindOf(code: String): LocaleSourceKind? = kinds[LocaleCodes.normalize(code)]
++
++    fun remove(code: String): Boolean {
++        val normalized = LocaleCodes.normalize(code)
++        kinds.remove(normalized)
++        val removed = catalogs.remove(normalized) != null
++        if (removed) rebuild()
++        return removed
++    }
++
++    /** Registered locale codes, sorted. */
++    fun codes(): List<String> = catalogs.keys.sorted()
++
++    /** Registered locales of one origin, sorted. */
++    fun codesOfKind(kind: LocaleSourceKind): List<String> =
++        kinds.filterValues { it == kind }.keys.sorted()
++
++    fun size(): Int = catalogs.size
++
++    /** Immutable snapshot handed to the fallback chain (cheap, O(1)). */
++    fun snapshot(): Map<String, Map<String, String>> = view
++
++    private fun rebuild() {
++        view = LinkedHashMap(catalogs)
++    }
++}
++
++/** Result of a pure lookup ([LocaleRuntimeLoader.load]). */
++sealed interface LocaleLoadResult {
++
++    /** Catalog ready for use. */
++    data class Loaded(
++        val code: String,
++        val kind: LocaleSourceKind,
++        val catalog: Map<String, String>,
++        val fromCache: Boolean,
++    ) : LocaleLoadResult
++
++    /** Not a known locale code (not bundled, not in the remote catalog). */
++    data class Missing(val code: String) : LocaleLoadResult
++
++    /** Known remote pack that is not installed yet. */
++    data class NotDownloaded(val code: String) : LocaleLoadResult
++
++    /** Present but unusable (malformed JSON / non-string values / hash mismatch). */
++    data class Corrupt(val code: String, val reason: String) : LocaleLoadResult
++}
++
++/** Result of [LocaleRuntimeLoader.ensure] (lookup + download when needed). */
++sealed interface LocaleEnsureResult {
++
++    /** Already available (bundled or previously downloaded). */
++    data class Ready(
++        val code: String,
++        val kind: LocaleSourceKind,
++        val keys: Int,
++    ) : LocaleEnsureResult
++
++    /** Fetched and installed during this call. */
++    data class Downloaded(
++        val code: String,
++        val keys: Int,
++        val bytes: Int,
++        val sha256: String,
++    ) : LocaleEnsureResult
++
++    /** No downloader configured (or offline): the app should offer/queue a download. */
++    data class NeedsDownload(
++        val code: String,
++        val expectedSha256: String?,
++    ) : LocaleEnsureResult
++
++    /** [code] is not one of the 41 desktop locales. */
++    data class Unsupported(val code: String) : LocaleEnsureResult
++
++    /** Download or validation failed — [reason] is safe to log (no paths/secrets). */
++    data class Failed(val code: String, val reason: String) : LocaleEnsureResult
++}
++
++/**
++ * On-demand locale loader for the remaining **39** desktop locales
++ * (`en` + `zh-CN` stay bundled per ADR-004 — 41 − 2 = 39).
++ *
++ * Lifecycle:
++ *
++ * ```
++ * ensure(code) ──bundled──────────────────────────▶ Ready(BUNDLED)
++ *              ├─installed pack──────────────────▶ Ready(DOWNLOADED)
++ *              ├─known, no pack, downloader──────▶ Downloaded  (verify sha256 → install)
++ *              ├─known, no pack, no downloader───▶ NeedsDownload
++ *              └─unknown─────────────────────────▶ Unsupported
++ * ```
++ *
++ * Keys stay identical to the desktop, and the lookup chain does not change:
++ * a loaded pack only *adds* a catalog to the registry that
++ * [LocaleFallbackChain] already reads (`selected → en → key`).
++ *
++ * Cache: an access-ordered LRU bounded by [maxCachedPacks]; bundled locale
++ * codes, the fallback language and any [pin]ned code (the selected language)
++ * are never evicted. Eviction only drops the in-memory catalog — the installed
++ * pack stays on disk, so re-selecting the language is a file read, not a
++ * download.
++ *
++ * Synchronous by design (see build.gradle header): call from `Dispatchers.IO`.
++ */
++class LocaleRuntimeLoader(
++    private val assets: LocaleAssetSource,
++    private val packs: LocalePackStore = InMemoryLocalePackStore(),
++    private val downloader: LocalePackDownloader? = null,
++    /** Expected sha256 per remote code (from `scripts/check-locales.mjs --print-pack-table`). */
++    private val expectedPacks: Map<String, String> = emptyMap(),
++    private val registry: LocaleCatalogRegistry = LocaleCatalogRegistry(),
++    private val maxCachedPacks: Int = DEFAULT_MAX_CACHED_PACKS,
++) {
++    private val cache = object : LinkedHashMap<String, Map<String, String>>(16, 0.75f, true) {}
++    private val pinned = LinkedHashSet<String>()
++
++    init {
++        require(maxCachedPacks >= 1) { "maxCachedPacks must be >= 1" }
++        pinned.addAll(BUNDLED_LOCALE_CODES)
++        pinned.add(LocaleCodes.FALLBACK)
++    }
++
++    /** Registry shared with [chain] — grows as packs are loaded. */
++    fun locales(): LocaleCatalogRegistry = registry
++
++    /** Fallback chain over the live registry (selected → en → key). */
++    fun chain(language: String): LocaleFallbackChain = LocaleFallbackChain(registry, language)
++
++    fun isBundled(code: String): Boolean = BUNDLED_LOCALE_CODES.contains(LocaleCodes.normalize(code))
++
++    fun isRemote(code: String): Boolean = REMOTE_LOCALE_CODES.contains(LocaleCodes.normalize(code))
++
++    fun isKnown(code: String): Boolean {
++        val normalized = LocaleCodes.normalize(code)
++        return BUNDLED_LOCALE_CODES.contains(normalized) || REMOTE_LOCALE_CODES.contains(normalized)
++    }
++
++    /** Installed (downloaded) packs on disk, sorted. */
++    fun installedPacks(): List<LocalePackInfo> = packs.installed()
++
++    /** Locale codes currently in the in-memory cache. */
++    fun loadedCodes(): List<String> = cache.keys.sorted()
++
++    /** Keeps [code] resident even beyond [maxCachedPacks] (e.g. the selected language). */
++    fun pin(code: String): Boolean = pinned.add(LocaleCodes.normalize(code))
++
++    fun unpin(code: String): Boolean = pinned.remove(LocaleCodes.normalize(code))
++
++    /** Pure lookup: cache → bundled asset → installed pack (never downloads). */
++    fun load(rawCode: String): LocaleLoadResult {
++        val code = LocaleCodes.normalize(rawCode)
++        cache[code]?.let {
++            return LocaleLoadResult.Loaded(code, registry.kindOf(code) ?: LocaleSourceKind.BUNDLED, it, true)
++        }
++        if (isBundled(code) || assets.list().contains(code)) {
++            val json = assets.read(code)
++                ?: return LocaleLoadResult.Corrupt(code, "bundled catalog missing from assets")
++            return try {
++                val catalog = CatalogValidator.validate(code, json)
++                register(code, catalog, LocaleSourceKind.BUNDLED)
++                LocaleLoadResult.Loaded(code, LocaleSourceKind.BUNDLED, catalog, false)
++            } catch (e: Exception) {
++                LocaleLoadResult.Corrupt(code, reasonOf(e))
++            }
++        }
++        if (!isRemote(code)) return LocaleLoadResult.Missing(code)
++        val json = packs.read(code) ?: return LocaleLoadResult.NotDownloaded(code)
++        return try {
++            val catalog = CatalogValidator.validate(code, json)
++            val info = packs.installed().firstOrNull { it.code == code }
++            if (info != null) {
++                val actual = Sha256.hex(json)
++                if (!actual.equals(info.sha256, ignoreCase = true)) {
++                    return LocaleLoadResult.Corrupt(
++                        code,
++                        "pack hash mismatch (index ${info.sha256.take(12)}…, file ${actual.take(12)}…)",
++                    )
++                }
++            }
++            register(code, catalog, LocaleSourceKind.DOWNLOADED)
++            LocaleLoadResult.Loaded(code, LocaleSourceKind.DOWNLOADED, catalog, false)
++        } catch (e: Exception) {
++            LocaleLoadResult.Corrupt(code, reasonOf(e))
++        }
++    }
++
++    /** Lookup, and download+install when the pack is missing and a downloader exists. */
++    fun ensure(rawCode: String): LocaleEnsureResult {
++        val code = LocaleCodes.normalize(rawCode)
++        when (val result = load(code)) {
++            is LocaleLoadResult.Loaded ->
++                return LocaleEnsureResult.Ready(code, result.kind, result.catalog.size)
++            is LocaleLoadResult.Missing ->
++                return LocaleEnsureResult.Unsupported(code)
++            is LocaleLoadResult.Corrupt -> {
++                packs.delete(code)
++                return LocaleEnsureResult.Failed(code, "corrupt pack removed: ${result.reason}")
++            }
++            is LocaleLoadResult.NotDownloaded -> Unit // fall through to download
++        }
++        val expected = expectedPacks[code]
++        val remote = downloader ?: return LocaleEnsureResult.NeedsDownload(code, expected)
++        val json = try {
++            remote.download(code, expected)
++        } catch (e: Exception) {
++            return LocaleEnsureResult.Failed(code, "download failed: ${reasonOf(e)}")
++        }
++        val actual = Sha256.hex(json)
++        if (expected != null && !expected.equals(actual, ignoreCase = true)) {
++            return LocaleEnsureResult.Failed(
++                code,
++                "sha256 mismatch (expected ${expected.take(12)}…, got ${actual.take(12)}…)",
++            )
++        }
++        val catalog = try {
++            CatalogValidator.validate(code, json)
++        } catch (e: Exception) {
++            return LocaleEnsureResult.Failed(code, "invalid pack: ${reasonOf(e)}")
++        }
++        packs.write(code, json, actual)
++        register(code, catalog, LocaleSourceKind.DOWNLOADED)
++        return LocaleEnsureResult.Downloaded(
++            code,
++            catalog.size,
++            json.toByteArray(StandardCharsets.UTF_8).size,
++            actual,
++        )
++    }
++
++    /** Ensures every bundled locale is resident (startup warm-up). */
++    fun preloadBundled(): List<LocaleEnsureResult> = BUNDLED_LOCALE_CODES.map { ensure(it) }
++
++    /** Uninstalls a downloaded pack and drops it from memory. */
++    fun removePack(code: String): Boolean {
++        val normalized = LocaleCodes.normalize(code)
++        if (isBundled(normalized)) return false
++        evict(normalized)
++        return packs.delete(normalized)
++    }
++
++    /** Drops the in-memory catalog (installed pack/file stays). */
++    fun evict(code: String): Boolean {
++        val normalized = LocaleCodes.normalize(code)
++        if (pinned.contains(normalized)) return false
++        val removed = cache.remove(normalized) != null
++        registry.remove(normalized)
++        return removed
++    }
++
++    private fun register(code: String, catalog: Map<String, String>, kind: LocaleSourceKind) {
++        cache[code] = catalog
++        registry.put(code, catalog, kind)
++        trimCache(code)
++    }
++
++    private fun trimCache(justAdded: String) {
++        if (cache.size <= maxCachedPacks) return
++        val iterator = cache.keys.iterator()
++        while (cache.size > maxCachedPacks && iterator.hasNext()) {
++            val code = iterator.next()
++            if (code == justAdded || pinned.contains(code)) continue
++            iterator.remove()
++            registry.remove(code)
++        }
++    }
++
++    private fun reasonOf(e: Exception): String = e.message ?: e::class.simpleName ?: "error"
++
++    companion object {
++        /** Bundled subset — keep aligned with ADR-004 and `sync-locales-android.js`. */
++        val BUNDLED_LOCALE_CODES: List<String> = listOf("en", "zh-CN")
++
++        /**
++         * The remaining 39 desktop locales (`src/assets/locales` minus the
++         * bundled subset), loaded on demand.
++         *
++         * CANONICAL LIST — `scripts/check-locales.mjs` parses this block and
++         * fails when it drifts from the desktop locale directory.
++         */
++        val REMOTE_LOCALE_CODES: List<String> = listOf(
++            "am", "ar", "bg", "bn", "bo", "cs", "da", "de", "el", "es",
++            "fa", "fi", "fr", "ga", "hi", "hu", "hy", "id", "ie", "it",
++            "ja", "ko", "nl", "pl", "pt-BR", "pt", "ro", "ru", "sl", "sr",
++            "sv", "ta", "th", "tl", "tr", "uk", "vi", "zh-MO", "zh-TW",
++        )
++
++        /** All 41 desktop locales (2 bundled + 39 on demand). */
++        val ALL_LOCALE_CODES: List<String> = BUNDLED_LOCALE_CODES + REMOTE_LOCALE_CODES
++
++        /** Default LRU bound for resident catalogs (~1.4k keys each). */
++        const val DEFAULT_MAX_CACHED_PACKS = 4
++
++        /** Where the app keeps downloaded packs, relative to `filesDir`. */
++        const val PACK_DIR = "locales/packs"
++
++        /** Pack file name for [code] (inside [PACK_DIR]). */
++        fun packFileName(code: String): String = "${LocaleCodes.normalize(code)}.json"
++    }
++}
++
++/**
++ * Catalog validation with the exact semantics of
++ * `scripts/sync-locales-android.js --check`: valid JSON object, **every value a
++ * string** (a non-string value is an error, even though the desktop files never
++ * contain one), and at least one entry.
++ */
++internal object CatalogValidator {
++
++    fun validate(code: String, json: String): Map<String, String> {
++        require(json.trimStart().startsWith("{")) { "$code: catalog is not a JSON object" }
++        val catalog = try {
++            FlatJson.parse(json)
++        } catch (e: Exception) {
++            throw IllegalArgumentException("$code: invalid JSON (${e.message ?: "parse error"})")
++        }
++        require(catalog.isNotEmpty()) { "$code: catalog has no entries" }
++        requireNoNonStringValues(code, json)
++        return catalog
++    }
++
++    /** Structural scan: at object depth 1 every value must start with a quote. */
++    private fun requireNoNonStringValues(code: String, json: String) {
++        var i = 0
++        var depth = 0
++        var expectValue = false
++        while (i < json.length) {
++            val c = json[i]
++            when {
++                c == '"' -> {
++                    i = skipString(json, i)
++                    if (depth == 1) expectValue = false
++                }
++                c == '{' || c == '[' -> {
++                    require(!(expectValue && depth == 1)) {
++                        "$code: non-string value in catalog at index $i"
++                    }
++                    depth++
++                    i++
++                }
++                c == '}' || c == ']' -> {
++                    depth--
++                    i++
++                }
++                c == ':' && depth == 1 -> {
++                    expectValue = true
++                    i++
++                }
++                c == ',' && depth == 1 -> {
++                    expectValue = false
++                    i++
++                }
++                c.isWhitespace() -> i++
++                expectValue && depth == 1 -> throw IllegalArgumentException(
++                    "$code: non-string value in catalog at index $i",
++                )
++                else -> i++
++            }
++        }
++    }
++
++    private fun skipString(s: String, start: Int): Int {
++        var i = start + 1
++        while (i < s.length) {
++            when (s[i]) {
++                '\\' -> i += 2
++                '"' -> return i + 1
++                else -> i++
++            }
++        }
++        throw IllegalArgumentException("unterminated string in catalog")
++    }
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcDictionary.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcDictionary.kt
+new file mode 100644
+index 00000000..11e7b024
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcDictionary.kt
+@@ -0,0 +1,277 @@
++package com.koodoreader.core.locale
++
++/**
++ * OpenCC-compatible conversion dictionary + MaxMatch (longest-match)
++ * segmentation over a code-point trie.
++ *
++ * This is a native port of the parts of OpenCC that the desktop reader uses
++ * for 简繁转换 (`kookit zh-convert.ts`, 8143 LOC — the minified bundle is not
++ * readable, so the algorithm is reimplemented from the published OpenCC model,
++ * see docs/p6-zh-locale-design.md §3):
++ *
++ *  - **file format** — identical to upstream OpenCC `*.txt` dictionaries:
++ *    `key<TAB>value1 value2 ...`, one entry per line, `#` starts a comment
++ *    line. Upstream files (STCharacters.txt ≈ 30k entries, STPhrases.txt,
++ *    TWPhrasesIT.txt, …) therefore load **unchanged** through [parse]; the
++ *    in-module seed (see [OpenCcSeed]) is a curated high-frequency subset.
++ *  - **multi-value entries** — OpenCC stores alternatives separated by spaces;
++ *    the first value is the default and is what this port emits ([firstValue]).
++ *    Alternative values are kept for callers that want to re-rank them.
++ *  - **MaxMatch segmentation** — at each position the *longest* key that has an
++ *    entry wins; unmatched code points pass through verbatim (so Latin text,
++ *    punctuation, digits and emoji are never touched). Surrogate pairs are
++ *    advanced as one code point.
++ *  - **dictionary order** — a *chain* of dictionaries is applied in order
++ *    (OpenCC: STPhrases then STCharacters, etc.). Stages are applied to the
++ *    whole string; [locked] marks a stage whose output must not be touched by
++ *    later stages (used for the user dictionary, which is authoritative).
++ *
++ * Pure JVM, zero dependencies.
++ */
++class OpenCcDictionary private constructor(
++    /** Dictionary name used in diagnostics ("STCharacters", "TWPhrases", …). */
++    val name: String,
++    private val entries: Map<String, List<String>>,
++    /** When true, spans emitted by this dictionary are protected from later stages. */
++    val locked: Boolean,
++    /** Number of duplicated keys seen while parsing (first occurrence wins). */
++    val duplicateKeys: Int,
++) {
++    private class Node {
++        val children = HashMap<Char, Node>(4)
++        var value: String? = null
++    }
++
++    private val root = Node()
++
++    /** Longest key length in UTF-16 units (bounds the trie walk). */
++    val maxKeyLength: Int
++
++    init {
++        var longest = 0
++        for ((key, values) in entries) {
++            require(key.isNotEmpty()) { "$name: empty key" }
++            require(values.isNotEmpty()) { "$name: key '$key' has no value" }
++            var node = root
++            for (ch in key) {
++                node = node.children.getOrPut(ch) { Node() }
++            }
++            node.value = values.first()
++            if (key.length > longest) longest = key.length
++        }
++        maxKeyLength = longest
++    }
++
++    /** Number of entries (keys). */
++    val size: Int get() = entries.size
++
++    /** All keys of this dictionary (insertion order). */
++    fun keys(): Set<String> = entries.keys
++
++    /** All alternative values of [key], or null when absent. */
++    fun values(key: String): List<String>? = entries[key]
++
++    /** OpenCC default (first) value of [key], or null when absent. */
++    fun firstValue(key: String): String? = entries[key]?.first()
++
++    /**
++     * One MaxMatch pass over [text] as `(piece, converted)` segments:
++     * longest-key-wins, first value emitted, unmatched code points copied
++     * through as unconverted pieces. The `converted` flag is what makes a
++     * [locked] stage (the user dictionary) authoritative: only the pieces it
++     * actually rewrote are protected from later stages, everything else stays
++     * open for the built-in tables.
++     *
++     * O(n · maxKeyLength) — the trie walk stops at the first missing child, so
++     * ordinary Han text visits only 1–2 nodes per character.
++     */
++    fun segments(text: String): List<Pair<String, Boolean>> {
++        if (text.isEmpty() || entries.isEmpty()) return listOf(text to false)
++        val out = ArrayList<Pair<String, Boolean>>(8)
++        val pending = StringBuilder()
++        var i = 0
++        while (i < text.length) {
++            var node: Node? = root
++            var j = i
++            var bestValue: String? = null
++            var bestEnd = -1
++            while (j < text.length && j - i < maxKeyLength) {
++                node = node?.children?.get(text[j]) ?: break
++                j++
++                val hit = node.value
++                if (hit != null) {
++                    bestValue = hit
++                    bestEnd = j
++                }
++            }
++            val value = bestValue
++            if (value != null) {
++                if (pending.isNotEmpty()) {
++                    out.add(pending.toString() to false)
++                    pending.setLength(0)
++                }
++                out.add(value to true)
++                i = bestEnd
++            } else {
++                val cp = text.codePointAt(i)
++                pending.appendCodePoint(cp)
++                i += Character.charCount(cp)
++            }
++        }
++        if (pending.isNotEmpty()) out.add(pending.toString() to false)
++        return out
++    }
++
++    /** One MaxMatch pass over [text]; equivalent to joining [segments]. */
++    fun convert(text: String): String {
++        if (text.isEmpty() || entries.isEmpty()) return text
++        val segments = segments(text)
++        if (segments.size == 1) return segments[0].first
++        return segments.joinToString("") { it.first }
++    }
++
++    private class Span(val text: String, val locked: Boolean)
++
++    override fun toString(): String =
++        "OpenCcDictionary($name, entries=$size, maxKeyLength=$maxKeyLength, locked=$locked)"
++
++    companion object {
++        /** Separator between key and values in the upstream file format. */
++        const val SEPARATOR = '\t'
++
++        /** Multi-value separator inside the value column. */
++        const val VALUE_SEPARATOR = ' '
++
++        /**
++         * Applies a chain of dictionaries in order (OpenCC conversion config).
++         * A dictionary with `locked = true` protects **only the pieces it
++         * rewrote** ([segments]) from later stages — that is how the user
++         * dictionary stays authoritative over the built-in tables without
++         * freezing the rest of the paragraph.
++         */
++        fun applyChain(text: String, chain: List<OpenCcDictionary>): String {
++            if (chain.isEmpty() || text.isEmpty()) return text
++            val active = chain.filter { it.size > 0 }
++            if (active.isEmpty()) return text
++            if (active.size == 1 && !active[0].locked) return active[0].convert(text)
++            var spans = listOf(Span(text, false))
++            for (dict in active) {
++                val next = ArrayList<Span>(spans.size)
++                for (span in spans) {
++                    when {
++                        span.locked -> next.add(span)
++                        dict.locked -> for ((piece, converted) in dict.segments(span.text)) {
++                            next.add(Span(piece, converted))
++                        }
++                        else -> next.add(Span(dict.convert(span.text), false))
++                    }
++                }
++                spans = next
++            }
++            return spans.joinToString("") { it.text }
++        }
++
++        /**
++         * Parses the upstream OpenCC text format. Blank lines and lines whose
++         * first non-blank character is `#` are ignored; every other line must
++         * contain exactly one [SEPARATOR]. Duplicated keys keep the first
++         * occurrence and increment [duplicateKeys].
++         *
++         * @throws IllegalArgumentException on a malformed line (index included).
++         */
++        fun parse(
++            name: String,
++            text: String,
++            locked: Boolean = false,
++        ): OpenCcDictionary {
++            val entries = LinkedHashMap<String, List<String>>()
++            var duplicates = 0
++            text.lineSequence().forEachIndexed { index, rawLine ->
++                val line = rawLine.trim()
++                if (line.isEmpty() || line.startsWith("#")) return@forEachIndexed
++                val sep = line.indexOf(SEPARATOR)
++                require(sep > 0) {
++                    val hint = "expected: key" + SEPARATOR + "value1 value2 …"
++                    "$name: line ${index + 1} is malformed ($hint): $line"
++                }
++                val key = line.substring(0, sep).trim()
++                val values = line.substring(sep + 1)
++                    .split(VALUE_SEPARATOR)
++                    .map { it.trim() }
++                    .filter { it.isNotEmpty() }
++                require(key.isNotEmpty()) { "$name: line ${index + 1} has an empty key" }
++                require(values.isNotEmpty()) { "$name: line ${index + 1} has no value" }
++                if (entries.containsKey(key)) {
++                    duplicates++
++                } else {
++                    entries[key] = values
++                }
++            }
++            return OpenCcDictionary(name, entries, locked, duplicates)
++        }
++
++        /** Builds a dictionary from pairs (first value wins on duplicate keys). */
++        fun of(
++            name: String,
++            pairs: List<Pair<String, String>>,
++            locked: Boolean = false,
++        ): OpenCcDictionary {
++            val entries = LinkedHashMap<String, List<String>>()
++            var duplicates = 0
++            for ((key, value) in pairs) {
++                require(key.isNotEmpty()) { "$name: empty key" }
++                require(value.isNotEmpty()) { "$name: empty value for key '$key'" }
++                if (entries.containsKey(key)) duplicates++ else entries[key] = listOf(value)
++            }
++            return OpenCcDictionary(name, entries, locked, duplicates)
++        }
++
++        /**
++         * Value→key reversal (OpenCC `T→S` direction): `乾 干` becomes `干 乾`.
++         * First occurrence wins on collisions (deterministic, insertion order),
++         * identity mappings are dropped.
++         */
++        fun reverse(
++            name: String,
++            source: OpenCcDictionary,
++            locked: Boolean = false,
++        ): OpenCcDictionary {
++            val entries = LinkedHashMap<String, List<String>>()
++            var duplicates = 0
++            for (key in source.entries.keys) {
++                val value = source.firstValue(key) ?: continue
++                if (value == key) continue
++                if (entries.containsKey(value)) duplicates++ else entries[value] = listOf(key)
++            }
++            return OpenCcDictionary(name, entries, locked, duplicates)
++        }
++
++        /**
++         * Concatenates dictionaries into one stage: [first] wins on key
++         * collisions (used for "explicit rules override derived rules").
++         */
++        fun merge(
++            name: String,
++            first: OpenCcDictionary,
++            second: OpenCcDictionary,
++            locked: Boolean = false,
++        ): OpenCcDictionary {
++            val entries = LinkedHashMap<String, List<String>>(first.entries)
++            var duplicates = 0
++            for ((key, value) in second.entries) {
++                if (entries.containsKey(key)) duplicates++ else entries[key] = value
++            }
++            return OpenCcDictionary(name, entries, locked, duplicates)
++        }
++
++        /** Drops [excluded] keys from [source] (e.g. blocked ambiguous T→S chars). */
++        fun without(source: OpenCcDictionary, excluded: Set<String>): OpenCcDictionary {
++            if (excluded.isEmpty()) return source
++            val entries = LinkedHashMap<String, List<String>>()
++            for ((key, value) in source.entries) {
++                if (!excluded.contains(key)) entries[key] = value
++            }
++            return OpenCcDictionary(source.name, entries, source.locked, source.duplicateKeys)
++        }
++    }
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcSeed.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcSeed.kt
+new file mode 100644
+index 00000000..135ee106
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/OpenCcSeed.kt
+@@ -0,0 +1,734 @@
++package com.koodoreader.core.locale
++
++/**
++ * Curated OpenCC-format seed dictionaries (upstream file format, so the full
++ * upstream packs load through [OpenCcDictionary.parse] without changes).
++ *
++ * Provenance: the entries follow the published OpenCC dictionaries
++ * (https://github.com/BYVoid/OpenCC, Apache-2.0) — `STCharacters`,
++ * `STPhrases`, `TWPhrasesIT` — reduced to the high-frequency core that the
++ * desktop reader exercises in practice. Two deliberate design points, both
++ * mirroring upstream:
++ *
++ *  1. **Ambiguous characters are NOT in the character table.** `干` (乾/幹/干),
++ *     `后` (後/后), `里` (裏/里), `面` (麵/面), `只` (隻/只), `台` (臺/檯/颱),
++ *     `历` (歷/曆), `于` (於/于), `复` (復/複/覆), `脏` (髒/臟), `周` (週/周)
++ *     are resolved by the *phrase* stage instead, which runs first. That is why
++ *     `皇后`/`乾隆`/`干涉` stay untouched while `后来`/`饼干`/`干扰` convert.
++ *  2. **Traditional→Simplified is derived** by reversing the S→T tables plus a
++ *     tiny explicit table for traditional-only characters that have no S→T
++ *     counterpart in the seed (`臺/檯/颱/裏/裡/隻/髮`). One known gap: `著` is
++ *     intentionally absent, so `看著` stays `看著` instead of becoming `看着` —
++ *     adding `著` would corrupt `著名`/`著作`. See design doc §3.3.
++ *
++ * Every line is `key<TAB>value1 [value2 …]`; `#` starts a comment.
++ */
++object OpenCcSeed {
++
++    /** Simplified → Traditional, unambiguous single characters. */
++    val ST_CHARACTERS: String = """
++        # --- pronouns, particles, everyday verbs -------------------------------
++        们	們
++        这	這
++        来	來
++        说	說
++        时	時
++        会	會
++        对	對
++        开	開
++        关	關
++        门	門
++        问	問
++        间	間
++        闻	聞
++        电	電
++        见	見
++        现	現
++        观	觀
++        规	規
++        视	視
++        觉	覺
++        学	學
++        举	舉
++        与	與
++        写	寫
++        师	師
++        帅	帥
++        归	歸
++        当	當
++        录	錄
++        寻	尋
++        导	導
++        尔	爾
++        层	層
++        尽	盡
++        尝	嘗
++        岁	歲
++        岂	豈
++        岛	島
++        岭	嶺
++        币	幣
++        帮	幫
++        带	帶
++        广	廣
++        庆	慶
++        应	應
++        库	庫
++        废	廢
++        张	張
++        弥	彌
++        强	強
++        彻	徹
++        径	徑
++        忆	憶
++        忧	憂
++        怀	懷
++        态	態
++        总	總
++        恶	惡
++        惯	慣
++        戏	戲
++        战	戰
++        户	戶
++        扑	撲
++        执	執
++        扩	擴
++        扫	掃
++        扬	揚
++        护	護
++        报	報
++        担	擔
++        拟	擬
++        拥	擁
++        择	擇
++        挂	掛
++        换	換
++        据	據
++        损	損
++        摄	攝
++        摆	擺
++        数	數
++        敌	敵
++        断	斷
++        无	無
++        旧	舊
++        显	顯
++        术	術
++        机	機
++        杀	殺
++        杂	雜
++        权	權
++        条	條
++        极	極
++        构	構
++        树	樹
++        样	樣
++        检	檢
++        楼	樓
++        欢	歡
++        欧	歐
++        残	殘
++        毁	毀
++        气	氣
++        汉	漢
++        汤	湯
++        决	決
++        没	沒
++        沟	溝
++        泪	淚
++        测	測
++        济	濟
++        浅	淺
++        浊	濁
++        润	潤
++        渐	漸
++        温	溫
++        湿	濕
++        满	滿
++        潜	潛
++        灭	滅
++        灯	燈
++        灵	靈
++        灾	災
++        炉	爐
++        点	點
++        烦	煩
++        热	熱
++        爱	愛
++        爷	爺
++        牵	牽
++        状	狀
++        犹	猶
++        获	獲
++        献	獻
++        环	環
++        产	產
++        毕	畢
++        画	畫
++        疗	療
++        发	發
++        变	變
++        叠	疊
++        叶	葉
++        号	號
++        叹	嘆
++        听	聽
++        吗	嗎
++        吨	噸
++        唤	喚
++        团	團
++        园	園
++        围	圍
++        图	圖
++        圆	圓
++        场	場
++        坏	壞
++        块	塊
++        坚	堅
++        坛	壇
++        坝	壩
++        坟	墳
++        垄	壟
++        垒	壘
++        垦	墾
++        垫	墊
++        墙	牆
++        壮	壯
++        声	聲
++        壳	殼
++        处	處
++        备	備
++        够	夠
++        头	頭
++        夹	夾
++        夺	奪
++        奋	奮
++        奖	獎
++        妇	婦
++        妈	媽
++        娱	娛
++        婴	嬰
++        宁	寧
++        实	實
++        宝	寶
++        审	審
++        宽	寬
++        宾	賓
++        将	將
++        尘	塵
++        届	屆
++        属	屬
++        岗	崗
++        帐	帳
++        账	賬
++        幂	冪
++        并	並
++        庄	莊
++        庐	廬
++        异	異
++        弃	棄
++        弹	彈
++        复	復
++        宫	宮
++        寿	壽
++        尴	尷
++        尸	屍
++        屿	嶼
++        帘	簾
++        帜	幟
++        帧	幀
++        铁	鐵
++        银	銀
++        铜	銅
++        钢	鋼
++        锁	鎖
++        镜	鏡
++        钱	錢
++        针	針
++        钟	鐘
++        钩	鉤
++        钥	鑰
++        闭	閉
++        闲	閒
++        闯	闖
++        闷	悶
++        闹	鬧
++        阳	陽
++        阴	陰
++        队	隊
++        际	際
++        陆	陸
++        陈	陳
++        险	險
++        随	隨
++        隐	隱
++        难	難
++        虽	雖
++        双	雙
++        优	優
++        馈	饋
++        么	麼
++        万	萬
++        丑	醜
++        专	專
++        业	業
++        丝	絲
++        两	兩
++        严	嚴
++        丧	喪
++        个	個
++        丰	豐
++        临	臨
++        为	為
++        丽	麗
++        义	義
++        乌	烏
++        乐	樂
++        乔	喬
++        习	習
++        乡	鄉
++        书	書
++        买	買
++        乱	亂
++        争	爭
++        亏	虧
++        亚	亞
++        亩	畝
++        亲	親
++        亿	億
++        仅	僅
++        从	從
++        仑	侖
++        仓	倉
++        仪	儀
++        价	價
++        众	眾
++        伟	偉
++        传	傳
++        伤	傷
++        伦	倫
++        体	體
++        余	餘
++        侠	俠
++        侣	侶
++        侥	僥
++        侦	偵
++        侧	側
++        俭	儉
++        债	債
++        倾	傾
++        偿	償
++        储	儲
++        儿	兒
++        兑	兌
++        兰	蘭
++        兴	興
++        养	養
++        兽	獸
++        内	內
++        冈	岡
++        册	冊
++        军	軍
++        农	農
++        冯	馮
++        冻	凍
++        况	況
++        净	淨
++        凉	涼
++        减	減
++        凑	湊
++        凤	鳳
++        凭	憑
++        凯	凱
++        击	擊
++        凿	鑿
++        刍	芻
++        刘	劉
++        则	則
++        刚	剛
++        创	創
++        删	刪
++        别	別
++        刹	剎
++        剂	劑
++        剐	剮
++        剑	劍
++        剥	剝
++        剧	劇
++        劝	勸
++        办	辦
++        务	務
++        动	動
++        励	勵
++        劲	勁
++        劳	勞
++        势	勢
++        勋	勳
++        匀	勻
++        匮	匱
++        区	區
++        医	醫
++        华	華
++        协	協
++        单	單
++        卖	賣
++        卢	盧
++        卫	衛
++        却	卻
++        厂	廠
++        厅	廳
++        历	歷
++        厉	厲
++        压	壓
++        厌	厭
++        厕	廁
++        厨	廚
++        县	縣
++        参	參
++        # --- 讠 (speech) radical ------------------------------------------------
++        计	計
++        订	訂
++        认	認
++        讨	討
++        让	讓
++        训	訓
++        议	議
++        讯	訊
++        记	記
++        讲	講
++        许	許
++        论	論
++        设	設
++        访	訪
++        诀	訣
++        证	證
++        评	評
++        识	識
++        诉	訴
++        诊	診
++        词	詞
++        译	譯
++        试	試
++        诗	詩
++        诚	誠
++        话	話
++        询	詢
++        该	該
++        详	詳
++        语	語
++        误	誤
++        请	請
++        诸	諸
++        诺	諾
++        读	讀
++        课	課
++        谁	誰
++        调	調
++        谈	談
++        谋	謀
++        谎	謊
++        谢	謝
++        谨	謹
++        谱	譜
++        誉	譽
++        谦	謙
++        # --- 贝 / 页 (money, pages) --------------------------------------------
++        贝	貝
++        财	財
++        责	責
++        货	貨
++        质	質
++        贵	貴
++        购	購
++        费	費
++        资	資
++        赏	賞
++        赔	賠
++        赚	賺
++        赞	讚
++        赠	贈
++        赢	贏
++        贫	貧
++        贺	賀
++        贴	貼
++        页	頁
++        顶	頂
++        项	項
++        顺	順
++        须	須
++        顾	顧
++        预	預
++        领	領
++        频	頻
++        颗	顆
++        题	題
++        颜	顏
++        愿	願
++        颠	顛
++        # --- 纟 (silk) radical --------------------------------------------------
++        组	組
++        细	細
++        织	織
++        终	終
++        经	經
++        绍	紹
++        给	給
++        络	絡
++        绝	絕
++        统	統
++        继	繼
++        绩	績
++        绪	緒
++        续	續
++        维	維
++        绿	綠
++        缘	緣
++        编	編
++        练	練
++        线	線
++        红	紅
++        级	級
++        纪	紀
++        约	約
++        纯	純
++        纸	紙
++        纳	納
++        缓	緩
++        缩	縮
++        绳	繩
++        # --- 车 / 马 (vehicles) -------------------------------------------------
++        车	車
++        轮	輪
++        转	轉
++        轻	輕
++        载	載
++        输	輸
++        辆	輛
++        辅	輔
++        轨	軌
++        辈	輩
++        辉	輝
++        辑	輯
++        马	馬
++        驾	駕
++        骂	罵
++        骑	騎
++        验	驗
++        骗	騙
++        骄	驕
++        # --- 饣 / 门 / 鱼 / 鸟 / 龙 (daily items) -------------------------------
++        饭	飯
++        饮	飲
++        饱	飽
++        馆	館
++        饲	飼
++        饰	飾
++        闪	閃
++        阅	閱
++        阔	闊
++        鱼	魚
++        鲜	鮮
++        鸟	鳥
++        鸡	雞
++        鹅	鵝
++        鹰	鷹
++        龙	龍
++        龟	龜
++        齿	齒
++        龄	齡
++        # --- IT / reader vocabulary --------------------------------------------
++        网	網
++        软	軟
++        键	鍵
++        盘	盤
++        标	標
++        签	簽
++        档	檔
++        简	簡
++        类	類
++        联	聯
++        响	響
++        员	員
++        风	風
++        飞	飛
++    """.trimIndent()
++
++    /**
++     * Simplified → Traditional phrase disambiguation (runs BEFORE the character
++     * stage; longest key wins). These entries exist because the corresponding
++     * character is ambiguous on its own — see the class comment.
++     */
++    val ST_PHRASES: String = """
++        # --- 发 (發 / 髮) -------------------------------------------------------
++        头发	頭髮
++        白发	白髮
++        理发	理髮
++        发型	髮型
++        发廊	髮廊
++        # --- 干 (乾 / 幹 / 干) -------------------------------------------------
++        干净	乾淨
++        干脆	乾脆
++        干旱	乾旱
++        干杯	乾杯
++        饼干	餅乾
++        干活	幹活
++        干部	幹部
++        能干	能幹
++        树干	樹幹
++        干事	幹事
++        干什么	幹什麼
++        干吗	幹嗎
++        骨干	骨幹
++        苦干	苦幹
++        才干	才幹
++        干扰	干擾
++        干预	干預
++        # --- 后 (後 / 后) ------------------------------------------------------
++        后来	後來
++        后面	後面
++        后果	後果
++        然后	然後
++        最后	最後
++        背后	背後
++        之后	之後
++        以后	以後
++        # --- 里 (裏 / 里) ------------------------------------------------------
++        里面	裏面
++        心里	心裏
++        家里	家裏
++        那里	那裏
++        这里	這裏
++        哪里	哪裏
++        # --- 面 (麵 / 面) ------------------------------------------------------
++        面条	麵條
++        面粉	麵粉
++        面包	麵包
++        方便面	方便麵
++        # --- 划 (劃 / 划) ------------------------------------------------------
++        计划	計劃
++        规划	規劃
++        策划	策劃
++        # --- 复 (復 / 複 / 覆) -------------------------------------------------
++        复杂	複雜
++        复制	複製
++        重复	重複
++        复习	復習
++        恢复	恢復
++        反复	反覆
++        答复	答覆
++        # --- 准 (準 / 准) ------------------------------------------------------
++        准备	準備
++        标准	標準
++        准确	準確
++        # --- 脏 (髒 / 臟) ------------------------------------------------------
++        脏话	髒話
++        心脏	心臟
++        # --- 于 (於 / 于) ------------------------------------------------------
++        由于	由於
++        对于	對於
++        关于	關於
++        终于	終於
++        于是	於是
++        # --- 只 (隻 / 只) ------------------------------------------------------
++        一只	一隻
++        两只	兩隻
++        三只	三隻
++        几只	幾隻
++        只身	隻身
++        # --- 历 (歷 / 曆) ------------------------------------------------------
++        日历	日曆
++        农历	農曆
++        阳历	陽曆
++        阴历	陰曆
++    """.trimIndent()
++
++    /**
++     * Traditional → Traditional(Taiwan) terms — the equivalent of OpenCC's
++     * `TWPhrasesIT` (IT/settings vocabulary) plus a few everyday items. Applied
++     * after the S→T chain, so keys are written in traditional characters.
++     */
++    val TW_PHRASES: String = """
++        軟件	軟體
++        硬件	硬體
++        網絡	網路
++        互聯網	網際網路
++        信息	資訊
++        計算機	電腦
++        鼠標	滑鼠
++        硬盤	硬碟
++        內存	記憶體
++        打印機	印表機
++        打印	列印
++        視頻	影片
++        音頻	音訊
++        錄像	錄影
++        短信	簡訊
++        出租車	計程車
++        自行車	腳踏車
++        公交車	公車
++        地鐵	捷運
++        方便麵	泡麵
++        土豆	馬鈴薯
++        西紅柿	番茄
++        菠蘿	鳳梨
++        酸奶	優酪乳
++        質量	品質
++        激光	雷射
++        導彈	飛彈
++        芯片	晶片
++        程序	程式
++        計劃	計畫
++        數組	陣列
++        對象	物件
++        接口	介面
++        界面	介面
++        應用程序	應用程式
++        服務器	伺服器
++        缺省	預設
++        默認	預設
++        文件	檔案
++        文件夾	資料夾
++        剪貼板	剪貼簿
++        屏幕	螢幕
++        顯示器	螢幕
++        光標	游標
++        快捷鍵	快速鍵
++        卸載	移除
++        博客	部落格
++        在線	線上
++        鏈接	連結
++        帶寬	頻寬
++        U盤	隨身碟
++        賬號	帳號
++        登錄	登入
++        註銷	登出
++        優化	最佳化
++        反饋	回饋
++        兼容	相容
++        集成	整合
++        支持	支援
++        用戶	使用者
++        導航	導覽
++        加載	載入
++        保存	儲存
++        設置	設定
++        菜單	選單
++        搜索	搜尋
++        查找	尋找
++    """.trimIndent()
++
++    /**
++     * Traditional-only characters that have no S→T counterpart in
++     * [ST_CHARACTERS], so reversing cannot produce them. Added verbatim to the
++     * T→S character table.
++     */
++    val TS_EXTRA_CHARACTERS: String = """
++        臺	台
++        檯	台
++        颱	台
++        裏	里
++        裡	里
++        隻	只
++        髮	发
++    """.trimIndent()
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertEngine.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertEngine.kt
+new file mode 100644
+index 00000000..934ada9c
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertEngine.kt
+@@ -0,0 +1,241 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.Localization
++
++/** Writing system of a Chinese text (or [UNKNOWN] when undecidable). */
++enum class ChineseScript {
++    SIMPLIFIED,
++    TRADITIONAL,
++    UNKNOWN,
++}
++
++/**
++ * 简繁转换 tri-state, wire-compatible with the desktop reader config
++ * `convertChinese` (src/constants/dropdownList.tsx: `""` / "Simplified To
++ * Traditional" / "Traditional To Simplified").
++ *
++ *  - [AUTO] — desktop's "Default" (`""`): the text is left alone **unless** the
++ *    reader language states a Chinese preference and the text is decisively in
++ *    the other script (see [ZhConvertEngine.convert]). For every non-Chinese
++ *    reader language AUTO is a byte-for-byte no-op, exactly like the desktop.
++ *  - [TRADITIONAL] — 繁 (`Simplified To Traditional`).
++ *  - [SIMPLIFIED] — 简 (`Traditional To Simplified`).
++ */
++enum class ZhConvertMode(val wire: String) {
++    AUTO(""),
++    TRADITIONAL("Simplified To Traditional"),
++    SIMPLIFIED("Traditional To Simplified"),
++    ;
++
++    companion object {
++        /** Parses the desktop config value; unknown/blank → [AUTO] (desktop default). */
++        fun fromWire(raw: String?): ZhConvertMode {
++            val value = raw?.trim() ?: return AUTO
++            return entries.firstOrNull { it.wire == value } ?: AUTO
++        }
++    }
++}
++
++/**
++ * Script evidence of a text: how many characters can only be simplified
++ * ([simplified]) versus only be traditional ([traditional]).
++ */
++data class ScriptSignal(val simplified: Int, val traditional: Int) {
++
++    /** [ChineseScript] decision: needs [minSignal] hits and a [ratio]-fold lead. */
++    fun script(minSignal: Int = MIN_SIGNAL, ratio: Double = DECISIVE_RATIO): ChineseScript {
++        val strongest = maxOf(simplified, traditional)
++        if (strongest < minSignal) return ChineseScript.UNKNOWN
++        if (simplified >= traditional * ratio) return ChineseScript.SIMPLIFIED
++        if (traditional >= simplified * ratio) return ChineseScript.TRADITIONAL
++        return ChineseScript.UNKNOWN
++    }
++
++    companion object {
++        /** Minimum number of script-exclusive characters before we trust a verdict. */
++        const val MIN_SIGNAL = 4
++
++        /** Dominance factor: 2× the opposite signal is required. */
++        const val DECISIVE_RATIO = 2.0
++    }
++}
++
++/**
++ * OpenCC dictionaries used by one engine instance: the S→T phrase/character
++ * stages, the Taiwan phrase stage and the T→S phrase/character stages.
++ */
++class ZhConvertDictionaries(
++    val stPhrases: OpenCcDictionary,
++    val stCharacters: OpenCcDictionary,
++    val twPhrases: OpenCcDictionary,
++    val tsPhrases: OpenCcDictionary,
++    val tsCharacters: OpenCcDictionary,
++) {
++    /** `TWPhrases` reversed: 軟體 → 軟件 (OpenCC `TWPhrasesRev`). */
++    val twPhrasesReverse: OpenCcDictionary by lazy {
++        OpenCcDictionary.reverse("TWPhrasesRev", twPhrases)
++    }
++
++    companion object {
++        /** Curated OpenCC subset shipped with the module (see [OpenCcSeed]). */
++        val SEED: ZhConvertDictionaries by lazy { fromSeedTexts() }
++
++        /** Builds the tables from the OpenCC-format seed strings. */
++        fun fromSeedTexts(): ZhConvertDictionaries {
++            val stCharacters = OpenCcDictionary.parse("STCharacters", OpenCcSeed.ST_CHARACTERS)
++            val stPhrases = OpenCcDictionary.parse("STPhrases", OpenCcSeed.ST_PHRASES)
++            val twPhrases = OpenCcDictionary.parse("TWPhrases", OpenCcSeed.TW_PHRASES)
++            val tsExtra = OpenCcDictionary.parse("TSCharactersExtra", OpenCcSeed.TS_EXTRA_CHARACTERS)
++            // T→S = reverse of the S→T tables, plus traditional-only chars that
++            // have no S→T counterpart in the seed (臺/裏/隻/髮 …). Explicit
++            // entries win over derived ones.
++            val tsCharacters = OpenCcDictionary.merge(
++                "TSCharacters",
++                tsExtra,
++                OpenCcDictionary.reverse("STCharactersRev", stCharacters),
++            )
++            val tsPhrases = OpenCcDictionary.reverse("STPhrasesRev", stPhrases)
++            return ZhConvertDictionaries(stPhrases, stCharacters, twPhrases, tsPhrases, tsCharacters)
++        }
++    }
++}
++
++/**
++ * 简繁转换 engine — native OpenCC port (see docs/p6-zh-locale-design.md §3).
++ *
++ * Chain parity with upstream OpenCC configs:
++ *
++ * | direction | stages |
++ * |---|---|
++ * | `s2t`  | STPhrases → STCharacters |
++ * | `s2tw` | STPhrases → STCharacters → TWPhrases |
++ * | `t2s`  | STPhrasesRev → STCharactersRev |
++ * | `tw2s` | TWPhrasesRev → STPhrasesRev → STCharactersRev |
++ *
++ * The optional user dictionary is prepended as a *locked* stage, so whatever it
++ * converts is never re-touched by the built-in tables (the desktop lets users
++ * keep their own conversion dictionary; here it is persisted via
++ * [ZhConvertSettingsStore]).
++ *
++ * Pure JVM, stateless (safe to share across reader pipelines).
++ */
++class ZhConvertEngine(
++    private val dictionaries: ZhConvertDictionaries = ZhConvertDictionaries.SEED,
++    private val userDictionary: OpenCcDictionary? = null,
++) {
++    private val simplifiedMarkers: Set<String> = dictionaries.stCharacters.keys()
++    private val traditionalMarkers: Set<String> = LinkedHashSet<String>().apply {
++        dictionaries.stCharacters.keys().forEach { key ->
++            dictionaries.stCharacters.firstValue(key)?.let { add(it) }
++        }
++        addAll(dictionaries.tsCharacters.keys())
++    }
++
++    /** True when a user dictionary is installed (conversion dictionary persistence). */
++    val hasUserDictionary: Boolean get() = userDictionary != null && userDictionary.size > 0
++
++    /** 简 → 繁 (`s2t`, or `s2tw` when [taiwan]). */
++    fun toTraditional(text: String, taiwan: Boolean = false): String =
++        OpenCcDictionary.applyChain(text, s2tChain(taiwan))
++
++    /** 繁 → 简 (`t2s`, or `tw2s` when [fromTaiwan]). */
++    fun toSimplified(text: String, fromTaiwan: Boolean = false): String =
++        OpenCcDictionary.applyChain(text, t2sChain(fromTaiwan))
++
++    /**
++     * Tri-state entry point. [language] is the reader language ("zh-CN",
++     * "zh-TW", "en", …) and is only consulted by [ZhConvertMode.AUTO].
++     */
++    fun convert(text: String, mode: ZhConvertMode, language: String? = null): String {
++        if (text.isEmpty()) return text
++        return when (mode) {
++            ZhConvertMode.TRADITIONAL -> toTraditional(text, taiwan = isTaiwan(language))
++            ZhConvertMode.SIMPLIFIED -> toSimplified(text, fromTaiwan = isTaiwan(language))
++            ZhConvertMode.AUTO -> {
++                val target = scriptOf(language)
++                val detected = detect(text)
++                when {
++                    target == ChineseScript.UNKNOWN -> text
++                    detected == ChineseScript.UNKNOWN -> text
++                    detected == target -> text
++                    target == ChineseScript.TRADITIONAL -> toTraditional(text, taiwan = isTaiwan(language))
++                    else -> toSimplified(text, fromTaiwan = isTaiwan(language))
++                }
++            }
++        }
++    }
++
++    /** Convenience: [convert] using the desktop config value. */
++    fun convertWire(text: String, wireValue: String?, language: String? = null): String =
++        convert(text, ZhConvertMode.fromWire(wireValue), language)
++
++    /** Script evidence counts for [text] (exposed for tests and diagnostics). */
++    fun signal(text: String): ScriptSignal {
++        var simplified = 0
++        var traditional = 0
++        var i = 0
++        while (i < text.length) {
++            val cp = text.codePointAt(i)
++            val ch = String(Character.toChars(cp))
++            if (simplifiedMarkers.contains(ch)) {
++                simplified++
++            } else if (traditionalMarkers.contains(ch)) {
++                traditional++
++            }
++            i += Character.charCount(cp)
++        }
++        return ScriptSignal(simplified, traditional)
++    }
++
++    /** Decisive script of [text] (see [ScriptSignal.script]). */
++    fun detect(text: String): ChineseScript = signal(text).script()
++
++    private fun s2tChain(taiwan: Boolean): List<OpenCcDictionary> {
++        val chain = ArrayList<OpenCcDictionary>(4)
++        userDictionary?.let { if (it.size > 0) chain.add(it) }
++        chain.add(dictionaries.stPhrases)
++        chain.add(dictionaries.stCharacters)
++        if (taiwan) chain.add(dictionaries.twPhrases)
++        return chain
++    }
++
++    private fun t2sChain(fromTaiwan: Boolean): List<OpenCcDictionary> {
++        val chain = ArrayList<OpenCcDictionary>(4)
++        userDictionary?.let { if (it.size > 0) chain.add(it) }
++        if (fromTaiwan) chain.add(dictionaries.twPhrasesReverse)
++        chain.add(dictionaries.tsPhrases)
++        chain.add(dictionaries.tsCharacters)
++        return chain
++    }
++
++    companion object {
++        /** Engine with the seed tables; [userDictionary] is OpenCC-format text. */
++        fun fromSeed(userDictionary: String? = null): ZhConvertEngine = ZhConvertEngine(
++            ZhConvertDictionaries.SEED,
++            parseUserDictionary(userDictionary),
++        )
++
++        /** Parses a persisted user conversion dictionary (blank/absent → null). */
++        fun parseUserDictionary(text: String?): OpenCcDictionary? {
++            if (text.isNullOrBlank()) return null
++            val dict = OpenCcDictionary.parse("UserDictionary", text, locked = true)
++            return if (dict.size == 0) null else dict
++        }
++
++        /** Reader language → preferred Chinese script ([ChineseScript.UNKNOWN] for non-Chinese). */
++        fun scriptOf(language: String?): ChineseScript {
++            val code = Localization.normalize(language ?: return ChineseScript.UNKNOWN).lowercase()
++            if (!code.startsWith("zh")) return ChineseScript.UNKNOWN
++            return when (code) {
++                "zh-cn", "zh-sg", "zh-hans" -> ChineseScript.SIMPLIFIED
++                else -> ChineseScript.TRADITIONAL // zh-TW / zh-HK / zh-MO / zh-Hant / zh
++            }
++        }
++
++        /** True for Taiwan/Hong-Kong/Macau locales (TWPhrases stage applies). */
++        fun isTaiwan(language: String?): Boolean {
++            val code = Localization.normalize(language ?: return false).lowercase()
++            return code == "zh-tw" || code == "zh-mo" || code == "zh-hk" || code == "zh-hant"
++        }
++    }
++}
+diff --git a/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertSettings.kt b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertSettings.kt
+new file mode 100644
+index 00000000..27b87099
+--- /dev/null
++++ b/android/core/locale/src/main/kotlin/com/koodoreader/core/locale/ZhConvertSettings.kt
+@@ -0,0 +1,175 @@
++package com.koodoreader.core.locale
++
++/**
++ * Persisted 简繁转换 configuration.
++ *
++ * Desktop interop: [mode] is stored under the desktop reader-config key
++ * `convertChinese` using the desktop wire values (see [ZhConvertMode.wire]),
++ * so a desktop profile/value maps 1:1. [userDictionary] is the OpenCC-format
++ * conversion dictionary the user maintains (this is the "转换字典持久化" payload);
++ * when [userDictionaryEnabled] is false it is kept on disk but not applied.
++ */
++data class ZhConvertSettings(
++    val mode: ZhConvertMode = ZhConvertMode.AUTO,
++    val userDictionary: String = "",
++    val userDictionaryEnabled: Boolean = false,
++) {
++    /** Effective engine for this configuration (seed tables + user dictionary). */
++    fun engine(): ZhConvertEngine = ZhConvertEngine.fromSeed(
++        if (userDictionaryEnabled) userDictionary else null,
++    )
++
++    val hasUserDictionary: Boolean get() = userDictionaryEnabled && userDictionary.isNotBlank()
++
++    companion object {
++        /** Desktop default: `convertChinese == ""`. */
++        val DEFAULT = ZhConvertSettings()
++    }
++}
++
++/**
++ * Preferences wire codec — the *only* place that knows the storage keys, so a
++ * DataStore<Preferences>, a SharedPreferences file and a unit-test map all
++ * round-trip identically.
++ *
++ * | key | type | desktop parity |
++ * |---|---|---|
++ * | `convertChinese` | string | **yes** — desktop reader config key, same values |
++ * | `zhConvertUserDict` | string | android-only (OpenCC-format dictionary text) |
++ * | `zhConvertUserDictEnabled` | string ("true"/"false") | android-only |
++ */
++object ZhConvertPrefsCodec {
++
++    /** Desktop reader-config key for the tri-state (`""`, "Simplified To Traditional", …). */
++    const val KEY_MODE = "convertChinese"
++
++    /** User conversion dictionary, OpenCC `key<TAB>value` lines. */
++    const val KEY_USER_DICT = "zhConvertUserDict"
++
++    /** Whether [KEY_USER_DICT] is applied. */
++    const val KEY_USER_DICT_ENABLED = "zhConvertUserDictEnabled"
++
++    /** All keys owned by this feature (used to clear/export just this feature). */
++    val KEYS: List<String> = listOf(KEY_MODE, KEY_USER_DICT, KEY_USER_DICT_ENABLED)
++
++    fun encode(settings: ZhConvertSettings): Map<String, String> = linkedMapOf(
++        KEY_MODE to settings.mode.wire,
++        KEY_USER_DICT to settings.userDictionary,
++        KEY_USER_DICT_ENABLED to settings.userDictionaryEnabled.toString(),
++    )
++
++    /** Missing keys fall back to the desktop defaults; unknown mode strings → AUTO. */
++    fun decode(values: Map<String, String>): ZhConvertSettings = ZhConvertSettings(
++        mode = ZhConvertMode.fromWire(values[KEY_MODE]),
++        userDictionary = values[KEY_USER_DICT] ?: "",
++        userDictionaryEnabled = values[KEY_USER_DICT_ENABLED]?.trim()?.lowercase() == "true",
++    )
++
++    /** Desktop reader config value → settings (unknown value → AUTO, desktop default). */
++    fun fromDesktopConfig(value: String?): ZhConvertSettings =
++        ZhConvertSettings(mode = ZhConvertMode.fromWire(value))
++
++    /** Settings → desktop reader config value. */
++    fun toDesktopConfig(settings: ZhConvertSettings): String = settings.mode.wire
++}
++
++/**
++ * Persistence port for [ZhConvertSettings].
++ *
++ * The Android app binds this to `androidx.datastore` (DataStore<Preferences>),
++ * which is an Android/AAR dependency this pure-JVM module deliberately does not
++ * carry — see docs/p6-zh-locale-design.md §4.1 for the five-line binding and
++ * [InMemoryZhConvertSettingsStore] for the JVM/test implementation. Callers run
++ * [read]/[write] off the main thread (Dispatchers.IO) — the API is synchronous
++ * on purpose so the module needs no coroutines dependency.
++ */
++interface ZhConvertSettingsStore {
++
++    /** Current settings; never throws — storage failures degrade to [ZhConvertSettings.DEFAULT]. */
++    fun read(): ZhConvertSettings
++
++    /** Persists [settings] and returns the value actually stored. */
++    fun write(settings: ZhConvertSettings): ZhConvertSettings
++
++    /** Removes every key owned by this feature (desktop default restored). */
++    fun clear()
++}
++
++/** Map-backed store: used by JVM tests and by the framework-free self-check. */
++class InMemoryZhConvertSettingsStore(
++    initial: ZhConvertSettings = ZhConvertSettings.DEFAULT,
++) : ZhConvertSettingsStore {
++
++    private var values: Map<String, String> = ZhConvertPrefsCodec.encode(initial)
++
++    override fun read(): ZhConvertSettings = ZhConvertPrefsCodec.decode(values)
++
++    override fun write(settings: ZhConvertSettings): ZhConvertSettings {
++        values = ZhConvertPrefsCodec.encode(settings)
++        return read()
++    }
++
++    override fun clear() {
++        values = emptyMap()
++    }
++
++    /** Raw preferences snapshot (test/inspection helper). */
++    fun raw(): Map<String, String> = values
++}
++
++/**
++ * Reader-side holder: owns the current settings, notifies listeners on change
++ * and hands out a ready [ZhConvertEngine]. Compose bridges [addListener] to
++ * `mutableStateOf`, so the conversion mode flips live while reading.
++ */
++class ZhConvertSettingsRepository(
++    private val store: ZhConvertSettingsStore = InMemoryZhConvertSettingsStore(),
++) {
++    private val listeners = ArrayList<(ZhConvertSettings) -> Unit>(2)
++
++    /** Last persisted settings; [refresh] re-reads the store. */
++    var settings: ZhConvertSettings = store.read()
++        private set
++
++    /** Engine for [settings] — rebuilt whenever the dictionary/mode changes. */
++    fun engine(): ZhConvertEngine = settings.engine()
++
++    fun setMode(mode: ZhConvertMode): ZhConvertSettings =
++        apply(settings.copy(mode = mode))
++
++    fun setUserDictionary(text: String, enabled: Boolean = true): ZhConvertSettings =
++        apply(settings.copy(userDictionary = text, userDictionaryEnabled = enabled))
++
++    fun set(settings: ZhConvertSettings): ZhConvertSettings = apply(settings)
++
++    fun refresh(): ZhConvertSettings {
++        settings = store.read()
++        notifyListeners()
++        return settings
++    }
++
++    fun clear(): ZhConvertSettings {
++        store.clear()
++        settings = store.read()
++        notifyListeners()
++        return settings
++    }
++
++    fun addListener(listener: (ZhConvertSettings) -> Unit) {
++        listeners.add(listener)
++    }
++
++    fun removeListener(listener: (ZhConvertSettings) -> Unit) {
++        listeners.remove(listener)
++    }
++
++    private fun apply(next: ZhConvertSettings): ZhConvertSettings {
++        settings = store.write(next)
++        notifyListeners()
++        return settings
++    }
++
++    private fun notifyListeners() {
++        for (listener in ArrayList(listeners)) listener(settings)
++    }
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleFallbackChainTest.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleFallbackChainTest.kt
+new file mode 100644
+index 00000000..08bca025
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleFallbackChainTest.kt
+@@ -0,0 +1,175 @@
++package com.koodoreader.core.locale
++
++import com.koodoreader.core.common.FlatJson
++import com.koodoreader.core.common.Localization
++import java.io.File
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertThrows
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.Assumptions.assumeTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++
++/**
++ * The ADR-004 fallback chain (P6 acceptance item ④): 所选 → en → key, unchanged
++ * by the runtime loader, and **provably identical** to the P1 [Localization]
++ * implementation — including against the real desktop `en.json` / `zh-CN.json`.
++ */
++class LocaleFallbackChainTest {
++
++    private val catalogs: Map<String, Map<String, String>> = mapOf(
++        "en" to mapOf(
++            "Books" to "Books",
++            "Language" to "Language",
++            "Only In English" to "Only In English",
++        ),
++        "zh-CN" to mapOf("Books" to "书库", "Language" to "语言"),
++        "de" to mapOf("Books" to "Bücher"),
++    )
++
++    @Test
++    @DisplayName("selected → en → key, with the step that produced the value")
++    fun `chain order is selected then english then key`() {
++        val chain = LocaleFallbackChain(catalogs, "zh-CN")
++
++        val selected = chain.lookup(FallbackKey("Books"))
++        assertEquals(FallbackStep.SELECTED, selected.step)
++        assertEquals("zh-CN", selected.language)
++        assertEquals("书库", selected.value)
++        assertFalse(selected.isFallback)
++
++        val english = chain.lookup(FallbackKey("Only In English"))
++        assertEquals(FallbackStep.FALLBACK_LANGUAGE, english.step)
++        assertEquals("en", english.language)
++        assertEquals("Only In English", english.value)
++        assertTrue(english.isFallback)
++
++        val missing = chain.lookup(FallbackKey("No Such Key"))
++        assertEquals(FallbackStep.KEY, missing.step)
++        assertEquals(null, missing.language)
++        assertEquals("No Such Key", missing.value)
++
++        // unknown locale behaves like "no selected pack": straight to English
++        assertEquals("Books", LocaleFallbackChain(catalogs, "ko").resolve("Books"))
++        assertEquals("书库", LocaleFallbackChain(catalogs, "zh-CN").resolve("Books"))
++    }
++
++    @Test
++    @DisplayName("locale codes are normalized and the language switch is live")
++    fun `codes are normalized and switching is live`() {
++        val chain = LocaleFallbackChain(catalogs, "zh_cn")
++        assertEquals("zh-CN", chain.language)
++        assertEquals(listOf("zh-CN", "en", LocaleFallbackChain.KEY_STEP), chain.chainFor())
++
++        chain.language = "de"
++        assertEquals("de", chain.language)
++        assertEquals("Bücher", chain.resolve("Books"))
++        assertEquals("Language", chain.resolve("L")) // German miss → en → key
++
++        chain.language = "zh_CN"
++        assertEquals("zh-CN", chain.language)
++        assertEquals("书库", chain.resolve("Books"))
++        assertEquals(listOf("de", "en", "zh-CN"), chain.languages())
++        assertTrue(chain.has(FallbackKey("Books")))
++        assertFalse(chain.has(FallbackKey("Nope")))
++    }
++
++    @Test
++    @DisplayName("resolveAll keeps order; blank keys are rejected")
++    fun `resolve all and key validation`() {
++        val chain = LocaleFallbackChain(catalogs, "zh-CN")
++        val resolved = chain.resolveAll(listOf(FallbackKey("Books"), FallbackKey("Only In English")))
++        assertEquals(listOf("Books", "Only In English"), resolved.keys.toList())
++        assertEquals("书库", resolved["Books"])
++        assertEquals("Only In English", resolved["Only In English"])
++        assertThrows(IllegalArgumentException::class.java) { FallbackKey("") }
++        assertThrows(IllegalArgumentException::class.java) { FallbackKey("   ") }
++    }
++
++    @Test
++    @DisplayName("parity with the P1 Localization.t() for every language and key")
++    fun `parity with localization`() {
++        val keys = catalogs.values.flatMap { it.keys }.toSet() + "Missing Key"
++        for (language in listOf("en", "zh-CN", "de", "ko", "zh_cn")) {
++            val chain = LocaleFallbackChain(catalogs, language)
++            val reference = Localization(catalogs, language)
++            for (key in keys) {
++                assertEquals(
++                    reference.t(key),
++                    chain.resolve(key),
++                    "chain/localization disagree for '$key' in '$language'",
++                )
++            }
++            assertEquals(reference.language, chain.language)
++            assertEquals(reference.t("Missing Key"), "Missing Key")
++        }
++    }
++
++    @Test
++    @DisplayName("registry-backed chain sees packs that arrive later")
++    fun `chain follows the runtime loader`() {
++        val store = InMemoryLocalePackStore()
++        val downloader = object : LocalePackDownloader {
++            override fun download(code: String, expectedSha256: String?): String =
++                """{"Books":"Bücher"}"""
++        }
++        val loader = LocaleRuntimeLoader(
++            MapLocaleAssetSource(mapOf("en" to """{"Books":"Books","Only":"Only"}""")),
++            store,
++            downloader,
++        )
++        val chain = loader.chain("de")
++        assertTrue(loader.load("en") is LocaleLoadResult.Loaded) // bundled English ready
++        val before = chain.lookup(FallbackKey("Books"))
++        assertEquals(FallbackStep.FALLBACK_LANGUAGE, before.step)
++        assertEquals("Books", before.value)
++
++        val result = loader.ensure("de")
++        assertTrue(result is LocaleEnsureResult.Downloaded)
++        // same chain instance, no rebuild: the new catalog is picked up
++        assertEquals("Bücher", chain.resolve("Books"))
++        assertEquals(FallbackStep.SELECTED, chain.lookup(FallbackKey("Books")).step)
++        assertEquals("Only", chain.resolve("Only"))
++    }
++
++    @Test
++    @DisplayName("real desktop en.json / zh-CN.json: chain parity and drift guard")
++    fun `real desktop catalogs`() {
++        val root = repoRoot()
++        assumeTrue(root != null, "desktop locale sources not reachable from ${System.getProperty("user.dir")}")
++        val en = FlatJson.parse(File(root, "src/assets/locales/en.json").readText())
++        val zh = FlatJson.parse(File(root, "src/assets/locales/zh-CN.json").readText())
++
++        assertTrue(en.size >= 1300, "en.json shrank to ${en.size} keys")
++        assertTrue(zh.size >= 1300, "zh-CN.json shrank to ${zh.size} keys")
++        assertEquals("语言", zh["Language"])
++
++        val catalogs = mapOf("en" to en, "zh-CN" to zh)
++        for (language in listOf("en", "zh-CN", "de")) {
++            val chain = LocaleFallbackChain(catalogs, language)
++            val reference = Localization(catalogs, language)
++            for (key in en.keys) {
++                assertEquals(reference.t(key), chain.resolve(key), "drift for '$key' in '$language'")
++            }
++        }
++
++        // keys the Chinese catalog is missing must fall back to English (ADR-004)
++        val missingInChinese = en.keys.firstOrNull { !zh.containsKey(it) }
++        assumeTrue(missingInChinese != null, "zh-CN.json is a full superset — nothing to assert")
++        val hit = LocaleFallbackChain(catalogs, "zh-CN").lookup(FallbackKey(missingInChinese!!))
++        assertEquals(FallbackStep.FALLBACK_LANGUAGE, hit.step)
++        assertEquals(en[missingInChinese], hit.value)
++    }
++
++    /** Walks up from the test working directory to the repository root. */
++    private fun repoRoot(): File? {
++        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
++        repeat(6) {
++            val candidate = dir ?: return null
++            if (File(candidate, "src/assets/locales/en.json").isFile) return candidate
++            dir = candidate.parentFile
++        }
++        return null
++    }
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoaderTest.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoaderTest.kt
+new file mode 100644
+index 00000000..4e5ede99
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoaderTest.kt
+@@ -0,0 +1,293 @@
++package com.koodoreader.core.locale
++
++import java.io.File
++import java.nio.file.Files
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++
++/**
++ * Runtime locale loading (P6 acceptance item ③): bundled subset, on-demand
++ * download of the remaining 39 locales, hash verification, persistence across
++ * restarts, cache eviction and validation parity with the build-time guard.
++ */
++class LocaleRuntimeLoaderTest {
++
++    // ─── fixtures ────────────────────────────────────────────────────────────
++
++    private val en = """{"Books":"Books","Language":"Language","Only In English":"Only In English"}"""
++    private val zhCn = """{"Books":"书库","Language":"语言"}"""
++    private val de = """{"Books":"Bücher","Language":"Sprache","Nur Deutsch":"Nur Deutsch"}"""
++
++    private fun bundled(): MapLocaleAssetSource = MapLocaleAssetSource(mapOf("en" to en, "zh-CN" to zhCn))
++
++    private class RecordingDownloader(
++        private val payloads: Map<String, String>,
++        private val fail: Boolean = false,
++    ) : LocalePackDownloader {
++        val calls = ArrayList<String>()
++        override fun download(code: String, expectedSha256: String?): String {
++            calls.add(code)
++            if (fail) throw IllegalStateException("offline")
++            return payloads[code] ?: throw IllegalStateException("no payload for $code")
++        }
++    }
++
++    private fun loader(
++        packs: LocalePackStore = InMemoryLocalePackStore(),
++        downloader: LocalePackDownloader? = null,
++        expected: Map<String, String> = emptyMap(),
++        maxCached: Int = LocaleRuntimeLoader.DEFAULT_MAX_CACHED_PACKS,
++    ) = LocaleRuntimeLoader(bundled(), packs, downloader, expected, LocaleCatalogRegistry(), maxCached)
++
++    // ─── catalog constants ───────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("the 39 remote locales plus the 2 bundled ones are exactly the desktop 41")
++    fun `locale catalogs cover the desktop 41`() {
++        assertEquals(listOf("en", "zh-CN"), LocaleRuntimeLoader.BUNDLED_LOCALE_CODES)
++        assertEquals(39, LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size)
++        assertEquals(41, LocaleRuntimeLoader.ALL_LOCALE_CODES.size)
++        assertEquals(41, LocaleRuntimeLoader.ALL_LOCALE_CODES.toSet().size)
++        assertFalse(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.contains("en"))
++        assertTrue(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.contains("zh-TW"))
++        assertTrue(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.contains("pt-BR"))
++        assertEquals("zh-CN.json", LocaleRuntimeLoader.packFileName("zh_cn"))
++    }
++
++    // ─── bundled ─────────────────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("bundled locales load from assets, normalize the code and hit the cache")
++    fun `bundled locales load`() {
++        val loader = loader()
++        val first = loader.load("zh_cn")
++        assertTrue(first is LocaleLoadResult.Loaded)
++        val loaded = first as LocaleLoadResult.Loaded
++        assertEquals("zh-CN", loaded.code)
++        assertEquals(LocaleSourceKind.BUNDLED, loaded.kind)
++        assertEquals("语言", loaded.catalog["Language"])
++        assertFalse(loaded.fromCache)
++
++        val second = loader.load("zh-CN") as LocaleLoadResult.Loaded
++        assertTrue(second.fromCache)
++        assertEquals(LocaleSourceKind.BUNDLED, loader.locales().kindOf("zh-CN"))
++        assertEquals(listOf("en", "zh-CN"), loader.preloadBundled().map { (it as LocaleEnsureResult.Ready).code })
++    }
++
++    @Test
++    @DisplayName("a listed-but-missing bundled catalog is reported as corrupt, not missing")
++    fun `missing bundled catalog is corrupt`() {
++        val broken = object : LocaleAssetSource {
++            override fun read(code: String): String? = if (code == "en") null else zhCn
++            override fun list(): List<String> = listOf("en", "zh-CN")
++        }
++        val loader = LocaleRuntimeLoader(broken, InMemoryLocalePackStore())
++        val result = loader.load("en")
++        assertTrue(result is LocaleLoadResult.Corrupt)
++        assertTrue((result as LocaleLoadResult.Corrupt).reason.contains("bundled"))
++    }
++
++    // ─── on-demand download ──────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("a known locale without a pack reports NeedsDownload (no downloader)")
++    fun `remote locale without pack needs download`() {
++        val loader = loader()
++        assertTrue(loader.load("de") is LocaleLoadResult.NotDownloaded)
++        val ensure = loader.ensure("de")
++        assertTrue(ensure is LocaleEnsureResult.NeedsDownload)
++        assertEquals("de", (ensure as LocaleEnsureResult.NeedsDownload).code)
++        assertEquals(null, ensure.expectedSha256)
++        assertFalse(loader.locales().codes().contains("de"))
++
++        // unknown codes are unsupported, never downloaded
++        val unknown = loader.ensure("xx")
++        assertTrue(unknown is LocaleEnsureResult.Unsupported)
++        assertFalse(loader.isKnown("xx"))
++    }
++
++    @Test
++    @DisplayName("ensure() downloads, verifies the sha256, installs and registers the pack")
++    fun `ensure downloads and installs`() {
++        val store = InMemoryLocalePackStore()
++        val downloader = RecordingDownloader(mapOf("de" to de))
++        val expected = mapOf("de" to Sha256.hex(de))
++        val loader = loader(store, downloader, expected)
++
++        val result = loader.ensure("de")
++        assertTrue(result is LocaleEnsureResult.Downloaded)
++        val downloaded = result as LocaleEnsureResult.Downloaded
++        assertEquals(3, downloaded.keys)
++        assertEquals(Sha256.hex(de), downloaded.sha256)
++        assertEquals(listOf("de"), downloader.calls)
++
++        // registered → the fallback chain resolves German immediately
++        assertEquals(LocaleSourceKind.DOWNLOADED, loader.locales().kindOf("de"))
++        assertEquals("Bücher", loader.chain("de").resolve("Books"))
++        // installed on disk → survives an app restart / cache drop
++        assertEquals(listOf("de"), loader.installedPacks().map { it.code })
++        val second = loader.ensure("de")
++        assertTrue(second is LocaleEnsureResult.Ready)
++        assertEquals("de", (second as LocaleEnsureResult.Ready).code)
++        assertEquals("Bücher", loader.locales().get("de")!!["Books"])
++        assertEquals(listOf("de"), downloader.calls) // second ensure: cache hit, no re-download
++    }
++
++    @Test
++    @DisplayName("a hash mismatch fails the install and leaves nothing behind")
++    fun `hash mismatch fails install`() {
++        val store = InMemoryLocalePackStore()
++        val loader = loader(
++            store,
++            RecordingDownloader(mapOf("de" to de)),
++            mapOf("de" to Sha256.hex("""{"Books":"tampered"}""")),
++        )
++        val result = loader.ensure("de")
++        assertTrue(result is LocaleEnsureResult.Failed)
++        assertTrue((result as LocaleEnsureResult.Failed).reason.contains("sha256 mismatch"))
++        assertTrue(store.installed().isEmpty())
++        assertFalse(loader.locales().codes().contains("de"))
++    }
++
++    @Test
++    @DisplayName("download errors and invalid packs are reported without throwing")
++    fun `download errors are reported`() {
++        val offline = loader(InMemoryLocalePackStore(), RecordingDownloader(emptyMap(), fail = true))
++        val failed = offline.ensure("de")
++        assertTrue(failed is LocaleEnsureResult.Failed)
++        assertTrue((failed as LocaleEnsureResult.Failed).reason.contains("download failed"))
++
++        val invalid = loader(InMemoryLocalePackStore(), RecordingDownloader(mapOf("de" to """{"Books":12}""")))
++        val invalidResult = invalid.ensure("de")
++        assertTrue(invalidResult is LocaleEnsureResult.Failed)
++        assertTrue((invalidResult as LocaleEnsureResult.Failed).reason.contains("invalid pack"))
++    }
++
++    // ─── corrupt packs ───────────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("corrupt installed packs are rejected and removed")
++    fun `corrupt packs are removed`() {
++        val store = InMemoryLocalePackStore()
++        store.write("de", """{"Books":""", Sha256.hex("""{"Books":"""))
++        val loader = loader(store)
++        assertTrue(loader.load("de") is LocaleLoadResult.Corrupt)
++        val ensure = loader.ensure("de")
++        assertTrue(ensure is LocaleEnsureResult.Failed)
++        assertTrue(store.read("de") == null, "corrupt pack should be deleted")
++
++        // non-string values are rejected too (same rule as sync-locales-android.js)
++        val store2 = InMemoryLocalePackStore()
++        store2.write("de", """{"Books":12}""", Sha256.hex("""{"Books":12}"""))
++        assertTrue(loader(store2).load("de") is LocaleLoadResult.Corrupt)
++
++        // hash drift between index and file is detected
++        val store3 = InMemoryLocalePackStore()
++        store3.write("de", de, Sha256.hex("""{"Books":"other"}"""))
++        val drifted = loader(store3).load("de")
++        assertTrue(drifted is LocaleLoadResult.Corrupt)
++        assertTrue((drifted as LocaleLoadResult.Corrupt).reason.contains("hash mismatch"))
++    }
++
++    // ─── cache ───────────────────────────────────────────────────────────────
++
++    @Test
++    @DisplayName("LRU eviction frees memory but never the installed pack")
++    fun `lru eviction keeps packs on disk`() {
++        val store = InMemoryLocalePackStore()
++        val downloader = RecordingDownloader(mapOf("de" to de, "fr" to """{"Books":"Livres"}"""))
++        val loader = loader(store, downloader, emptyMap(), maxCached = 3)
++
++        loader.preloadBundled() // en + zh-CN
++        assertTrue(loader.ensure("de") is LocaleEnsureResult.Downloaded)
++        assertTrue(loader.ensure("fr") is LocaleEnsureResult.Downloaded)
++
++        // en/zh-CN are pinned, so eviction claims the least recently used pack
++        assertEquals(listOf("en", "fr", "zh-CN"), loader.loadedCodes())
++        assertFalse(loader.locales().codes().contains("de"))
++        assertEquals(listOf("de", "fr"), loader.installedPacks().map { it.code })
++
++        // re-selecting the evicted language is a file read, not a download
++        val again = loader.ensure("de") as LocaleEnsureResult.Ready
++        assertEquals(LocaleSourceKind.DOWNLOADED, again.kind)
++        assertEquals(listOf("de", "fr"), downloader.calls)
++
++        // pinned selection is never evicted
++        assertTrue(loader.pin("de"))
++        assertFalse(loader.evict("de"))
++        assertFalse(loader.evict("en"), "bundled locales are never evicted")
++    }
++
++    @Test
++    @DisplayName("removePack() uninstalls and unbundled codes are protected")
++    fun `remove pack`() {
++        val store = InMemoryLocalePackStore()
++        val loader = loader(store, RecordingDownloader(mapOf("de" to de)))
++        loader.ensure("de")
++        assertTrue(loader.removePack("de"))
++        assertTrue(store.installed().isEmpty())
++        assertFalse(loader.locales().codes().contains("de"))
++        assertFalse(loader.removePack("en"), "bundled locale cannot be uninstalled")
++        assertFalse(loader.removePack("de"))
++    }
++
++    // ─── filesystem persistence ──────────────────────────────────────────────
++
++    @Test
++    @DisplayName("FilesLocalePackStore persists packs and the index across instances")
++    fun `files pack store round trip`() {
++        val root = Files.createTempDirectory("p6-locale-packs").toFile()
++        try {
++            val store = FilesLocalePackStore(File(root, "locales/packs"))
++            val first = loader(store, RecordingDownloader(mapOf("de" to de)), mapOf("de" to Sha256.hex(de)))
++            assertTrue(first.ensure("de") is LocaleEnsureResult.Downloaded)
++            assertTrue(File(store.packPath("de")).isFile)
++            assertFalse(File(root, "locales/packs/de.json.tmp").exists(), "temp file must not survive")
++
++            // a fresh loader (new app start) finds the installed pack, no downloader
++            val second = LocaleRuntimeLoader(bundled(), FilesLocalePackStore(File(root, "locales/packs")))
++            val ready = second.ensure("de") as LocaleEnsureResult.Ready
++            assertEquals(LocaleSourceKind.DOWNLOADED, ready.kind)
++            assertEquals("Bücher", second.chain("de").resolve("Books"))
++            assertEquals(listOf("de"), second.installedPacks().map { it.code })
++            assertEquals(Sha256.hex(de), second.installedPacks().first().sha256)
++            assertEquals(de.toByteArray(Charsets.UTF_8).size, second.installedPacks().first().bytes)
++
++            assertTrue(second.removePack("de"))
++            assertFalse(File(store.packPath("de")).exists())
++            assertTrue(FilesLocalePackStore(File(root, "locales/packs")).installed().isEmpty())
++        } finally {
++            root.deleteRecursively()
++        }
++    }
++
++    @Test
++    @DisplayName("validation matches the build-time guard: object, string values, non-empty")
++    fun `validation parity with the build guard`() {
++        val cases = mapOf(
++            """{"Books":"书库"}""" to true,
++            """  {"Books":"书库"}  """ to true,
++            """{}""" to false,
++            """[]""" to false,
++            """{"Books":12}""" to false,
++            """{"Books":null}""" to false,
++            """{"Books":["a"]}""" to false,
++            """{"Books":"a"}""" to true,
++            """{"Books":"a:b [x]"}""" to true, // colons/brackets inside a value are fine
++            """{"Books":"unterminated}""" to false,
++        )
++        for ((json, valid) in cases) {
++            val store = InMemoryLocalePackStore()
++            store.write("de", json, Sha256.hex(json))
++            val result = loader(store).load("de")
++            if (valid) {
++                assertTrue(result is LocaleLoadResult.Loaded, "expected valid: $json")
++            } else {
++                assertTrue(result is LocaleLoadResult.Corrupt, "expected corrupt: $json")
++            }
++        }
++    }
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleSelfCheck.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleSelfCheck.kt
+new file mode 100644
+index 00000000..9e9650c1
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/LocaleSelfCheck.kt
+@@ -0,0 +1,151 @@
++package com.koodoreader.core.locale
++
++import java.io.File
++import java.nio.file.Files
++
++/**
++ * Framework-free self-check entry point for the locale module.
++ * Mirrors the pattern used by :core:designsystem (DesignSystemSelfCheckKt) and
++ * :engine:link.
++ *
++ * Prints a one-line summary:
++ *   OK  — all checks passed (exit 0)
++ *   FAIL — one or more checks failed (reasons on stderr, exit 1)
++ *
++ * Execute with:
++ *   gradle :core:locale:selfCheck
++ */
++fun main() {
++    val failures = mutableListOf<String>()
++
++    runCheck("tri-state wires match the desktop reader config") {
++        check(ZhConvertMode.AUTO.wire == "" && ZhConvertMode.TRADITIONAL.wire == "Simplified To Traditional") {
++            "unexpected wire values: ${ZhConvertMode.entries.map { it.wire }}"
++        }
++        check(ZhConvertMode.fromWire("Traditional To Simplified") == ZhConvertMode.SIMPLIFIED) {
++            "fromWire did not parse the desktop value"
++        }
++    }.onFailure { failures.add(it) }
++
++    val engine = ZhConvertEngine.fromSeed()
++
++    runCheck("简 → 繁 → 简 round trip") {
++        val simplified = "后来我在计划里面写了一个软件，网络也很好。"
++        val traditional = "後來我在計劃裏面寫了一個軟件，網絡也很好。"
++        check(engine.toTraditional(simplified) == traditional) {
++            "s2t: ${engine.toTraditional(simplified)}"
++        }
++        check(engine.toSimplified(traditional) == simplified) {
++            "t2s: ${engine.toSimplified(traditional)}"
++        }
++        check(engine.toTraditional(simplified, taiwan = true).endsWith("網路也很好。")) {
++            "s2tw: ${engine.toTraditional(simplified, taiwan = true)}"
++        }
++    }.onFailure { failures.add(it) }
++
++    runCheck("AUTO leaves non-Chinese readers untouched, follows zh-CN/zh-TW otherwise") {
++        val simplified = "后来我在计划里面写了一个软件，网络也很好。"
++        check(engine.convert(simplified, ZhConvertMode.AUTO, "en") == simplified) { "en must be a no-op" }
++        check(engine.convert(simplified, ZhConvertMode.AUTO, null) == simplified) { "null language must be a no-op" }
++        check(engine.convert(simplified, ZhConvertMode.AUTO, "zh-TW").startsWith("後來")) { "zh-TW must convert" }
++        check(engine.signal(simplified).script() == ChineseScript.SIMPLIFIED) { "detection failed" }
++    }.onFailure { failures.add(it) }
++
++    runCheck("seed dictionaries are duplicate-free and non-trivial") {
++        for ((name, text) in listOf(
++            "STCharacters" to OpenCcSeed.ST_CHARACTERS,
++            "STPhrases" to OpenCcSeed.ST_PHRASES,
++            "TWPhrases" to OpenCcSeed.TW_PHRASES,
++            "TSCharactersExtra" to OpenCcSeed.TS_EXTRA_CHARACTERS,
++        )) {
++            val dict = OpenCcDictionary.parse(name, text)
++            check(dict.duplicateKeys == 0) { "$name has ${dict.duplicateKeys} duplicated keys" }
++            check(dict.size > 0) { "$name is empty" }
++        }
++        check(OpenCcDictionary.parse("STCharacters", OpenCcSeed.ST_CHARACTERS).size >= 500) {
++            "STCharacters shrank"
++        }
++    }.onFailure { failures.add(it) }
++
++    runCheck("locale catalogs: 2 bundled + 39 on demand = 41 desktop locales") {
++        check(LocaleRuntimeLoader.BUNDLED_LOCALE_CODES == listOf("en", "zh-CN")) { "bundled subset changed" }
++        check(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size == 39) {
++            "expected 39 remote locales, got ${LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size}"
++        }
++        check(LocaleRuntimeLoader.ALL_LOCALE_CODES.size == 41) { "expected 41 locales in total" }
++    }.onFailure { failures.add(it) }
++
++    runCheck("on-demand load: needs download → downloaded → visible to the chain") {
++        val loader = LocaleRuntimeLoader(
++            MapLocaleAssetSource(mapOf("en" to """{"Books":"Books","Only":"Only"}""")),
++            InMemoryLocalePackStore(),
++            object : LocalePackDownloader {
++                override fun download(code: String, expectedSha256: String?): String =
++                    """{"Books":"Bücher"}"""
++            },
++        )
++        loader.load("en")
++        val chain = loader.chain("de")
++        check(chain.lookup(FallbackKey("Books")).step == FallbackStep.FALLBACK_LANGUAGE) {
++            "de should fall back to en before the pack exists"
++        }
++        check(loader.ensure("de") is LocaleEnsureResult.Downloaded) { "de was not downloaded" }
++        check(chain.resolve("Books") == "Bücher") { "chain did not pick up the new pack" }
++        check(chain.lookup(FallbackKey("Only")).step == FallbackStep.FALLBACK_LANGUAGE) { "en fallback broken" }
++        check(chain.resolve("Missing Key") == "Missing Key") { "key fallback broken" }
++    }.onFailure { failures.add(it) }
++
++    runCheck("settings: desktop key, codec round trip, live engine") {
++        val repository = ZhConvertSettingsRepository()
++        repository.setMode(ZhConvertMode.TRADITIONAL)
++        check(repository.engine().toTraditional("干净") == "乾淨") { "engine hand-off broken" }
++        check(ZhConvertPrefsCodec.KEYS.first() == "convertChinese") { "desktop key drifted" }
++        val decoded = ZhConvertPrefsCodec.decode(ZhConvertPrefsCodec.encode(repository.settings))
++        check(decoded == repository.settings) { "codec round trip mismatch" }
++        repository.setUserDictionary("计划\t計畫", enabled = true)
++        check(repository.engine().toTraditional("计划") == "計畫") { "user dictionary not applied" }
++    }.onFailure { failures.add(it) }
++
++    runCheck("pack store persists to disk and survives a restart") {
++        val root = Files.createTempDirectory("p6-locale-selfcheck").toFile()
++        try {
++            val store = FilesLocalePackStore(File(root, "locales/packs"))
++            val json = """{"Books":"Bücher"}"""
++            val loader = LocaleRuntimeLoader(
++                MapLocaleAssetSource(mapOf("en" to """{"Books":"Books"}""")),
++                store,
++                object : LocalePackDownloader {
++                    override fun download(code: String, expectedSha256: String?): String = json
++                },
++            )
++            check(loader.ensure("de") is LocaleEnsureResult.Downloaded) { "download failed" }
++            val restarted = LocaleRuntimeLoader(
++                MapLocaleAssetSource(mapOf("en" to """{"Books":"Books"}""")),
++                FilesLocalePackStore(File(root, "locales/packs")),
++            )
++            val ready = restarted.ensure("de")
++            check(ready is LocaleEnsureResult.Ready) { "pack did not survive the restart: $ready" }
++            check(restarted.chain("de").resolve("Books") == "Bücher") { "restarted chain failed" }
++        } finally {
++            root.deleteRecursively()
++        }
++    }.onFailure { failures.add(it) }
++
++    if (failures.isEmpty()) {
++        println("OK — locale module self-check passed (${ZhConvertDictionaries.SEED.stCharacters.size} S→T characters, " +
++            "${LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size} on-demand locales)")
++        kotlin.system.exitProcess(0)
++    } else {
++        System.err.println("FAIL")
++        failures.forEach { System.err.println("  • $it") }
++        kotlin.system.exitProcess(1)
++    }
++}
++
++/** Runs one named check, capturing the failure message. */
++private fun runCheck(label: String, block: () -> Unit): Result<Unit> = try {
++    block()
++    Result.success(Unit)
++} catch (e: Throwable) {
++    Result.failure(IllegalStateException("$label: ${e.message ?: e::class.simpleName}", e))
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/OpenCcDictionaryTest.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/OpenCcDictionaryTest.kt
+new file mode 100644
+index 00000000..8673ba34
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/OpenCcDictionaryTest.kt
+@@ -0,0 +1,185 @@
++package com.koodoreader.core.locale
++
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertThrows
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++
++/**
++ * OpenCC file format, MaxMatch segmentation, reversal and **seed integrity**.
++ * The integrity tests are the guard against hand-editing the curated seed: a
++ * duplicated key, an identity mapping, or a value that is itself a key (which
++ * would chain-convert and lose data) fails the build.
++ */
++class OpenCcDictionaryTest {
++
++    @Test
++    @DisplayName("parses the upstream OpenCC format: tabs, comments, multi-value entries")
++    fun `parses opencc format`() {
++        val dict = OpenCcDictionary.parse(
++            "Test",
++            """
++            # leading comment
++            网	網
++
++            软	軟 软
++            干	乾 幹
++            """.trimIndent(),
++        )
++        assertEquals(3, dict.size)
++        assertEquals(listOf("軟", "软"), dict.values("软"))
++        assertEquals("軟", dict.firstValue("软")) // OpenCC default: first value
++        assertEquals(listOf("乾", "幹"), dict.values("干"))
++        assertEquals(null, dict.firstValue("不存在"))
++    }
++
++    @Test
++    @DisplayName("empty and comment-only dictionaries are empty")
++    fun `empty dictionaries`() {
++        assertEquals(0, OpenCcDictionary.parse("Empty", "").size)
++        assertEquals(0, OpenCcDictionary.parse("Empty", "# nothing\n\n  \n").size)
++    }
++
++    @Test
++    @DisplayName("malformed lines fail loudly with the line number")
++    fun `malformed lines fail`() {
++        val spaced = assertThrows(IllegalArgumentException::class.java) {
++            OpenCcDictionary.parse("Bad", "网 網\n")
++        }
++        assertTrue(spaced.message!!.contains("line 1"))
++        assertThrows(IllegalArgumentException::class.java) {
++            OpenCcDictionary.parse("Bad", "网\t\n")
++        }
++        assertThrows(IllegalArgumentException::class.java) {
++            OpenCcDictionary.parse("Bad", "\t網\n")
++        }
++    }
++
++    @Test
++    @DisplayName("duplicate keys keep the first value and are counted")
++    fun `duplicate keys keep first value`() {
++        val dict = OpenCcDictionary.parse("Dup", "网\t網\n网\t网\n")
++        assertEquals(1, dict.size)
++        assertEquals(1, dict.duplicateKeys)
++        assertEquals("網", dict.firstValue("网"))
++    }
++
++    @Test
++    @DisplayName("MaxMatch: the longest key wins, unmatched text is copied through")
++    fun `max match segmentation`() {
++        val dict = OpenCcDictionary.parse("MaxMatch", "干\t幹\n干净\t乾淨\n净\t淨\n")
++        assertEquals(3, dict.maxKeyLength)
++        assertEquals("乾淨", dict.convert("干净"))
++        assertEquals("幹杯", dict.convert("干杯"))
++        assertEquals("乾淨", dict.convert("干净")) // no double conversion of 淨
++        assertEquals("a b", dict.convert("a b"))
++        assertEquals("", dict.convert(""))
++    }
++
++    @Test
++    @DisplayName("segments mark converted spans (what protects a user dictionary)")
++    fun `segments mark converted spans`() {
++        val dict = OpenCcDictionary.parse("Seg", "网\t網\n")
++        val segments = dict.segments("网上")
++        assertEquals(2, segments.size)
++        assertEquals("網" to true, segments[0])
++        assertEquals("上" to false, segments[1])
++        assertEquals("网上", dict.convert("网上"))
++        assertEquals(listOf("" to false), dict.segments("").filter { it.first.isEmpty() })
++    }
++
++    @Test
++    @DisplayName("reverse builds the T→S table and drops identity mappings")
++    fun `reverse builds t2s table`() {
++        val st = OpenCcDictionary.parse("ST", "里\t裏\n网\t網\n干\t幹\n")
++        val ts = OpenCcDictionary.reverse("TS", st)
++        assertEquals(3, ts.size)
++        assertEquals("里", ts.firstValue("裏"))
++        assertEquals("网", ts.firstValue("網"))
++        // identity entries disappear instead of producing a no-op rule
++        val identity = OpenCcDictionary.reverse("TS", OpenCcDictionary.parse("I", "平\t平\n"))
++        assertEquals(0, identity.size)
++    }
++
++    @Test
++    @DisplayName("chain: locked stages only protect the pieces they rewrote")
++    fun `chain protects only converted pieces`() {
++        val user = OpenCcDictionary.parse("User", "里面\t里面\n", locked = true)
++        val chars = OpenCcDictionary.parse("Chars", "里\t裏\n写\t寫\n")
++        assertEquals(
++            "里面寫",
++            OpenCcDictionary.applyChain("里面写", listOf(user, chars)),
++        )
++        // unlocked stages behave like plain successive passes
++        assertEquals(
++            "裏面寫",
++            OpenCcDictionary.applyChain("里面写", listOf(OpenCcDictionary.parse("P", "面\t面\n"), chars)),
++        )
++        assertEquals("x", OpenCcDictionary.applyChain("x", emptyList()))
++        assertEquals("x", OpenCcDictionary.applyChain("x", listOf(OpenCcDictionary.parse("E", ""))))
++    }
++
++    @Test
++    @DisplayName("merge/without helpers are deterministic")
++    fun `merge and without helpers`() {
++        val a = OpenCcDictionary.parse("A", "里\t裏\n")
++        val b = OpenCcDictionary.parse("B", "里\t里\n里弄\t里弄\n")
++        val merged = OpenCcDictionary.merge("M", a, b)
++        assertEquals(2, merged.size)
++        assertEquals("裏", merged.firstValue("里")) // first dictionary wins
++        assertEquals(1, merged.duplicateKeys)
++        assertEquals(0, OpenCcDictionary.without(a, setOf("里")).size)
++        assertEquals(1, OpenCcDictionary.without(a, emptySet()).size)
++    }
++
++    @Test
++    @DisplayName("seed integrity: no duplicates, no identity rules, no key/value chains")
++    fun `seed integrity`() {
++        val stChars = OpenCcDictionary.parse("STCharacters", OpenCcSeed.ST_CHARACTERS)
++        val stPhrases = OpenCcDictionary.parse("STPhrases", OpenCcSeed.ST_PHRASES)
++        val twPhrases = OpenCcDictionary.parse("TWPhrases", OpenCcSeed.TW_PHRASES)
++        val tsExtra = OpenCcDictionary.parse("TSCharactersExtra", OpenCcSeed.TS_EXTRA_CHARACTERS)
++
++        for (dict in listOf(stChars, stPhrases, twPhrases, tsExtra)) {
++            assertEquals(0, dict.duplicateKeys, "${dict.name}: duplicated key in the seed")
++            for (key in dict.keys()) {
++                assertTrue(key.isNotBlank(), "${dict.name}: blank key")
++                assertTrue(dict.firstValue(key)!!.isNotBlank(), "${dict.name}: blank value for $key")
++                assertTrue(dict.firstValue(key) != key, "${dict.name}: identity rule for $key")
++            }
++        }
++
++        // The curated subset must stay useful, and S→T characters must be 1:1
++        // (a collision would silently lose information in reverse()).
++        assertTrue(stChars.size >= 500, "STCharacters shrank: ${stChars.size}")
++        assertTrue(stPhrases.size >= 60, "STPhrases shrank: ${stPhrases.size}")
++        assertTrue(twPhrases.size >= 60, "TWPhrases shrank: ${twPhrases.size}")
++        assertTrue(tsExtra.size >= 5, "TSCharactersExtra shrank: ${tsExtra.size}")
++
++        val values = HashMap<String, String>()
++        for (key in stChars.keys()) {
++            val value = stChars.firstValue(key)!!
++            val previous = values.put(value, key)
++            assertEquals(null, previous, "STCharacters maps both $previous and $key to $value")
++            assertEquals(null, stChars.firstValue(value), "$value is both a value and a key (chaining risk)")
++        }
++
++        // built tables: S→T and T→S are exact inverses for characters
++        val dictionaries = ZhConvertDictionaries.fromSeedTexts()
++        assertEquals(stChars.size + tsExtra.size, dictionaries.tsCharacters.size)
++        assertEquals(stPhrases.size, dictionaries.tsPhrases.size)
++        // Exactly three Taiwan terms are shared by two mainland terms
++        // (接口/界面 → 介面, 缺省/默認 → 預設, 屏幕/顯示器 → 螢幕), so the
++        // reversed table is smaller by those three (first occurrence wins).
++        assertEquals(
++            twPhrases.size - 3,
++            dictionaries.twPhrasesReverse.size,
++            "TWPhrases reverse collisions changed — update the seed or this count",
++        )
++        for (key in stChars.keys()) {
++            val traditional = stChars.firstValue(key)!!
++            assertEquals(key, dictionaries.tsCharacters.firstValue(traditional), "T→S of $traditional")
++        }
++    }
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertEngineTest.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertEngineTest.kt
+new file mode 100644
+index 00000000..21afcaf7
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertEngineTest.kt
+@@ -0,0 +1,221 @@
++package com.koodoreader.core.locale
++
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++
++/**
++ * Tri-state 简繁转换 behaviour (P6 acceptance item ①): 自动 / 繁 / 简, desktop
++ * wire compatibility, OpenCC chain semantics and the documented ambiguities.
++ */
++class ZhConvertEngineTest {
++
++    @Test
++    @DisplayName("tri-state wire values match the desktop reader config exactly")
++    fun `mode wire values match the desktop reader config`() {
++        assertEquals("", ZhConvertMode.AUTO.wire) // desktop dropdown "Default"
++        assertEquals("Simplified To Traditional", ZhConvertMode.TRADITIONAL.wire)
++        assertEquals("Traditional To Simplified", ZhConvertMode.SIMPLIFIED.wire)
++
++        assertEquals(ZhConvertMode.TRADITIONAL, ZhConvertMode.fromWire("Simplified To Traditional"))
++        assertEquals(ZhConvertMode.SIMPLIFIED, ZhConvertMode.fromWire(" Traditional To Simplified "))
++        assertEquals(ZhConvertMode.AUTO, ZhConvertMode.fromWire(""))
++        assertEquals(ZhConvertMode.AUTO, ZhConvertMode.fromWire(null))
++        assertEquals(ZhConvertMode.AUTO, ZhConvertMode.fromWire("no such mode"))
++    }
++
++    @Test
++    @DisplayName("简 → 繁 converts characters and disambiguating phrases")
++    fun `simplified converts to traditional`() {
++        assertEquals(TRADITIONAL, engine.toTraditional(SIMPLIFIED))
++    }
++
++    @Test
++    @DisplayName("繁 → 简 converts characters and disambiguating phrases")
++    fun `traditional converts to simplified`() {
++        assertEquals(SIMPLIFIED, engine.toSimplified(TRADITIONAL))
++    }
++
++    @Test
++    @DisplayName("s2tw runs the Taiwan phrase stage after the character stage")
++    fun `taiwan localisation applies after the character stage`() {
++        assertEquals(TRADITIONAL_TW, engine.toTraditional(SIMPLIFIED, taiwan = true))
++    }
++
++    @Test
++    @DisplayName("tw2s reverses Taiwan terms before simplifying")
++    fun `tw2s maps taiwan terms back before simplifying`() {
++        assertEquals(SIMPLIFIED, engine.toSimplified(TRADITIONAL_TW, fromTaiwan = true))
++    }
++
++    @Test
++    @DisplayName("phrase table wins over the character table (干/后/只/面/划/复/准/脏/历/于)")
++    fun `phrase table wins over the character table`() {
++        assertEquals("乾淨", engine.toTraditional("干净"))
++        assertEquals("幹活", engine.toTraditional("干活"))
++        assertEquals("餅乾", engine.toTraditional("饼干"))
++        assertEquals("干擾", engine.toTraditional("干扰")) // 干 stays 干 in 干擾
++        assertEquals("干涉", engine.toTraditional("干涉"))
++        assertEquals("後來", engine.toTraditional("后来"))
++        assertEquals("皇后", engine.toTraditional("皇后")) // 后 (queen) must NOT become 後
++        assertEquals("一隻", engine.toTraditional("一只"))
++        assertEquals("只有", engine.toTraditional("只有"))
++        assertEquals("麵條", engine.toTraditional("面条"))
++        assertEquals("計劃", engine.toTraditional("计划"))
++        assertEquals("複雜", engine.toTraditional("复杂"))
++        assertEquals("準備", engine.toTraditional("准备"))
++        assertEquals("心臟", engine.toTraditional("心脏"))
++        assertEquals("日曆", engine.toTraditional("日历"))
++        assertEquals("由於", engine.toTraditional("由于"))
++    }
++
++    @Test
++    @DisplayName("ambiguous standalone characters stay unchanged (documented subset limit)")
++    fun `ambiguous standalone characters stay unchanged`() {
++        // 干/里/只/台/面/划 are resolved by the phrase table only: the curated
++        // seed cannot decide them in isolation, and guessing corrupts text
++        // (公里, 皇后, 台风). The full upstream STPhrases pack resolves these.
++        assertEquals("干", engine.toTraditional("干"))
++        assertEquals("里", engine.toTraditional("里"))
++        assertEquals("只", engine.toTraditional("只"))
++        assertEquals("台", engine.toTraditional("台"))
++        assertEquals("面", engine.toTraditional("面"))
++        assertEquals("划", engine.toTraditional("划"))
++    }
++
++    @Test
++    @DisplayName("auto follows the reader language and never touches non-Chinese")
++    fun `auto follows the reader language`() {
++        // zh-CN reader + traditional text → simplified
++        assertEquals(SIMPLIFIED, engine.convert(TRADITIONAL, ZhConvertMode.AUTO, "zh-CN"))
++        // zh-TW reader + simplified text → traditional, Taiwan terms included
++        assertEquals(TRADITIONAL_TW, engine.convert(SIMPLIFIED, ZhConvertMode.AUTO, "zh-TW"))
++        // zh-MO / zh-HK are traditional too
++        assertTrue(engine.convert(SIMPLIFIED, ZhConvertMode.AUTO, "zh-HK").startsWith("後來"))
++        // non-Chinese reader language: byte-for-byte no-op (desktop "Default")
++        assertEquals(SIMPLIFIED, engine.convert(SIMPLIFIED, ZhConvertMode.AUTO, "en"))
++        assertEquals(SIMPLIFIED, engine.convert(SIMPLIFIED, ZhConvertMode.AUTO, null))
++        assertEquals(TRADITIONAL, engine.convert(TRADITIONAL, ZhConvertMode.AUTO, "de"))
++    }
++
++    @Test
++    @DisplayName("auto is a no-op when the text already matches the reader language")
++    fun `auto is a no-op when the script matches`() {
++        // zh-CN reader + simplified text, zh-TW reader + Taiwan text,
++        // zh-HK reader + traditional text: already the target script.
++        assertEquals(SIMPLIFIED, engine.convert(SIMPLIFIED, ZhConvertMode.AUTO, "zh-CN"))
++        assertEquals(TRADITIONAL_TW, engine.convert(TRADITIONAL_TW, ZhConvertMode.AUTO, "zh-TW"))
++        assertEquals(TRADITIONAL, engine.convert(TRADITIONAL, ZhConvertMode.AUTO, "zh-HK"))
++    }
++
++    @Test
++    @DisplayName("forced modes convert regardless of detection and language")
++    fun `forced modes ignore detection`() {
++        assertEquals(TRADITIONAL, engine.convert(SIMPLIFIED, ZhConvertMode.TRADITIONAL, "en"))
++        assertEquals(SIMPLIFIED, engine.convert(TRADITIONAL, ZhConvertMode.SIMPLIFIED, "en"))
++        assertEquals(TRADITIONAL, engine.convert(SIMPLIFIED, ZhConvertMode.TRADITIONAL, null))
++        assertEquals(TRADITIONAL_TW, engine.convert(SIMPLIFIED, ZhConvertMode.TRADITIONAL, "zh-TW"))
++        assertEquals(SIMPLIFIED, engine.convert(TRADITIONAL_TW, ZhConvertMode.SIMPLIFIED, "zh-TW"))
++    }
++
++    @Test
++    @DisplayName("script detection needs a decisive signal (min 4 hits, 2x lead)")
++    fun `script detection needs decisive evidence`() {
++        assertEquals(ChineseScript.SIMPLIFIED, engine.detect(SIMPLIFIED))
++        assertEquals(ChineseScript.TRADITIONAL, engine.detect(TRADITIONAL))
++        assertEquals(ChineseScript.UNKNOWN, engine.detect("后来")) // 1 hit < MIN_SIGNAL
++        assertEquals(ChineseScript.UNKNOWN, engine.detect("Hello 世界 123"))
++        assertEquals(ChineseScript.UNKNOWN, engine.detect(""))
++
++        val signal = engine.signal(SIMPLIFIED)
++        assertEquals(0, signal.traditional)
++        assertTrue(signal.simplified >= ScriptSignal.MIN_SIGNAL)
++        assertEquals(ChineseScript.SIMPLIFIED, signal.script())
++    }
++
++    @Test
++    @DisplayName("non-Han text, punctuation and surrogate pairs are preserved")
++    fun `non-han content is preserved`() {
++        val rare = "Hello, world! 123 — " + String(Character.toChars(0x20000)) +
++            " " + String(Character.toChars(0x2A6B2)) + " ok"
++        assertEquals(rare, engine.toTraditional(rare))
++        assertEquals(rare, engine.toSimplified(rare))
++        assertEquals("", engine.toTraditional(""))
++        assertEquals("   ", engine.toTraditional("   "))
++    }
++
++    @Test
++    @DisplayName("user dictionary overrides built-in tables and its spans are protected")
++    fun `user dictionary overrides and is protected`() {
++        val custom = ZhConvertEngine.fromSeed("计划\t計畫")
++        assertTrue(custom.hasUserDictionary)
++        // built-in phrase would give 計劃; the user dictionary wins
++        assertEquals(
++            "後來我在計畫裏面寫了一個軟件",
++            custom.toTraditional("后来我在计划里面写了一个软件"),
++        )
++
++        // identity rule = "keep this word as it is": only a protected span can
++        // stop the built-in 里面 → 裏面 rule from firing.
++        val keeper = ZhConvertEngine.fromSeed("里面\t里面")
++        assertEquals(
++            "後來我在計劃里面寫了一個軟件",
++            keeper.toTraditional("后来我在计划里面写了一个软件"),
++        )
++
++        // user rules also apply to the T→S direction, and win over the built-in
++        // chain: without the rule the character table yields the Taiwan spelling
++        // 计画, with it the user keeps 计划.
++        val reverseRule = ZhConvertEngine.fromSeed("計畫\t计划")
++        assertEquals("计划", reverseRule.toSimplified("計畫"))
++        assertEquals("计画", ZhConvertEngine.fromSeed().toSimplified("計畫"))
++        // ... while the tw2s direction resolves the Taiwan term via TWPhrasesRev
++        assertEquals("计划", ZhConvertEngine.fromSeed().toSimplified("計畫", fromTaiwan = true))
++    }
++
++    @Test
++    @DisplayName("blank user dictionary means no user stage")
++    fun `blank user dictionary is ignored`() {
++        assertFalse(ZhConvertEngine.fromSeed().hasUserDictionary)
++        assertFalse(ZhConvertEngine.fromSeed("   ").hasUserDictionary)
++        assertFalse(ZhConvertEngine.fromSeed("# only a comment\n").hasUserDictionary)
++        assertEquals("計劃", ZhConvertEngine.fromSeed("   ").toTraditional("计划"))
++    }
++
++    @Test
++    @DisplayName("convertWire accepts the desktop config value directly")
++    fun `convertWire accepts desktop values`() {
++        assertEquals(TRADITIONAL, engine.convertWire(SIMPLIFIED, "Simplified To Traditional"))
++        assertEquals(SIMPLIFIED, engine.convertWire(TRADITIONAL, "Traditional To Simplified"))
++        assertEquals(SIMPLIFIED, engine.convertWire(SIMPLIFIED, "")) // desktop default / auto
++        assertEquals(TRADITIONAL, engine.convertWire(SIMPLIFIED, null, "zh-TW"))
++    }
++
++    @Test
++    @DisplayName("language → script mapping covers the desktop Chinese locales")
++    fun `language to script mapping`() {
++        assertEquals(ChineseScript.SIMPLIFIED, ZhConvertEngine.scriptOf("zh-CN"))
++        assertEquals(ChineseScript.SIMPLIFIED, ZhConvertEngine.scriptOf("zh_cn"))
++        assertEquals(ChineseScript.TRADITIONAL, ZhConvertEngine.scriptOf("zh-TW"))
++        assertEquals(ChineseScript.TRADITIONAL, ZhConvertEngine.scriptOf("zh-MO"))
++        assertEquals(ChineseScript.UNKNOWN, ZhConvertEngine.scriptOf("en"))
++        assertEquals(ChineseScript.UNKNOWN, ZhConvertEngine.scriptOf(null))
++        assertTrue(ZhConvertEngine.isTaiwan("zh-TW"))
++        assertFalse(ZhConvertEngine.isTaiwan("zh-CN"))
++    }
++
++    private companion object {
++        /** 简: 后来我在计划里面写了一个软件，网络也很好。 */
++        const val SIMPLIFIED = "后来我在计划里面写了一个软件，网络也很好。"
++
++        /** 繁: 後來我在計劃裏面寫了一個軟件，網絡也很好。 */
++        const val TRADITIONAL = "後來我在計劃裏面寫了一個軟件，網絡也很好。"
++
++        /** 繁（台湾用词）: 後來我在計畫裏面寫了一個軟體，網路也很好。 */
++        const val TRADITIONAL_TW = "後來我在計畫裏面寫了一個軟體，網路也很好。"
++
++        val engine: ZhConvertEngine = ZhConvertEngine.fromSeed()
++    }
++}
+diff --git a/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertSettingsTest.kt b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertSettingsTest.kt
+new file mode 100644
+index 00000000..9d4cc053
+--- /dev/null
++++ b/android/core/locale/src/test/kotlin/com/koodoreader/core/locale/ZhConvertSettingsTest.kt
+@@ -0,0 +1,125 @@
++package com.koodoreader.core.locale
++
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Test
++
++/**
++ * Conversion-dictionary persistence (P6 acceptance item ②): desktop-parity
++ * Preferences keys, DataStore-shaped port, repository notifications and the
++ * live engine hand-off.
++ */
++class ZhConvertSettingsTest {
++
++    @Test
++    @DisplayName("the mode is stored under the desktop reader-config key")
++    fun `desktop key and wire values`() {
++        assertEquals("convertChinese", ZhConvertPrefsCodec.KEY_MODE)
++        assertEquals(listOf("convertChinese", "zhConvertUserDict", "zhConvertUserDictEnabled"), ZhConvertPrefsCodec.KEYS)
++
++        val encoded = ZhConvertPrefsCodec.encode(ZhConvertSettings(mode = ZhConvertMode.TRADITIONAL))
++        assertEquals("Simplified To Traditional", encoded[ZhConvertPrefsCodec.KEY_MODE])
++        assertEquals("false", encoded[ZhConvertPrefsCodec.KEY_USER_DICT_ENABLED])
++        assertEquals("", encoded[ZhConvertPrefsCodec.KEY_USER_DICT])
++    }
++
++    @Test
++    @DisplayName("codec round-trips every field")
++    fun `codec round trip`() {
++        val settings = ZhConvertSettings(
++            mode = ZhConvertMode.SIMPLIFIED,
++            userDictionary = "计划\t計畫",
++            userDictionaryEnabled = true,
++        )
++        val decoded = ZhConvertPrefsCodec.decode(ZhConvertPrefsCodec.encode(settings))
++        assertEquals(settings, decoded)
++        assertTrue(decoded.hasUserDictionary)
++        assertEquals("Traditional To Simplified", ZhConvertPrefsCodec.toDesktopConfig(settings))
++    }
++
++    @Test
++    @DisplayName("missing/unknown/blank values degrade to the desktop defaults")
++    fun `decode tolerates unknown values`() {
++        assertEquals(ZhConvertSettings.DEFAULT, ZhConvertPrefsCodec.decode(emptyMap()))
++        assertEquals(ZhConvertMode.AUTO, ZhConvertPrefsCodec.decode(mapOf("convertChinese" to "")).mode)
++        assertEquals(ZhConvertMode.AUTO, ZhConvertPrefsCodec.decode(mapOf("convertChinese" to "??")).mode)
++        assertEquals("", ZhConvertPrefsCodec.decode(emptyMap()).userDictionary)
++        assertFalse(ZhConvertPrefsCodec.decode(emptyMap()).userDictionaryEnabled)
++
++        val enabled = ZhConvertPrefsCodec.decode(mapOf("zhConvertUserDictEnabled" to " TRUE "))
++        assertTrue(enabled.userDictionaryEnabled)
++        assertFalse(ZhConvertPrefsCodec.decode(mapOf("zhConvertUserDictEnabled" to "yes")).userDictionaryEnabled)
++    }
++
++    @Test
++    @DisplayName("desktop reader config value maps both ways")
++    fun `desktop interop`() {
++        assertEquals(ZhConvertMode.TRADITIONAL, ZhConvertPrefsCodec.fromDesktopConfig("Simplified To Traditional").mode)
++        assertEquals(ZhConvertMode.AUTO, ZhConvertPrefsCodec.fromDesktopConfig(null).mode)
++        assertEquals("", ZhConvertPrefsCodec.toDesktopConfig(ZhConvertSettings.DEFAULT))
++    }
++
++    @Test
++    @DisplayName("in-memory store writes, reads and clears")
++    fun `store round trip`() {
++        val store = InMemoryZhConvertSettingsStore()
++        assertEquals(ZhConvertSettings.DEFAULT, store.read())
++
++        val written = store.write(ZhConvertSettings(mode = ZhConvertMode.TRADITIONAL))
++        assertEquals(ZhConvertMode.TRADITIONAL, written.mode)
++        assertEquals(ZhConvertMode.TRADITIONAL, store.read().mode)
++        assertEquals("Simplified To Traditional", store.raw()[ZhConvertPrefsCodec.KEY_MODE])
++
++        store.clear()
++        assertEquals(ZhConvertSettings.DEFAULT, store.read())
++    }
++
++    @Test
++    @DisplayName("repository persists, notifies and hands out a live engine")
++    fun `repository persists and notifies`() {
++        val store = InMemoryZhConvertSettingsStore()
++        val repository = ZhConvertSettingsRepository(store)
++        val seen = ArrayList<ZhConvertMode>()
++        val listener: (ZhConvertSettings) -> Unit = { seen.add(it.mode) }
++        repository.addListener(listener)
++
++        repository.setMode(ZhConvertMode.TRADITIONAL)
++        assertEquals(ZhConvertMode.TRADITIONAL, store.read().mode)
++        assertEquals("乾淨", repository.engine().toTraditional("干净"))
++
++        repository.setUserDictionary("干净\t干净")
++        assertEquals(listOf(ZhConvertMode.TRADITIONAL, ZhConvertMode.TRADITIONAL), seen)
++        assertEquals("干净", repository.engine().toTraditional("干净")) // user rule wins
++
++        repository.removeListener(listener)
++        repository.setMode(ZhConvertMode.SIMPLIFIED)
++        assertEquals(2, seen.size, "no notification after removeListener")
++        assertEquals(ZhConvertMode.SIMPLIFIED, store.read().mode)
++
++        repository.clear()
++        assertEquals(ZhConvertSettings.DEFAULT, store.read())
++        assertEquals("乾淨", repository.engine().toTraditional("干净"))
++        assertEquals(ZhConvertMode.AUTO, repository.settings.mode)
++    }
++
++    @Test
++    @DisplayName("the user dictionary is applied only while enabled")
++    fun `user dictionary only when enabled`() {
++        val repository = ZhConvertSettingsRepository()
++        repository.setUserDictionary("计划\t計畫", enabled = true)
++        assertEquals("計畫", repository.engine().toTraditional("计划"))
++
++        repository.setUserDictionary("计划\t計畫", enabled = false)
++        assertFalse(repository.settings.hasUserDictionary)
++        assertEquals("計劃", repository.engine().toTraditional("计划"))
++        assertEquals("计划\t計畫", repository.settings.userDictionary) // kept on disk
++
++        // refresh() re-reads the store without losing the persisted dictionary
++        repository.refresh()
++        assertEquals("计划\t計畫", repository.settings.userDictionary)
++        repository.setUserDictionary("计划\t計畫", enabled = true)
++        assertEquals("計畫", repository.refresh().engine().toTraditional("计划"))
++    }
++}
+diff --git a/docs/p6-zh-locale-design.md b/docs/p6-zh-locale-design.md
+new file mode 100644
+index 00000000..e57cd947
+--- /dev/null
++++ b/docs/p6-zh-locale-design.md
+@@ -0,0 +1,307 @@
++# P6 设计：简繁转换（OpenCC 移植）+ 其余 39 locale 按需加载
++
++- 日期：2026-09-24
++- 状态：实现完成，待接线与验收（见 §8）
++- 关联：**ADR-004**（安卓 i18n 子集策略，en+zh-CN 打包、回退链 所选→en→key、其余 39 locale 推迟到 P6+）、ADR-003（兜底岛）、任务卡 `t-muexn6d1-rg3pyr`
++- 隔离：git worktree `.worktrees/p6-zh-locale`，分支 `task/p6-zh-locale-p6`
++- 桌面参考：`kookit zh-convert.ts`（`docs/android-loc-baseline.json`：8161 行 / 8143 代码行）——**源码不可读**（`src/assets/lib/kookit-extra.min.mjs` 是压缩产物，且本机无 `D:\Project\kookit`），因此按任务描述**原生移植 OpenCC 模型**（词表驱动 + MaxMatch 分词），并以桌面**配置键与取值**对齐语义。
++
++## 1. 交付物与验收对照
++
++| 验收项 | 交付物 | 位置 |
++|---|---|---|
++| ① 简繁转换引擎（自动/繁/简三态） | `ZhConvertEngine`、`OpenCcDictionary`（trie MaxMatch）、`OpenCcSeed`（517 字 + 69 短语 + 67 台湾词 + 7 繁→简补充） | `android/core/locale/src/main/kotlin/.../` |
++| ② 转换字典持久化与桌面互通 | `ZhConvertSettings`、`ZhConvertPrefsCodec`（键 `convertChinese` 与桌面一致）、`ZhConvertSettingsStore` 端口 + `ZhConvertSettingsRepository` | 同上（§4） |
++| ③ 运行时 locale 按需加载 | `LocaleRuntimeLoader`（39 locale）、`LocaleCatalogRegistry`、`LocaleAssetSource`/`LocalePackStore`/`LocalePackDownloader` 端口 + `FilesLocalePackStore` | 同上（§5） |
++| ④ 语言切换持久化 + 回退链不变 | `LocaleFallbackChain`、`FallbackKey`、`LocaleCodes`（键 `language` 沿用 `LibraryPrefs`） | 同上（§6） |
++| ⑤ 守卫覆盖新方案 | `scripts/check-locales.mjs`（A 段与 `sync-locales-android.js --check` 等价；B–E 段为 P6 新增守卫） | `scripts/`（§7） |
++| 单测 | 5 个 JVM 测试类 + 1 个无框架 self-check（`:core:locale:selfCheck`） | `src/test/kotlin/.../` |
++
++## 2. 模块结构
++
++`android/core/locale` 是**纯 Kotlin JVM 模块**（同 `:core:common` / `:core:designsystem` 的理由：可离线单测、无 Android 依赖）：
++
++```
++android/core/locale/
++├── build.gradle                     # kotlin-jvm + :core:common + junit5 + selfCheck
++└── src/
++    ├── main/
++    │   ├── assets/locales/.gitkeep   # 预留：全量 OpenCC 词表/额外 locale 打包位
++    │   └── kotlin/com/koodoreader/core/locale/
++    │       ├── OpenCcDictionary.kt    # OpenCC 文件格式解析 + trie + MaxMatch + 链式应用
++    │       ├── OpenCcSeed.kt          # 精选词表（OpenCC 上游格式，可整体替换）
++    │       ├── ZhConvertEngine.kt     # 三态引擎 / 方向链 / 脚本判定 / 用户词典
++    │       ├── ZhConvertSettings.kt   # 持久化模型 + Preferences 编解码 + 端口 + 仓库
++    │       ├── LocalePackStore.kt     # 端口 + 内存/文件系统实现 + SHA-256
++    │       ├── LocaleRuntimeLoader.kt # 39 locale 按需加载 + 注册表 + 校验器
++    │       ├── LocaleFallbackChain.kt # 所选→en→key（可观测）
++    │       └── FallbackKey.kt         # 翻译键类型 + locale 常量
++    └── test/kotlin/com/koodoreader/core/locale/
++        ├── ZhConvertEngineTest.kt        # 三态/方向/判定/用户词典
++        ├── OpenCcDictionaryTest.kt       # 格式/MaxMatch/反向/种子完整性
++        ├── LocaleRuntimeLoaderTest.kt    # 打包/下载/校验/持久化/LRU
++        ├── LocaleFallbackChainTest.kt    # 回退链 + 与 Localization/真实桌面 JSON 一致
++        ├── ZhConvertSettingsTest.kt      # 编解码/桌面互通/仓库
++        └── LocaleSelfCheck.kt            # 无框架自检（gradle :core:locale:selfCheck）
++```
++
++依赖只有 `:core:common`（复用 `FlatJson` 与 `Localization.normalize/FALLBACK_LANGUAGE`，保证回退链与 P1 实现不可能漂移）；`null` 之外的第三方依赖为 0，且**不使用协程**（API 同步，调用方放 `Dispatchers.IO`）。
++
++## 3. ① 简繁转换引擎
++
++### 3.1 桌面语义对齐（三态）
++
++桌面 `src/constants/dropdownList.tsx`：「Conversion of Chinese」→ 配置键 `convertChinese`，取值 `""`（Default）/ `"Simplified To Traditional"` / `"Traditional To Simplified"`，持久化在 reader config（`viewer/component.tsx`、`readerSettings/dropdownList/component.tsx` 读同一键）。
++
++| 原生三态 | 桌面 wire 值 | 行为 |
++|---|---|---|
++| `ZhConvertMode.AUTO`（自动） | `""` | 文本与阅读语言**同脚本**→ 原样；阅读语言非中文（如 `en`/`de`）→ **逐字节 no-op**（与桌面 Default 完全一致）；中文且脚本明确相反 → 转换到阅读语言脚本 |
++| `ZhConvertMode.TRADITIONAL`（繁） | `Simplified To Traditional` | 强制 简→繁；`zh-TW/zh-HK/zh-MO` 阅读语言下再走台湾用词链 |
++| `ZhConvertMode.SIMPLIFIED`（简） | `Traditional To Simplified` | 强制 繁→简；台湾文本按 `zh-*` 决定是否先做 `TWPhrases` 反查 |
++
++`ZhConvertPrefsCodec.KEY_MODE == "convertChinese"`，`ZhConvertMode.fromWire()` 兼容桌面取值（未知值退化为 AUTO，即桌面默认）。
++
++### 3.2 OpenCC 链条与算法
++
++与上游 OpenCC 配置等价（`MaxMatchSegmentation` + 顺序转换）：
++
++| 方向 | 链 |
++|---|---|
++| `s2t` 简→繁 | `STPhrases` → `STCharacters` |
++| `s2tw` 简→繁（台湾） | `STPhrases` → `STCharacters` → `TWPhrases` |
++| `t2s` 繁→简 | `STPhrasesRev` → `STCharactersRev` |
++| `tw2s` 台湾→简 | `TWPhrasesRev` → `STPhrasesRev` → `STCharactersRev` |
++| 用户词典（可选） | 置于链首，**locked**：仅其改写片段被后续阶段跳过 |
++
++实现要点：
++
++1. **文件格式与上游一致**：`key<TAB>value1 value2 …`，`#` 注释；多值取首值（OpenCC 默认），其余值保留供再排序。因此**上游全量词表可原样加载**（`STCharacters.txt` 约 30k 条、`STPhrases.txt` 等），无需改代码。
++2. **trie + 最长匹配**：按 code point 前进，代理对（如 `U+20000`）整段通过；非命中片段逐字节保留，故拉丁文本/数字/emoji/标点永不被修改（有测试）。
++3. **分段（segments）与锁定**：转换结果按 `(片段, 是否被改写)` 返回。非 locked 阶段（内置词表）与 OpenCC 一致地“整段继续参与后续阶段”；locked 阶段（用户词典）只保护**自己改写的片段**——否则一旦启用用户词典，整段都会“冻结”，内置转换全部失效（测试覆盖）。
++4. **歧义字不入字表**：`干/后/里/只/台/面/划/复/准/脏/历/于/周` 由**短语阶段**消歧（`干净→乾淨`、`干活→幹活`、`干扰→干擾` 不动、`后来→後來`、`皇后` 不动、`一只→一隻`、`面条→麵條`、`计划→計劃`、`复杂→複雜`、`准备→準備`、`心脏→心臟`、`日历→日曆`、`由于→由於`）。这正是 OpenCC 的 `STPhrases` 角色。
++5. **T→S 由 S→T 反演**：`reverse()` 值→键、丢弃恒等项；再加 `TS_EXTRA_CHARACTERS`（`臺/檯/颱/裏/裡/隻/髮`）覆盖“繁体独有、无简→繁对应”的字。守卫脚本强制 `ST_CHARACTERS` 保持 **1:1 且值不作为键**（否则反演丢数据/链式误转）。
++
++### 3.3 词表规模、来源与已知缺口（诚实清单）
++
++- 规模：**517 简→繁单字 + 69 消歧短语 + 67 台湾用词 + 7 繁→简单字**（台湾用词示例：`軟件→軟體`、`網絡→網路`、`計劃→計畫`、`打印→列印`）。全部为上游 OpenCC 词典（[BYVoid/OpenCC](https://github.com/BYVoid/OpenCC)，Apache-2.0；`STCharacters`/`STPhrases`/`TWPhrasesIT` 语义）中的**高频子集**，人工编写后由守卫脚本与单测双重校验（无重复键、无恒等规则、无链式风险、规模下限）。
++- **全量词表加载路径**：`OpenCcDictionary.parse()` 直接吃上游文件；把 `STCharacters.txt`、`STPhrases.txt`、`TWPhrases.txt`、`TSCharacters.txt` 放进 `android/core/locale/src/main/assets/locales/`（或运行时随 locale 包一起下发）后，仅需把 `ZhConvertDictionaries.fromSeedTexts()` 换成读文件版本即可，引擎/接口不变。
++- 已知缺口（测试**显式固定**当前行为，不隐藏）：
++  1. 单字歧义（`干`、`里`、`后`、`只`、`台`、`面`、`划` 单独出现）不转换；需全量 `STPhrases` 才能覆盖（如「公里」「台风」这类词才不会误转）。
++  2. `著` 不做 繁→简（否则 `著名/著作` 会被毁）；代价是 `看著` 不变 `看着`。
++  3. 多值条目只取首值，不做上下文重排序（`干→乾 幹` 的首值是 `乾`；本实现把 `干` 从字表移除，改由短语处理）。
++  4. 台湾链是 IT/设置语域子集（同 `TWPhrasesIT`），3 个台湾词由两个大陆词共享（`接口/界面→介面`、`缺省/默認→預設`、`屏幕/顯示器→螢幕`），反查取首见，单测固定该数量。
++
++### 3.4 自动模式判定
++
++`ZhConvertEngine.signal(text)` 统计“只在简体出现的字”（字表键）与“只在繁体出现的字”（字表值 ∪ 繁→简字表键），`ScriptSignal.script()` 判据：**信号 ≥ 4 且领先 ≥ 2 倍**，否则 `UNKNOWN`（不转换）。阈值常量 `MIN_SIGNAL = 4`、`DECISIVE_RATIO = 2.0`，有边界测试（`后来` → UNKNOWN；整段简体/繁体 → 正确判定）。
++
++### 3.5 引擎依赖选择：原生移植 vs `opencc4j`
++
++- 默认：**原生移植**（零运行时依赖，离线可构建/可测）。
++- 备选：`com.github.houbb:opencc4j:1.8.1`（Maven Central，JVM 版 OpenCC 移植）。`build.gradle` 中记录在**惰性配置** `openccAlternative` 里（不参与默认编译/运行，故离线构建永不联网）：
++  - 打印坐标：`./gradlew :core:locale:resolveAlternativeEngine`
++  - 切换到库实现：注释掉 `openccAlternative` 行，改为 `implementation 'com.github.houbb:opencc4j:1.8.1'`（`build.gradle` 内已写明），并删除 `OpenCcDictionary`/`OpenCcSeed`（`ZhConvertEngine` 接口不变）。
++- 选原生移植的理由：①不引入第三方版本/传输风险（CI 与离线环境）；②桌面侧是“简繁 + 台湾用词”这一固定链路，词典数据可审计；③便于按需打包（§5）与后续全量词表替换。
++
++## 4. ② 转换字典持久化（DataStore）与桌面互通
++
++### 4.1 端口与键
++
++```kotlin
++interface ZhConvertSettingsStore {          // 纯 JVM 端口
++    fun read(): ZhConvertSettings
++    fun write(settings: ZhConvertSettings): ZhConvertSettings
++    fun clear()
++}
++```
++
++| 键 | 类型 | 说明 |
++|---|---|---|
++| `convertChinese` | String | **桌面同名键、同取值**（`""` / `Simplified To Traditional` / `Traditional To Simplified`） |
++| `zhConvertUserDict` | String | 用户转换词典，OpenCC 行格式（`key<TAB>value`）——即“转换字典”本体 |
++| `zhConvertUserDictEnabled` | String `"true"/"false"` | 是否启用用户词典（关掉时仍保留在磁盘） |
++
++`ZhConvertPrefsCodec` 是唯一知道键名的地方：DataStore、SharedPreferences、测试内存 Map 三者编解码一致（有 round-trip 与容错测试：缺键→桌面默认、未知模式串→AUTO、`" TRUE "`→启用）。
++
++### 4.2 app 侧接线（5 行，属 §8 未接线项）
++
++```kotlin
++// android/app：androidx.datastore:datastore-preferences
++val Context.zhConvertPrefs by preferencesDataStore("zh_convert")   // 独立文件，便于随备份导出
++
++class DataStoreZhConvertSettingsStore(private val ds: DataStore<Preferences>) : ZhConvertSettingsStore {
++    override fun read(): ZhConvertSettings = runBlocking {          // 调用方在 Dispatchers.IO
++        ZhConvertPrefsCodec.decode(ds.data.first().asMap().mapKeys { it.key.name }.mapValues { it.value as String })
++    }
++    override fun write(settings: ZhConvertSettings): ZhConvertSettings { /* edit { it.clear(); it.putAll(codec) } */ return settings }
++    override fun clear() { /* edit { for (k in ZhConvertPrefsCodec.KEYS) it.remove(stringPreferencesKey(k)) } */ }
++}
++```
++
++`ZhConvertSettingsRepository` 负责“当前值 + 监听通知 + 出引擎”（Compose 用 `mutableStateOf` 桥接），转换模式切换即时生效；`refresh()` 从 DataStore 重读。
++
++### 4.3 为什么 core:locale 保持纯 JVM
++
++`androidx.datastore` 是 Android/AAR 依赖，纯 JVM 模块无法消费；且本任务**禁止修改** `android/app/build.gradle`（无法把 DataStore 依赖加到 app 侧）。因此采用“端口 + 编解码器 + 文档化接线片段”的方式交付，引擎与持久化逻辑本身已被 JVM 测试完整覆盖（§9）。这是本次最明确的**未完成接线项**，见 §8。
++
++## 5. ③ 运行时 locale 按需加载（39 个）
++
++### 5.1 状态机
++
++```
++ensure(code)
++ ├─ 已在缓存/注册表 ─────────────────────────▶ Ready(kind=已装来源)
++ ├─ APK assets（en/zh-CN）──────────────────▶ Ready(BUNDLED)
++ ├─ 已安装 pack（filesDir/locales/packs）───▶ Ready(DOWNLOADED)   ← 重启后免下载
++ ├─ 已知远端 + 有下载器 ───────────────────▶ Downloaded（校验 sha256 → 安装 → 注册）
++ ├─ 已知远端 + 无下载器/离线 ──────────────▶ NeedsDownload(code, 期望 sha256)
++ ├─ 损坏（JSON 非法/非字符串值/哈希不符）──▶ Failed（并删除损坏 pack）
++ └─ 非 41 个桌面 locale ───────────────────▶ Unsupported
++```
++
++`load()` 是纯查表（绝不联网），`ensure()` 才可能下载；两者结果类型都是 sealed interface，调用方穷举处理。
++
++### 5.2 打包 / 下载 / 校验 / 缓存
++
++- **ADF-004 子集不变**：`BUNDLED_LOCALE_CODES = ["en","zh-CN"]`（与 `sync-locales-android.js` 的 `ANDROID_LOCALES` 由守卫脚本强制相等）。
++- **39 个按需 locale**：`REMOTE_LOCALE_CODES`（守卫脚本解析并断言 == 桌面 41 − 打包 2）。
++- **校验与构建期同规则**（`CatalogValidator`，等价于 `sync-locales-android.js --check`）：必须是 JSON 对象、**每个值都是字符串**（非字符串值报错，尽管桌面文件不会出现）、至少一条；此外下载包还校验 sha256（索引 vs 文件、期望 vs 实际）。
++- **持久化**：`FilesLocalePackStore` 写 `<root>/<code>.json` + `index.json`（扁平 JSON `{"am":"<sha256>:<bytes>"}`），临时文件 + 原子改名（不支持 `ATOMIC_MOVE` 时回退 `REPLACE_EXISTING`）。
++- **缓存**：按访问序 LRU，上限 `DEFAULT_MAX_CACHED_PACKS = 4`；打包语言、`en`、以及 `pin()` 的当前所选语言**永不淘汰**；淘汰只释放内存，安装包仍在磁盘（重新选择该语言是“读文件”而非“重新下载”，有测试）。
++- **下载器**：`LocalePackDownloader`（阻塞接口）由 app 实现（OkHttp / `DownloadManager`），模块自身不开 socket，因此可离线单测；`expectedPacks` 可用下面的 §5.3 表生成。
++
++### 5.3 locale 包清单（39 个，机器校验 sha256）
++
++下表由 `node scripts/check-locales.mjs --print-pack-table` 生成，**与 `src/assets/locales/*.json` 逐字节绑定**：`check-locales.mjs` 会核对每个 code 的 sha256，漂移即红——这就是运行时下载包的完整性基线（`expectedPacks`）。
++
++| locale | key 数 | 源文件 sha256 |
++|---|---|---|
++<!-- PACK-TABLE:BEGIN -->
++| `am` | 1321 | `0f89fa89362710b76faf567fa2f4287d8a1bd88c330852d90a234443239c40cf` |
++| `ar` | 1324 | `3cff51191664f633c006d46d788272b3e6b5b29c64c5cd35fecacf2d44181bc7` |
++| `bg` | 1324 | `9bb0be10383f8acecba2a79168b2323949488aa8561f21f912b189eb68d27f41` |
++| `bn` | 1324 | `4ea00baab1119cf4087f08e83f304fa21a52a76dc977d73e3f2f1776d00bca67` |
++| `bo` | 1323 | `078cfb28030a6368fbf138c9d24d95e1666dc2faa8f6ec76c35bc95dc2bf1824` |
++| `cs` | 1323 | `14d8481d058e4a25adc1bc121bd8f90941c31ce1b615e4ec1135d4f8bb3d0ee1` |
++| `da` | 1326 | `9ab8dae9bfeccb1f1b43bcd2ae601b9505f54f749f24ea0e3e754f7c0d1a0cf5` |
++| `de` | 1323 | `b57f0bad00609f9762172f31cc8997a4ce89d9dee86e5db5dbbcf8875fd3b476` |
++| `el` | 1324 | `c5bf062ebda8860a11169cf27c6ea33c585dbd139a32ea4872c45ac883ee733a` |
++| `es` | 1323 | `8fe502f1406282cefd9f484a30cf62ba530d13729497ccb957ee81623940f91d` |
++| `fa` | 1323 | `373fe37759c25122326002861c66dfcf2ce4d7aff8eb4795cdcfd269f21d941f` |
++| `fi` | 1330 | `3819879ea603633bf24936f6c5830270f2db639a6355580a3373f97e395fd415` |
++| `fr` | 1322 | `735a8c8caa13b76167a869579cdc8733a768343c936d2f110ed8118a046e1cd5` |
++| `ga` | 1321 | `4ff62c2c81a96e9955366714281623e4534aeaeb64f2d31691cdba3c4466055d` |
++| `hi` | 1321 | `e5a58f46165bf32bce2a4c18fb87634dbdd4a5f6de2f35bb1ef6254bc45be399` |
++| `hu` | 1321 | `6580435104abb84296cd366d7cdac2f0a4da56979d07ae5fbbfb15281c4792e3` |
++| `hy` | 1324 | `2675ec600831a422a634c20b4bde00c25a67a18a05cc4149f659aef160c69db0` |
++| `id` | 1338 | `e0dc10325e48f950a05a85d696a8af0fd75862fe26e043d9b57d10cdd92aeaa3` |
++| `ie` | 1325 | `ebac7458c189c1a091318b48704f59789a793bebf38df23b9b2d2695bc35b177` |
++| `it` | 1324 | `1834220f20f2f1f6c4b20455fd6ae283d8d7688b36016c22a74b02b8148fee09` |
++| `ja` | 1334 | `d65be5563e9cb67c9df3e9a5e25726b0254b9ecdeaac459f3b1139bfe88c9003` |
++| `ko` | 1323 | `80293c432c9f5f88cd578297361d58ee9c1c457c7e55966a3c1399437e42cad3` |
++| `nl` | 1324 | `5ed23362e2077c4c54da8c7e4d387f732ef7bc719305225e8a8e1eacd4d818df` |
++| `pl` | 1323 | `68a297c20f069e8612eee44475f0083bf368174b0fcc27f481e3c8fd96fa3371` |
++| `pt` | 1330 | `51a9c3947a4c528ce8d26b0b419cfdd0c20a5b55c8fa0fd6cc453967023d43e9` |
++| `pt-BR` | 1322 | `1c2270a1051683653415cf4d10eebaabb6382a359ee24dfb2c1f6a1ba2a8f776` |
++| `ro` | 1323 | `657712687e4764d136c0c537be93c98fac5e9b975292bf0a73ff92285219c770` |
++| `ru` | 1324 | `7c60b91515010d4c70e8966ed3c05e4ace47dd219dc7cd83a6b22b18a4817325` |
++| `sl` | 1321 | `24a3c00a3d0fd572e725fec73855364615d814cdbad116b009935468d00cc68a` |
++| `sr` | 1322 | `3269894a7dcdd21fde519393cf75303cade9de47217694bf3ad9f4861b709334` |
++| `sv` | 1328 | `5f5b1458df88eb5911adc8cdf58cb467f9de5ad44bf17e2bd90e07a7fcd8ee6f` |
++| `ta` | 1322 | `af5487d3a472c7a3f61bfdfef5cf55b8b698295f422e930bb1e4278af43bf2a4` |
++| `th` | 1323 | `6132f4fb30bb91516aaa6f41f8713d4038a4806c24ef97916756e18d0c8d0456` |
++| `tl` | 1321 | `2b1239f2f88a653591c06776ea196ccb15fe579d5c9998c89106593e2cdd20e3` |
++| `tr` | 1324 | `f0d2c8733177a7f32bd8fbf5ad8fb29d8421b2dfecacd2fe4de529d1227ea0c6` |
++| `uk` | 1334 | `84d41ab3f38d584fdc7bf6559ed2746a61d378ed158cadaf578c7a0c8696165f` |
++| `vi` | 1327 | `7998c31c0fee128472ddcb988026865d07d75d09729d8de4a491cedd22ca69ff` |
++| `zh-MO` | 1329 | `2048af5794a1bc9d371b6d84a1a518b122c387216aea9c5b5a3c413a3725f280` |
++| `zh-TW` | 1328 | `c7a0c5ae81d9c07d6154a51e2b36e3e57f45a1c93b328e2ecd64f1e2d8daf27b` |
++<!-- PACK-TABLE:END -->
++
++## 6. ④ 回退链不变：所选 → en → key
++
++`LocaleFallbackChain` 把 ADR-004 的链显式化并可观测（`FallbackHit.step` = `SELECTED` / `FALLBACK_LANGUAGE` / `KEY`）：
++
++- 目录通过 provider 每次查表时读取，`LocaleCatalogRegistry.snapshot()` 是**不可变快照（O(1)）**：刚下载完成的 pack 立即对 `t()` 可见，无需重建链、无需改动 `core:common`。
++- `language` 可变并归一化（`zh_cn` → `zh-CN`，复用 `Localization.normalize`），切换即时生效（`LibraryPrefs.language` 语义不变：`system` | 代码）。
++- **一致性证明**：单测对 5 种语言 × 全部 key 断言 `chain.resolve(key) == Localization(catalogs, lang).t(key)`；并对**真实桌面 `en.json`（1386 键）/`zh-CN.json`（1396 键）**做同样断言，还断言“en 有、zh-CN 无”的键必须走 `FALLBACK_LANGUAGE` 步骤。回退链语义因此**不可能**与 P1 实现分叉。
++- 语言切换持久化：继续使用 `LibraryPrefs.language`（键 `language`，本次不改动 `android/app`）；`ZhConvertSettings` 与语言各自独立持久化（转换模式属 reader 配置，语言属库偏好，与桌面一致）。
++
++## 7. ⑤ 守卫：`scripts/check-locales.mjs`
++
++```
++node scripts/check-locales.mjs [--verbose] [--print-pack-table] [--skip-bundled]
++```
++
++| 段 | 检查 | 与 `sync-locales-android.js --check` 的关系 |
++|---|---|---|
++| A | 41 个源 JSON：合法、扁平、值全为字符串、非空；打包副本逐字节一致；`manifest.json` 的 locale 列表 + sha256 + 键数对齐；打包白名单**从 `sync-locales-android.js` 解析**（单一事实源） | **等价**（同语义、同失败条件、退出码 2）；多出的“键数对齐”是超集 |
++| B | `android/core/locale` 模块文件齐全、≥4 个 JVM 单测；`REMOTE_LOCALE_CODES` == 桌面 − 打包（39）；`BUNDLED_LOCALE_CODES` == `ANDROID_LOCALES` | P6 新增 |
++| C | `docs/p6-zh-locale-design.md` 必须引用 ADR-004；§5.3 表里每个远端 locale 的 sha256 必须与当前源文件一致 | P6 新增（下载清单防漂移） |
++| D | `OpenCcSeed` 四段词表：无重复键、无格式错误、无恒等规则、规模不低于下限；`ST_CHARACTERS` 1:1 且值不当键 | P6 新增（保护 T→S 反演） |
++| E | 接线状态：`settings.gradle`/`app/build.gradle` 未接线 → **WARN**（不失败） |  |
++
++- `--skip-bundled`：只跳过 A 段的“打包副本/manifest 比对”（源校验仍执行），用于在**既有漂移未修**时确认 P6 新增守卫全绿；默认开启全部检查，行为与 `sync --check` 一致。
++- **CI 接线（未改，属禁改文件）**：在 `.github/workflows/release-android.yml` 的 `sync-locales-android.js --check` 之后加一行
++  `run: node scripts/check-locales.mjs`。
++
++### 7.1 当前仓库状态（重要，非本卡引入）
++
++在本 worktree 的干净检出上（HEAD `9abe7904`），**`node scripts/sync-locales-android.js --check` 本身就已经失败**（退出码 2）：
++
++| locale | 源 keys | 打包 assets keys | manifest keys | 结论 |
++|---|---|---|---|---|
++| `en` | 1386 | 1387 | 1377 | 打包副本与 manifest 均过期 |
++| `zh-CN` | 1396 | 1406 | 1396 | 打包副本过期（manifest sha256 亦不符） |
++
++因此 `check-locales.mjs` 默认（与 sync 一致）也会报这 5 条 A 段失败 —— 这是**既有红状态**，与本卡改动无关。修复只需在允许改动这些生成物的任务里执行 `node scripts/sync-locales-android.js`（会重写 `android/app/src/main/assets/locales/{en,zh-CN,manifest}.json`）。本卡**未修改**这些文件（超出行范围）：`check-locales.mjs --skip-bundled` 可单独确认 P6 部分全绿。
++
++## 8. 未接线 / 后续清单（本卡文件范围之外）
++
++1. `android/settings.gradle`：`include ':core:locale'`（**禁改**）。
++2. `android/app/build.gradle`：`implementation project(':core:locale')`（**禁改**）。
++3. `android/app`：`preferencesDataStore("zh_convert")` + `DataStoreZhConvertSettingsStore`（§4.2）。
++4. 阅读管线：在渲染前对文本节点调用 `repository.engine().convert(text, mode, language)`（同一文本节点粒度，与桌面 `convertChinese` 注入点一致）。
++5. `I18nState`（`android/app/.../I18n.kt`）：启动时 `preloadBundled()`，语言切换时 `loader.pin(code)` + `loader.ensure(code)`（远端缺失 → 提示下载）。
++6. `LocalePackDownloader` 实现（OkHttp / DownloadManager）+ 下载 UI；`expectedPacks` 用 §5.3 表生成。
++7. CI 注册 `node scripts/check-locales.mjs`（§7）。
++
++## 9. 验证方式
++
++**在本 worktree 执行的**（Node 可用）：
++
++```bash
++node scripts/check-locales.mjs --verbose            # 默认：与 sync --check 等价 + P6 守卫
++node scripts/check-locales.mjs --skip-bundled       # 仅 P6 守卫（绕开既有漂移）
++node scripts/check-locales.mjs --print-pack-table   # 重新生成 §5.3 表
++node scripts/sync-locales-android.js --check        # 复现既有 A 段红状态（对照）
++```
++
++**本次实际观察到的结果**（2026-09-24，worktree 内）：
++
++- `check-locales.mjs --skip-bundled --verbose` → `check OK`（41 locale / 39 按需 / 种子与文档表全部校验通过，退出码 0）。
++- `check-locales.mjs`（默认）→ 与 `sync-locales-android.js --check` 一致地报 5 条 A 段既有漂移（退出码 2，非本卡引入，见 §7.1）。
++- **算法/数据交叉验证**（临时脚本，验证后已删除，不属交付物）：用 Node 复刻 `segments/applyChain/reverse/merge` 后，直接读取本模块的 `OpenCcSeed.kt` 真实词表，**跑通 54 条向量**——含本文档与单测中出现的全部期望串（s2t/s2tw/t2s/tw2s 段落、22 条消歧与缺口用例、用户词典优先级与片段锁定、AUTO 判定与信号计数 `[7,0]`/`[0,8]`、MaxMatch/segments、反向表规模 `524/64/69`、代理对保真）。该步骤保证“词表数据 + 单测期望值”自洽（编译期问题仍需 CI）。
++- **结构扫描**（临时脚本，已删除）：14 个 Kotlin 文件 / 3398 行，字符串与注释感知的括号配平、包声明、行尾、冲突标记全部通过；30 个公开符号均有声明。
++
++**需要 Android/CI 环境执行的**（本机无 `gradlew`/`kotlinc`/JDK17，故未能运行，见 §10 风险 1）：
++
++```bash
++./gradlew :core:locale:test        # 5 个测试类
++./gradlew :core:locale:selfCheck   # 无框架自检，打印 OK/FAIL
++```
++
++测试覆盖矩阵（对应 5 个验收项）：三态与桌面对齐、四条方向链、AUTO 判定阈值与边界、非中文 no-op、非汉字/代理对保真、用户词典优先级与片段锁定、词表格式/MaxMatch/反向/种子完整性、按需加载状态机/哈希校验/损坏处理/LRU/磁盘持久化、回退链三级 + 与 `Localization` 及真实桌面 JSON 的一致性、持久化编解码与桌面互通。
++
++## 10. 风险与回滚
++
++| 风险 | 影响 | 缓解 |
++|---|---|---|
++| 1. 本环境无法编译 Kotlin（无 gradle wrapper / kotlinc / JDK17） | 单测未实跑，只做了静态审查 + Node 守卫 | 代码刻意保持保守写法（无协程、无 Android、无高级语法）；CI `:core:locale:test` 为第一道验证；守卫脚本已机器校验词表与清单 |
++| 2. 词表是子集 | 生僻词/歧义单字转换不完整（§3.3 已列） | 全量上游词表可原样加载；缺口有测试固定，便于替换后回归 |
++| 3. 与桌面压缩产物的转换结果可能有细微差异 | 极少数词条结果不同 | 语义锚定在“配置键 + 词表语义 + 链路”三处；如需逐字节对齐，待 `D:\Project\kookit` 源码可得后做黄金向量回归 |
++| 4. 未接线（§8） | 功能在设备上尚不可用 | 接线点已文档化且为小改动；`check-locales.mjs` 会以 WARN 持续提示 |
++| 5. 下载包供应链 | 恶意/损坏 pack | sha256 白名单（§5.3）+ 结构校验 + 失败即删；可选后续加签名 |
++| 6. 既有 A 段漂移 | CI 守卫红 | 非本卡引入；修法是跑一次 `sync-locales-android.js`（§7.1） |
++
++**回滚**：本卡全部为**新增文件**，删除 `android/core/locale/`、`scripts/check-locales.mjs`、`docs/p6-zh-locale-design.md`、`docs/patches/p6-zh-locale.patch` 即完全回滚；由于未修改 `settings.gradle`/`app/build.gradle`/其他既有文件，回滚不影响任何现有构建。
+diff --git a/scripts/check-locales.mjs b/scripts/check-locales.mjs
+new file mode 100644
+index 00000000..f6056b87
+--- /dev/null
++++ b/scripts/check-locales.mjs
+@@ -0,0 +1,441 @@
++#!/usr/bin/env node
++// check-locales.mjs — P6 guard: locales + 简繁转换 (OpenCC port).
++//
++//   node scripts/check-locales.mjs                 # verify, exit 0/2
++//   node scripts/check-locales.mjs --verbose
++//   node scripts/check-locales.mjs --print-pack-table   # regenerate the doc table
++//
++// Part A is a superset of `node scripts/sync-locales-android.js --check`
++// (same semantics, same failure conditions, same whitelist — which is PARSED
++// from that script so the two can never disagree). Parts B–D cover the P6
++// additions and are the drift guards for:
++//
++//   B. android/core/locale module shape + the 39 on-demand locale list must
++//      equal `src/assets/locales` minus the bundled subset (ADR-004).
++//   C. docs/p6-zh-locale-design.md must carry the sha256 of every remote
++//      locale source (that table is the download manifest for runtime packs).
++//   D. the curated OpenCC seed must stay parseable and duplicate-free, and the
++//      S→T character table must stay reversible (1:1), because T→S is derived
++//      from it by value reversal.
++//
++// Wiring is reported as a WARNING, not a failure: adding ':core:locale' to
++// android/settings.gradle and the dependency to android/app/build.gradle is
++// outside this task's file scope (see the card constraints).
++//
++// ESM on purpose (the `.mjs` extension): no dependencies, no child processes —
++// the same checks the build-time bridge performs, plus the P6 drift guards.
++
++import fs from 'node:fs';
++import path from 'node:path';
++import crypto from 'node:crypto';
++import { fileURLToPath } from 'node:url';
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++const ROOT = path.join(__dirname, '..');
++const SRC_DIR = path.join(ROOT, 'src', 'assets', 'locales');
++const SYNC_SCRIPT = path.join(__dirname, 'sync-locales-android.js');
++const APP_ASSET_DIR = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'locales');
++const LOCALE_MODULE = path.join(ROOT, 'android', 'core', 'locale');
++const KOTLIN_DIR = path.join(LOCALE_MODULE, 'src', 'main', 'kotlin', 'com', 'koodoreader', 'core', 'locale');
++const TEST_DIR = path.join(LOCALE_MODULE, 'src', 'test', 'kotlin', 'com', 'koodoreader', 'core', 'locale');
++const SEED_FILE = path.join(KOTLIN_DIR, 'OpenCcSeed.kt');
++const LOADER_FILE = path.join(KOTLIN_DIR, 'LocaleRuntimeLoader.kt');
++const DESIGN_DOC = path.join(ROOT, 'docs', 'p6-zh-locale-design.md');
++const SETTINGS_GRADLE = path.join(ROOT, 'android', 'settings.gradle');
++const APP_GRADLE = path.join(ROOT, 'android', 'app', 'build.gradle');
++
++const VERBOSE = process.argv.includes('--verbose');
++const PRINT_TABLE = process.argv.includes('--print-pack-table');
++// Diagnostic only: skips the part-A bundled/manifest comparison so the P6
++// guards can be verified while a pre-existing sync drift is still unfixed.
++// Source validation is always performed; the default behaviour (flag absent) is
++// identical to `sync-locales-android.js --check`.
++const SKIP_BUNDLED = process.argv.includes('--skip-bundled');
++
++const failures = [];
++const warnings = [];
++
++function fail(msg) {
++  failures.push(msg);
++}
++
++function warn(msg) {
++  warnings.push(msg);
++}
++
++function ok(msg) {
++  if (VERBOSE) console.log(`[check-locales]   ✓ ${msg}`);
++}
++
++function read(file) {
++  return fs.readFileSync(file, 'utf8');
++}
++
++function sha256(text) {
++  return crypto.createHash('sha256').update(text).digest('hex');
++}
++
++function escapeRegExp(value) {
++  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++}
++
++// ─── shared policy: the bundled whitelist lives in sync-locales-android.js ────
++
++function bundledWhitelist() {
++  if (!fs.existsSync(SYNC_SCRIPT)) {
++    fail(`missing build-time locale bridge: ${path.relative(ROOT, SYNC_SCRIPT)}`);
++    return [];
++  }
++  const match = /ANDROID_LOCALES\s*=\s*\[([^\]]*)\]/.exec(read(SYNC_SCRIPT));
++  if (!match) {
++    fail('cannot parse ANDROID_LOCALES from scripts/sync-locales-android.js');
++    return [];
++  }
++  // the sync script uses single quotes: ['en', 'zh-CN']
++  return [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
++}
++
++// ─── A. sources + bundled assets (parity with sync-locales-android.js --check) ─
++
++function checkSources(bundled) {
++  const sources = new Map();
++  if (!fs.existsSync(SRC_DIR)) {
++    fail(`missing desktop locales dir: ${SRC_DIR}`);
++    return sources;
++  }
++  const codes = fs
++    .readdirSync(SRC_DIR)
++    .filter((name) => name.endsWith('.json'))
++    .map((name) => name.slice(0, -'.json'.length))
++    .sort();
++
++  for (const code of codes) {
++    const raw = read(path.join(SRC_DIR, `${code}.json`));
++    let parsed;
++    try {
++      parsed = JSON.parse(raw); // same validation the sync script performs
++    } catch (error) {
++      fail(`locale ${code}.json is not valid JSON: ${error.message}`);
++      continue;
++    }
++    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
++      fail(`locale ${code}.json is not a flat object`);
++      continue;
++    }
++    const keys = Object.keys(parsed);
++    if (keys.length === 0) fail(`locale ${code} parsed empty`);
++    const nonString = keys.filter((key) => typeof parsed[key] !== 'string');
++    if (nonString.length > 0) fail(`locale ${code} has non-string values: ${nonString[0]}`);
++    sources.set(code, { raw, keys: keys.length, sha256: sha256(raw) });
++  }
++
++  if (sources.size !== 41) fail(`expected 41 desktop locales, found ${sources.size}`);
++  ok(`desktop sources: ${sources.size} locales, all flat string maps`);
++  return sources;
++}
++
++function checkBundledAssets(bundled, sources) {
++  for (const code of bundled) {
++    const source = sources.get(code);
++    if (!source) {
++      fail(`bundled locale ${code} has no desktop source`);
++      continue;
++    }
++    const outFile = path.join(APP_ASSET_DIR, `${code}.json`);
++    if (!fs.existsSync(outFile)) {
++      fail(`missing bundled locale: ${path.relative(ROOT, outFile)} — run sync-locales-android.js`);
++      continue;
++    }
++    const bundledRaw = read(outFile);
++    if (bundledRaw !== source.raw) {
++      fail(`bundled ${code}.json drifted from src/assets/locales — run sync-locales-android.js`);
++    } else {
++      ok(`bundled ${code}.json: byte-identical, ${source.keys} keys`);
++    }
++  }
++
++  const manifestFile = path.join(APP_ASSET_DIR, 'manifest.json');
++  if (!fs.existsSync(manifestFile)) {
++    fail('missing bundled locales manifest.json — run sync-locales-android.js');
++    return;
++  }
++  let manifest;
++  try {
++    manifest = JSON.parse(read(manifestFile));
++  } catch (error) {
++    fail(`bundled manifest.json is not valid JSON: ${error.message}`);
++    return;
++  }
++  for (const code of bundled) {
++    const source = sources.get(code);
++    if (!manifest.locales || !manifest.locales.includes(code)) {
++      fail(`manifest missing locale ${code}`);
++      continue;
++    }
++    if (!source) continue;
++    if (manifest.source?.[code]?.sha256 !== source.sha256) {
++      fail(`manifest sha256 drift for ${code} — run sync-locales-android.js`);
++    }
++    if (manifest.source?.[code]?.keys !== source.keys) {
++      fail(`manifest key-count drift for ${code} — run sync-locales-android.js`);
++    } else {
++      ok(`manifest ${code}: sha256 + ${source.keys} keys aligned`);
++    }
++  }
++}
++
++// ─── B. P6 module shape + the 39 on-demand locales ───────────────────────────
++
++const REQUIRED_FILES = [
++  'build.gradle',
++  'src/main/assets/locales/.gitkeep',
++  'src/main/kotlin/com/koodoreader/core/locale/ZhConvertEngine.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/OpenCcDictionary.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/OpenCcSeed.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/ZhConvertSettings.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/LocaleRuntimeLoader.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/LocaleFallbackChain.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/FallbackKey.kt',
++  'src/main/kotlin/com/koodoreader/core/locale/LocalePackStore.kt',
++];
++
++const REQUIRED_TESTS = [
++  'ZhConvertEngineTest.kt',
++  'OpenCcDictionaryTest.kt',
++  'LocaleRuntimeLoaderTest.kt',
++  'LocaleFallbackChainTest.kt',
++  'ZhConvertSettingsTest.kt',
++];
++
++function kotlinList(file, name) {
++  const src = read(file);
++  const match = new RegExp(`${name}[^=]*=\\s*listOf\\(([\\s\\S]*?)\\)`).exec(src);
++  if (!match) return null;
++  return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
++}
++
++function checkModule(bundled, sources) {
++  for (const relative of REQUIRED_FILES) {
++    if (!fs.existsSync(path.join(LOCALE_MODULE, relative))) {
++      fail(`missing module file: android/core/locale/${relative}`);
++    }
++  }
++  if (!fs.existsSync(TEST_DIR)) {
++    fail('missing JVM test sources for android/core/locale');
++    return;
++  }
++  const tests = fs.readdirSync(TEST_DIR).filter((name) => name.endsWith('Test.kt'));
++  if (tests.length < 4) {
++    fail(`expected >= 4 JVM unit tests, found ${tests.length}`);
++  }
++  for (const required of REQUIRED_TESTS) {
++    if (!tests.includes(required)) fail(`missing unit test: ${required}`);
++  }
++  ok(`module files present, ${tests.length} JVM unit tests`);
++
++  if (!fs.existsSync(LOADER_FILE)) return;
++  const remote = kotlinList(LOADER_FILE, 'REMOTE_LOCALE_CODES');
++  if (!remote) {
++    fail('cannot parse REMOTE_LOCALE_CODES from LocaleRuntimeLoader.kt');
++    return;
++  }
++  const expected = [...sources.keys()].filter((code) => !bundled.includes(code)).sort();
++  const actual = [...remote].sort();
++  if (actual.join(',') !== expected.join(',')) {
++    const missing = expected.filter((code) => !actual.includes(code));
++    const extra = actual.filter((code) => !expected.includes(code));
++    fail(
++      `REMOTE_LOCALE_CODES drifted from the desktop locale set ` +
++        `(missing: ${missing.join(',') || 'none'}; unexpected: ${extra.join(',') || 'none'})`,
++    );
++  } else {
++    ok(`REMOTE_LOCALE_CODES: ${actual.length} on-demand locales match the desktop set`);
++  }
++
++  const kotlinBundled = kotlinList(LOADER_FILE, 'BUNDLED_LOCALE_CODES');
++  if (!kotlinBundled) {
++    fail('cannot parse BUNDLED_LOCALE_CODES from LocaleRuntimeLoader.kt');
++  } else if (kotlinBundled.join(',') !== [...bundled].join(',')) {
++    fail(
++      `BUNDLED_LOCALE_CODES (${kotlinBundled.join(', ')}) != ANDROID_LOCALES ` +
++        `(${[...bundled].join(', ')}) in sync-locales-android.js`,
++    );
++  } else {
++    ok(`BUNDLED_LOCALE_CODES: ${kotlinBundled.join(', ')} (ADR-004)`);
++  }
++}
++
++// ─── C. the pack manifest table in the design doc ────────────────────────────
++
++function printPackTable(bundled, sources) {
++  const rows = [...sources.keys()]
++    .filter((code) => !bundled.includes(code))
++    .sort()
++    .map((code) => {
++      const source = sources.get(code);
++      return `| \`${code}\` | ${source.keys} | \`${source.sha256}\` |`;
++    });
++  console.log(rows.join('\n'));
++}
++
++function checkDesignDoc(bundled, sources) {
++  if (!fs.existsSync(DESIGN_DOC)) {
++    fail(`missing design doc: ${path.relative(ROOT, DESIGN_DOC)}`);
++    return;
++  }
++  const doc = read(DESIGN_DOC);
++  if (!/ADR-004/.test(doc)) fail('design doc must reference ADR-004 (i18n subset policy)');
++
++  const remote = [...sources.keys()].filter((code) => !bundled.includes(code));
++  const stale = [];
++  for (const code of remote) {
++    const source = sources.get(code);
++    const row = new RegExp(
++      `\\|\\s*\`${escapeRegExp(code)}\`\\s*\\|\\s*\\d+\\s*\\|\\s*\`([0-9a-f]{64})\`\\s*\\|`,
++    ).exec(doc);
++    if (!row) {
++      stale.push(`${code} (row missing)`);
++    } else if (row[1] !== source.sha256) {
++      stale.push(`${code} (sha256 drift)`);
++    }
++  }
++  if (stale.length > 0) {
++    fail(
++      `docs/p6-zh-locale-design.md pack table is stale: ${stale.slice(0, 5).join(', ')}` +
++        `${stale.length > 5 ? ` … (+${stale.length - 5})` : ''} — run: node scripts/check-locales.mjs --print-pack-table`,
++    );
++  } else {
++    ok(`design doc pack table: ${remote.length} sha256 entries current`);
++  }
++}
++
++// ─── D. curated OpenCC seed integrity ────────────────────────────────────────
++
++function seedSection(source, name) {
++  const match = new RegExp(`val ${name}[\\s\\S]*?"""([\\s\\S]*?)"""`).exec(source);
++  if (!match) return null;
++  const entries = new Map();
++  const duplicates = [];
++  const malformed = [];
++  const identity = [];
++  for (const rawLine of match[1].split('\n')) {
++    const line = rawLine.trim();
++    if (line === '' || line.startsWith('#')) continue;
++    const parts = line.split('\t');
++    if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
++      malformed.push(JSON.stringify(line));
++      continue;
++    }
++    const [key, value] = parts;
++    if (entries.has(key)) duplicates.push(key);
++    else entries.set(key, value);
++    if (key === value) identity.push(key);
++  }
++  return { entries, duplicates, malformed, identity };
++}
++
++function checkSeed() {
++  if (!fs.existsSync(SEED_FILE)) {
++    fail(`missing seed dictionaries: ${path.relative(ROOT, SEED_FILE)}`);
++    return;
++  }
++  const source = read(SEED_FILE);
++  const minimums = { ST_CHARACTERS: 500, ST_PHRASES: 60, TW_PHRASES: 60, TS_EXTRA_CHARACTERS: 5 };
++  for (const [name, minimum] of Object.entries(minimums)) {
++    const section = seedSection(source, name);
++    if (!section) {
++      fail(`OpenCcSeed.kt: cannot parse ${name}`);
++      continue;
++    }
++    if (section.duplicates.length > 0) {
++      fail(`OpenCcSeed.$name has duplicated keys: ${section.duplicates.slice(0, 5).join(', ')}`);
++    }
++    if (section.malformed.length > 0) {
++      fail(`OpenCcSeed.$name has malformed lines: ${section.malformed.slice(0, 3).join(', ')}`);
++    }
++    if (section.identity.length > 0) {
++      fail(`OpenCcSeed.$name has identity rules (key == value): ${section.identity.slice(0, 5).join(', ')}`);
++    }
++    if (section.entries.size < minimum) {
++      fail(`OpenCcSeed.$name shrank to ${section.entries.size} entries (< ${minimum})`);
++    }
++    ok(`seed ${name}: ${section.entries.size} entries, duplicate-free`);
++  }
++
++  const characters = seedSection(source, 'ST_CHARACTERS');
++  if (!characters) return;
++  const reverse = new Map();
++  const collisions = [];
++  const chaining = [];
++  for (const [key, value] of characters.entries) {
++    if (reverse.has(value)) collisions.push(`${value} <- ${reverse.get(value)},${key}`);
++    else reverse.set(value, key);
++    if (characters.entries.has(value)) chaining.push(value);
++  }
++  if (collisions.length > 0) {
++    fail(`ST_CHARACTERS is not reversible (T→S would lose data): ${collisions.slice(0, 5).join(' | ')}`);
++  }
++  if (chaining.length > 0) {
++    fail(`ST_CHARACTERS values are also keys (would chain-convert): ${chaining.slice(0, 5).join(', ')}`);
++  }
++  ok('ST_CHARACTERS is 1:1 and chain-free (T→S derivation is safe)');
++}
++
++// ─── E. wiring status (warning only — those files are out of scope) ──────────
++
++function checkWiring() {
++  const included = fs.existsSync(SETTINGS_GRADLE) && /include\s+':core:locale'/.test(read(SETTINGS_GRADLE));
++  const depended = fs.existsSync(APP_GRADLE) && /project\(':core:locale'\)/.test(read(APP_GRADLE));
++  if (!included) {
++    warn(
++      "android/settings.gradle does not include ':core:locale' yet — add " +
++        "include ':core:locale' (not modified by this task: forbidden file)",
++    );
++  }
++  if (!depended) {
++    warn(
++      "android/app/build.gradle does not depend on ':core:locale' yet — add " +
++        "implementation project(':core:locale') (not modified by this task: forbidden file)",
++    );
++  }
++  if (included && depended) ok('module is wired into the Android build');
++}
++
++// ─── main ────────────────────────────────────────────────────────────────────
++
++function main() {
++  const bundled = bundledWhitelist();
++  const sources = checkSources(bundled);
++  const codes = [...sources.keys()];
++
++  if (PRINT_TABLE) {
++    printPackTable(bundled, sources);
++    return;
++  }
++
++  if (SKIP_BUNDLED) {
++    warn('--skip-bundled: bundled assets + manifest comparison skipped (pre-existing drift, see docs §7.1)');
++  } else {
++    checkBundledAssets(bundled, sources);
++  }
++  checkModule(bundled, sources);
++  checkDesignDoc(bundled, sources);
++  checkSeed();
++  checkWiring();
++
++  for (const message of warnings) console.warn(`[check-locales] WARN ${message}`);
++  if (failures.length > 0) {
++    console.error(`[check-locales] FAIL — ${failures.length} problem(s):`);
++    for (const message of failures) console.error(`  • ${message}`);
++    process.exit(2);
++  }
++  const remote = codes.length - bundled.length;
++  console.log(
++    `[check-locales] check OK — ${codes.length} desktop locales, ` +
++      `${bundled.length} bundled (${bundled.join(', ')}), ${remote} on demand, ` +
++      `seed + doc table verified`,
++  );
++}
++
++main();
