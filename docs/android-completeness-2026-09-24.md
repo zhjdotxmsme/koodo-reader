@@ -391,6 +391,8 @@ release 形态最大单项。三条路线中，**用户选择维持现状**：�
 ```
 gradle -p android :feature:ocr:test                  → 39/39 ✅（新增 OcrModelInstallerTest 10 项）
 node scripts/check-ocr-manifest.js                    → 6/6 ✅（负例：token 写成 ocr_typo → exit 1 并列出已知 token）
+gradle -p android --continue test                     → BUILD SUCCESSFUL
+                                                        1195 个唯一测试 / 0 失败 / 1516 次执行 / 22 module 全绿
 gradle -p android :app:assembleDebug -Ptarget=native  → BUILD SUCCESSFUL（debug 37.13 MB）
 gradle -p android :app:assembleRelease -Ptarget=native → BUILD SUCCESSFUL（**18.90 MB，与上一轮持平**）
 node scripts/check-elf-16kb.js <release apk>          → 4 个 .so 全 PASS（OCR 未引入任何 `.so`）
