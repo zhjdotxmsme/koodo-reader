@@ -1,0 +1,46 @@
+// core/designsystem — typography tokens, theme presets, font catalog entries,
+// and the reader-appearance config codec.
+//
+// PURE KOTLIN JVM MODULE (same rationale as :core:common / :engine:link):
+//   no Android dependency — unit-testable on any JVM, consumable by the
+//   Compose reader and the future native rendering pipeline.
+//
+// PROTOCOL MIRROR — field names / default values are extracted from the
+//   desktop source (src/utils/reader/styleUtil.ts, themeUtil.ts,
+//   backgroundUtil.ts, constants/dropdownList.tsx, constants/themeList.tsx)
+//   to guarantee the Room / backup-zip wire format stays desktop-compatible.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Test only — this module has zero runtime dependencies.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner:
+//   gradle :core:designsystem:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the design-system self-checks (tokens, theme presets, font keys, codec round-trip) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.core.designsystem.DesignSystemSelfCheckKt'
+}
