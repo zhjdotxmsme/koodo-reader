@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "docs/android-pdf-perf.schema.json",
+  "title": "Koodo Android PDF reader performance baseline",
+  "type": "object",
+  "required": ["version", "renderer", "measurements"],
+  "properties": {
+    "version": { "type": "string" },
+    "capturedAt": { "type": ["string", "null"] },
+    "device": { "type": ["string", "null"] },
+    "buildVariant": { "type": "string" },
+    "renderer": { "type": "string" },
+    "fingerprint": { "type": "string" },
+
+    "testCorpus": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "path", "pageCount", "sizeBytes", "kind"],
+            "properties": {
+              "label": { "type": "string" },
+              "path": { "type": "string" },
+              "pageCount": { "type": "integer", "minimum": 1 },
+              "sizeBytes": { "type": "integer", "minimum": 0 },
+              "kind": { "type": "string", "enum": ["text", "mixed", "scan", "text+cjk"] },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "openColdMsP90": { "type": "integer" },
+                  "openWarmMsP90": { "type": "integer" },
+                  "pageTurnP90Ms": { "type": "integer" },
+                  "peakRssMb": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "measurements": {
+      "type": "object",
+      "required": ["apkSizeMb"],
+      "properties": {
+        "openColdMsP90": { "type": ["integer", "null"] },
+        "openWarmMsP90": { "type": ["integer", "null"] },
+        "firstFrameMsP90": { "type": ["integer", "null"] },
+        "pageTurnP90Ms": { "type": ["integer", "null"] },
+        "searchP90Ms": { "type": ["integer", "null"] },
+        "outlineResolveMs": { "type": ["integer", "null"] },
+        "peakRssMb": { "type": ["integer", "null"] },
+        "apkSizeMb": { "type": "number" },
+        "engineApkDeltaMb": { "type": ["number", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "textLayerAccuracy": {
+      "type": "object",
+      "properties": {
+        "method": { "type": "string" },
+        "samples": { "type": "integer" },
+        "searchHitAgreement": { "type": ["number", "null"] },
+        "rangeExtractionAgreement": { "type": ["number", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "rationale": {
+      "type": "object",
+      "properties": {
+        "renderer": { "type": "string" },
+        "excludedAlternatives": { "type": "array", "items": { "type": "string" } },
+        "sixteenKbCheck": {
+          "type": "object",
+          "properties": {
+            "script": { "type": "string" },
+            "guardedAbis": { "type": "array", "items": { "type": "string" } },
+            "expectedOutcome": { "type": "string" }
+          }
+        },
+        "loadThrottling": { "type": "string" }
+      }
+    }
+  }
+}

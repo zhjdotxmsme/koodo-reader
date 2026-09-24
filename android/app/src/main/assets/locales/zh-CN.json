@@ -1393,6 +1393,18 @@
   "Select book files": "选择书籍文件",
   "Import books from folder": "从文件夹导入书籍",
   "Backup / restore": "备份 / 恢复",
+  "Local backup only — no cloud sync.": "仅本地备份——不支持云同步。",
+  "Full desktop backup (zip)": "完整桌面备份 (zip)",
+  "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.": "打包图书、笔记、高亮、书签、生词、封面和图书文件；可在桌面端通过备份对话框恢复。",
+  "Import zip": "导入 zip",
+  "Export zip": "导出 zip",
+  "Data export / import (CSV / JSON)": "数据导出 / 导入 (CSV / JSON)",
+  "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.": "对应桌面端的 `exportNotes` / `exportHighlights` / `exportDictionaryHistory` 流程；可与桌面端生成的任意 CSV 或 JSON 文件往返。",
+  "Notes": "笔记",
+  "Highlights": "高亮",
+  "Dictionary → CSV": "生词 → CSV",
+  "Dictionary → JSON": "生词 → JSON",
+  "Import CSV / JSON": "导入 CSV / JSON",
   "Library is empty": "书库为空",
   "Duplicate": "重复"
 }

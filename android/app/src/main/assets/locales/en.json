@@ -1374,6 +1374,18 @@
   "Select book files": "Select book files",
   "Import books from folder": "Import books from folder",
   "Backup / restore": "Backup / restore",
+  "Local backup only — no cloud sync.": "Local backup only — no cloud sync.",
+  "Full desktop backup (zip)": "Full desktop backup (zip)",
+  "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.": "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.",
+  "Import zip": "Import zip",
+  "Export zip": "Export zip",
+  "Data export / import (CSV / JSON)": "Data export / import (CSV / JSON)",
+  "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.": "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.",
+  "Notes": "Notes",
+  "Highlights": "Highlights",
+  "Dictionary → CSV": "Dictionary → CSV",
+  "Dictionary → JSON": "Dictionary → JSON",
+  "Import CSV / JSON": "Import CSV / JSON",
   "Library is empty": "Library is empty",
   "Duplicate": "Duplicate"
 }

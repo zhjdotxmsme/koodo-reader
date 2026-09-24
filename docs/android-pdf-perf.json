@@ -1,0 +1,85 @@
+{
+  "$schema": "docs/android-pdf-perf.schema.json",
+  "version": "1",
+  "capturedAt": "pending-device",
+  "device": "pending-device",
+  "buildVariant": "debug (native target, arm64-v8a)",
+  "renderer": "pdf.js (Apache-2.0) inside engine WebView",
+  "fingerprint": "—",
+
+  "testCorpus": {
+    "name": "Koodo PDF benchmark set",
+    "files": [
+      {
+        "label": "small text PDF",
+        "path": "docs/fixtures/perf/small.pdf",
+        "pageCount": 50,
+        "sizeBytes": 524288,
+        "kind": "text"
+      },
+      {
+        "label": "medium mixed PDF",
+        "path": "docs/fixtures/perf/medium.pdf",
+        "pageCount": 250,
+        "sizeBytes": 8388608,
+        "kind": "mixed"
+      },
+      {
+        "label": "1000-page PDF (target)",
+        "path": "docs/fixtures/perf/1000pages.pdf",
+        "pageCount": 1000,
+        "sizeBytes": 33554432,
+        "kind": "text+cjk",
+        "target": {
+          "openColdMsP90": 1500,
+          "openWarmMsP90": 600,
+          "pageTurnP90Ms": 50,
+          "peakRssMb": 220
+        }
+      },
+      {
+        "label": "large scan PDF (perf risk)",
+        "path": "docs/fixtures/perf/scan500.pdf",
+        "pageCount": 500,
+        "sizeBytes": 67108864,
+        "kind": "scan"
+      }
+    ]
+  },
+
+  "measurements": {
+    "openColdMsP90": null,
+    "openWarmMsP90": null,
+    "firstFrameMsP90": null,
+    "pageTurnP90Ms": null,
+    "searchP90Ms": null,
+    "outlineResolveMs": null,
+    "peakRssMb": null,
+    "apkSizeMb": 20.03,
+    "engineApkDeltaMb": 1.7,
+    "notes": "Pending device measurement — see scripts/measure-pdf-perf.js for the runner recipe."
+  },
+
+  "textLayerAccuracy": {
+    "method": "compare against desktop pdf.js baseline on the same corpus",
+    "samples": 100,
+    "searchHitAgreement": null,
+    "rangeExtractionAgreement": null,
+    "notes": "Pending device measurement."
+  },
+
+  "rationale": {
+    "renderer": "pdf.js (P0 POC, docs/android-pdf-poc.md)",
+    "excludedAlternatives": [
+      "PdfiumAndroid (libpdfiumandroid.so fails 16KB page alignment; upstream unmaintained)",
+      "PdfBox-Android (slow rendering, OOM-prone for large PDFs)",
+      "Framework PdfRenderer (text-layer-less; reserved for snapshot/print bypass)"
+    ],
+    "sixteenKbCheck": {
+      "script": "scripts/check-elf-16kb.{sh,js}",
+      "guardedAbis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "expectedOutcome": "no .so files are introduced by the PDF engine path (pdf.js is pure JS); framework .so files already pass the check"
+    },
+    "loadThrottling": "P0 §3 risk: throttle PDF range reads to prevent WebView OOM on large scans (Readest #4670 pattern). The host applies a 16-request cap per second."
+  }
+}

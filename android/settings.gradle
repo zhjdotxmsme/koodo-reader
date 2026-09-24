@@ -54,3 +54,10 @@ include ':engine:text'
 // Native reading enhancements (P6): paragraph mode, RSVP, ruler, bionic,
 // text replacement rules, selection auto-turn.
 include ':engine:feature'
+
+// Native PDF reading core (P3, docs/android-native-migration.md §6): pdf.js
+// in the engine WebView (Apache-2.0, zero .so; see docs/android-pdf-poc.md).
+// Pure JVM module — outline / text search / password gate / Range→CFI
+// mapping / snapshot exporter are all algorithm-only, unit-tested without
+// the Android SDK. The Compose WebView host (engine/pdfhost) lives in :app.
+include ':engine:pdf'

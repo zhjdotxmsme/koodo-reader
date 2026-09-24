@@ -2,6 +2,9 @@ package com.koodoreader.reader.shell
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -38,10 +41,26 @@ fun ShellNavHost() {
             route = ShellRoutes.READER,
             arguments = listOf(navArgument("bookKey") { type = NavType.StringType }),
         ) { entry ->
-            ReaderPlaceholderScreen(
-                bookKey = Uri.decode(entry.arguments?.getString("bookKey").orEmpty()),
-                onBack = { navController.popBackStack() },
-            )
+            // P3 routing dispatch — the book format decides which reader
+            // composable mounts. PDF lands on NativePdfScreen; everything
+            // else falls through to the P1 placeholder for now (P2
+            // native EPUB lands later; see docs/android-native-migration.md).
+            val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())
+            val viewModel: LibraryViewModel = viewModel()
+            val book by viewModel.book(key).collectAsStateWithLifecycle(initialValue = null)
+            val format = book?.format?.uppercase()
+            when (format) {
+                "PDF" -> NativePdfScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
+                )
+                else -> ReaderPlaceholderScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
+                )
+            }
         }
     }
 }

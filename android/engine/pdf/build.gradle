@@ -1,0 +1,74 @@
+// engine/pdf — native PDF reader core (P3, docs/android-native-migration.md §6).
+//
+// PURE KOTLIN JVM MODULE on purpose (same rationale as :engine:cfi / :layout /
+// :gesture):
+//   - no Android dependency, so it is unit-testable on any JVM without the
+//     Android SDK, and
+//   - the Compose WebView host (engine/pdfhost, :app) and the future reader
+//     pipeline can both consume it without dragging Android APIs.
+//
+// The renderer itself (pdf.js, Apache-2.0) runs INSIDE the engine WebView —
+// see docs/android-pdf-poc.md. Why no native .so? PdfiumAndroid's
+// libpdfiumandroid.so is NOT 16KB-page-aligned (Google Play hard requirement
+// on Android 15+), and the upstream is unmaintained; PdfBox-Android renders
+// too slow; framework PdfRenderer lacks a text layer. pdf.js in WebView is
+// the architecture-consistent choice: same Range/CFI coordinate system as
+// EPUB/MOBI, zero extra APK .so footprint.
+//
+// What lives here:
+//   - OutlineResolver    : pdf.js getOutline() JSON -> tree (OutlineEntry)
+//   - PdfSearchEngine    : textLayer-based forward search with snippets
+//   - PasswordGate       : re-prompt loop with desktop-keyed cache
+//   - CfiPdfMapper       : Range (page, x, y, w, h) <-> PDF-native address
+//                          (cfi JSON: { fingerprint, page, ... })
+//   - PdfAnnotations     : persistent storage model for highlights / notes
+//   - PdfSnapshotExporter: framework PdfRenderer snapshot contract (the
+//                          "导出当前页为图片" / 打印 path; consumer is the
+//                          Android-host module since framework classes are
+//                          not visible from a pure JVM module — see the
+//                          PdfSnapshotSpec description)
+//
+// The vendor asset bundle (public/lib/pdfjs/) is staged into the app's
+// assets by scripts/stage-pdf-engine-assets.js at build time — it is NOT a
+// runtime dependency of this JVM module.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // No runtime dependencies at all: the engine is deliberately
+    // dependency-free so it stays portable and cheap to verify. CFI
+    // compatibility for PDF annotations uses a custom page-step grammar
+    // (CfiPdfMapper.pageStepCfi); we don't depend on :engine:cfi because
+    // the PDF address format is not the EPUB CFI string.
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:cfi:selfCheck):
+//   gradle :engine:pdf:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the native PDF engine self-check (outline / search / password / Range mapping) without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.pdf.PdfSelfCheckKt'
+}

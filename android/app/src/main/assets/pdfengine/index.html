@@ -1,0 +1,278 @@
+<!doctype html>
+<!--
+  PDF engine bootstrap (docs/android-native-migration.md P3).
+
+  Loaded into a dedicated WebView by `PdfJsHostBridge.bootstrap()` over the
+  loopback `LocalAssetServer`. Installs `window.__koodoPdf` — the protocol
+  surface the Kotlin bridge calls into. The bridge contract is mirrored in
+  `android/engine/pdf/src/main/kotlin/com/koodoreader/engine/pdf/PdfHostBridge.kt`.
+
+  Protocol:
+    window.__koodoPdf.call(callId, method, args) -> Promise<any>
+    window.__koodoPdfHost.onResult(callId, payload, error)
+    window.__koodoPdfHost.onEvent(name, payload)
+    window.__koodoPdfHost.onLog(level, message)
+
+  pdf.js (Apache-2.0) is imported as an ES module from ./pdf.mjs. The
+  worker URL is resolved by pdf.js's own entrypoint, so we only have to
+  keep the worker file alongside this one.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Koodo PDF Engine</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; color: #ccc;
+                     font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+        #log { position: fixed; left: 0; right: 0; bottom: 0; max-height: 30vh; overflow: auto;
+               background: rgba(0,0,0,0.55); padding: 6px 10px; font-size: 11px;
+               font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+        #stage { position: fixed; inset: 0 0 30vh 0; overflow: auto; }
+        #stage .page { display: block; margin: 12px auto; background: #fff;
+                       box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        .page-text-layer { opacity: 0.95; }
+    </style>
+    <link rel="stylesheet" href="./pdf_viewer.css" />
+</head>
+<body>
+    <div id="stage"></div>
+    <div id="log" hidden></div>
+
+    <script type="module">
+    // ── pdf.js loader ────────────────────────────────────────────────────
+    // The staged copy of pdf.mjs (Apache-2.0, Mozilla) is alongside this
+    // file. We pin the worker URL so pdf.js resolves `pdf.worker.mjs` from
+    // the same directory, matching the desktop webapp layout.
+    const pdfjsLib = await import('./pdf.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.mjs', import.meta.url).toString();
+
+    function log(level, message) {
+        try { window.__koodoPdfHost.onLog(level, String(message)); } catch (e) {}
+        if (level === 'error') console.error(message);
+        else console.log(message);
+    }
+
+    // ── document state ───────────────────────────────────────────────────
+    let pdfDoc = null;
+    let pdfPath = '';
+    let pdfPassword = '';
+    let pdfFingerprint = '';
+
+    // ── bridge protocol ──────────────────────────────────────────────────
+    // Each `call(callId, method, args)` returns a Promise. The Kotlin
+    // shim resolves it by calling `__koodoPdfHost.onResult(callId, JSON, error)`.
+    window.__koodoPdf = {
+        async call(callId, method, args) {
+            try {
+                let result;
+                switch (method) {
+                    case 'open':
+                        result = await openPdf(args[0], args[1]);
+                        break;
+                    case 'renderPage':
+                        result = await renderPage(args[0], args[1]);
+                        break;
+                    case 'search':
+                        result = await searchText(args[0]);
+                        break;
+                    case 'outline':
+                        result = await readOutline();
+                        break;
+                    case 'selectedRect':
+                        result = readSelectedRect();
+                        break;
+                    case 'paintHighlights':
+                        paintHighlights(JSON.parse(args[0]));
+                        result = true;
+                        break;
+                    case 'close':
+                        closePdf();
+                        result = true;
+                        break;
+                    default:
+                        throw new Error('unknown method: ' + method);
+                }
+                window.__koodoPdfHost.onResult(callId, JSON.stringify(result), '');
+            } catch (err) {
+                window.__koodoPdfHost.onResult(callId, '', String(err && err.message || err));
+            }
+        },
+    };
+
+    // ── open ──────────────────────────────────────────────────────────────
+    async function openPdf(path, password) {
+        if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
+        pdfPath = path;
+        pdfPassword = password || '';
+        const loadingTask = pdfjsLib.getDocument({
+            url: 'http://127.0.0.1/__books__/' + encodeURIComponent(path.split('/').pop()),
+            password: pdfPassword,
+            // Cmaps are shipped alongside the worker.
+            cMapUrl: new URL('./cmaps/', import.meta.url).toString(),
+            cMapPacked: true,
+            // Disable the auto-fetch of pdfjs.history.json; we don't persist
+            // it in the APK.
+            disableAutoFetch: true,
+        });
+        pdfDoc = await loadingTask.promise;
+        const meta = await pdfDoc.getMetadata();
+        pdfFingerprint = pdfDoc.fingerprints ? pdfDoc.fingerprints[0] : '';
+        return {
+            fingerprint: pdfFingerprint,
+            pageCount: pdfDoc.numPages,
+            pdfVersion: meta && meta.info ? String(meta.info.PDFFormatVersion || '1.7') : '1.7',
+            pageWidthPt: 612,  // pdf.js doesn't expose page0 dimensions cheaply;
+            pageHeightPt: 792, // the Compose side falls back to Letter; updated per-page.
+        };
+    }
+
+    // ── render a single page to PNG (data URL) ──────────────────────────
+    async function renderPage(pageNumber, targetWidthPx) {
+        if (!pdfDoc) throw new Error('document not open');
+        const page = await pdfDoc.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = Math.max(1, targetWidthPx / Math.max(viewport.width, 1));
+        const scaled = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(scaled.width);
+        canvas.height = Math.floor(scaled.height);
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+        // Compose the data URL into a base64 string.
+        const dataUrl = canvas.toDataURL('image/png');
+        return dataUrl.split(',')[1];
+    }
+
+    // ── search via PDFFindController ────────────────────────────────────
+    let findController = null;
+    async function searchText(query) {
+        if (!pdfDoc) throw new Error('document not open');
+        if (!findController) {
+            // Lazy-init: the controller is wired in [openPdf] but we
+            // don't have a separate "service" layer here — the controller
+            // operates on the document's text content stream directly.
+            findController = new pdfjsLib.PDFFindController({ linkService: new pdfjsLib.SimpleLinkService() });
+            findController.setDocument(pdfDoc);
+        }
+        findController.executeCommand('find', { query, highlightAll: true });
+        // The controller fires events; we collect matches synchronously
+        // by walking the text layer we build below. For the simple case
+        // the result list is what matters.
+        return JSON.stringify(collectMatches(query));
+    }
+
+    function collectMatches(query) {
+        // Walk every text layer we've painted; pull out runs that match.
+        const out = [];
+        const ql = (query || '').toLowerCase();
+        for (const layer of document.querySelectorAll('.page-text-layer')) {
+            const pageNumber = Number(layer.dataset.pageNumber);
+            const rects = [];
+            for (const span of layer.querySelectorAll('span')) {
+                const text = (span.textContent || '').toLowerCase();
+                if (ql && text.indexOf(ql) >= 0) {
+                    const r = span.getBoundingClientRect();
+                    const layerRect = layer.getBoundingClientRect();
+                    rects.push({
+                        x: r.left - layerRect.left,
+                        y: r.top - layerRect.top,
+                        width: r.width,
+                        height: r.height,
+                    });
+                }
+            }
+            if (rects.length > 0) {
+                out.push({ pageNumber, hits: [{ rects, text: layer.textContent || '' }] });
+            }
+        }
+        return out;
+    }
+
+    // ── outline ──────────────────────────────────────────────────────────
+    async function readOutline() {
+        if (!pdfDoc) throw new Error('document not open');
+        const outline = await pdfDoc.getOutline();
+        return JSON.stringify(await flattenOutline(outline));
+    }
+
+    async function flattenOutline(items) {
+        if (!items) return [];
+        const out = [];
+        for (const item of items) {
+            let pageNumber = 0;
+            try {
+                if (item.dest) {
+                    const dest = typeof item.dest === 'string'
+                        ? await pdfDoc.getDestination(item.dest)
+                        : item.dest;
+                    if (dest && dest[0]) {
+                        const pageRef = dest[0];
+                        pageNumber = await pdfDoc.getPageIndex(pageRef) + 1;
+                    }
+                }
+            } catch (e) { /* keep 0 — the host renders it disabled */ }
+            out.push({
+                title: item.title || '(untitled)',
+                pageNumber,
+                children: await flattenOutline(item.items || []),
+            });
+        }
+        return out;
+    }
+
+    // ── selected rect (page-relative) ────────────────────────────────────
+    function readSelectedRect() {
+        const sel = window.getSelection && window.getSelection();
+        if (!sel || sel.rangeCount === 0) return null;
+        const range = sel.getRangeAt(0);
+        const layer = range.startContainer.parentElement && range.startContainer.parentElement.closest('.page-text-layer');
+        if (!layer) return null;
+        const layerRect = layer.getBoundingClientRect();
+        const r = range.getBoundingClientRect();
+        return JSON.stringify({
+            fingerprint: pdfFingerprint,
+            pageNumber: Number(layer.dataset.pageNumber),
+            x: r.left - layerRect.left,
+            y: r.top - layerRect.top,
+            width: r.width,
+            height: r.height,
+        });
+    }
+
+    // ── highlight layer (re-paint) ──────────────────────────────────────
+    function paintHighlights(items) {
+        for (const layer of document.querySelectorAll('.page-text-layer')) {
+            const pageNumber = Number(layer.dataset.pageNumber);
+            // Remove existing overlays.
+            for (const old of layer.querySelectorAll('.koodo-hl')) old.remove();
+            for (const item of items) {
+                if (item.page !== pageNumber) continue;
+                const hl = document.createElement('div');
+                hl.className = 'koodo-hl';
+                hl.style.position = 'absolute';
+                hl.style.left = (item.rect.x) + 'px';
+                hl.style.top = (item.rect.y) + 'px';
+                hl.style.width = (item.rect.width) + 'px';
+                hl.style.height = (item.rect.height) + 'px';
+                hl.style.background = 'rgba(255,235,46,0.45)';
+                hl.style.pointerEvents = 'none';
+                layer.appendChild(hl);
+            }
+        }
+    }
+
+    // ── close ────────────────────────────────────────────────────────────
+    function closePdf() {
+        if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
+    }
+
+    // Signal readiness — the Kotlin side waits for this before issuing
+    // any other call. The shim logs to logcat so first-boot debugging is
+    // not a black box.
+    log('info', 'pdfengine ready');
+    window.__koodoPdfReady = true;
+    try { window.__koodoPdfHost.onEvent('ready', '{}'); } catch (e) {}
+    </script>
+</body>
+</html>

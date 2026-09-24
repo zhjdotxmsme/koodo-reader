@@ -104,6 +104,12 @@ dependencies {
     implementation project(':core:importer')
     implementation project(':core:dbio')
     implementation project(':core:common')
+    implementation project(':engine:cfi')
+    implementation project(':engine:layout')
+    implementation project(':engine:gesture')
+    // Native PDF reading core (P3, docs/android-native-migration.md §6):
+    // pdf.js in the engine WebView, Apache-2.0, zero .so.
+    implementation project(':engine:pdf')
 
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom
