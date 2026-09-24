@@ -96,8 +96,59 @@
   },
 
   "after": {
-    "status": "pending-build",
-    "reason": "本机无 gradle CLI / 无 Android SDK 调用的构建能力（PATH 只有 JDK 11），且硬约束禁止实改 android/app/build.gradle —— 优化以 patch 形式交付（docs/p8-rollout-patches/），体积必须在应用 patch 后出包实测。",
+    "status": "measured",
+    "reason": "2026-09-24 集成会话实测。原文的「本机无 gradle CLI / 无构建能力」记录有误：本机存在 Gradle 8.5 发行版（C:\\Users\\54389\\AppData\\Local\\Gradle\\gradle-8.5）、JDK 17（D:\\jdk-17\\jdk-17.0.13+11）与 Android SDK（android/local.properties），设置 JAVA_HOME 即可出包。三个 patch 已应用（见 docs/MERGE-AUDIT-2026-09-24.md），因此体积可实测；真机指标仍为 pending-device。",
+    "measured": {
+      "measuredAt": "2026-09-24（集成会话，注册接线 commit 之后）",
+      "toolchain": "Gradle 8.5 + JDK 17 + AGP 8.2.2 + compileSdk 34",
+      "debugDefault": {
+        "command": "gradle -p android :app:assembleDebug -Ptarget=native",
+        "apk": "android/app/build/outputs/apk/debug/app-debug.apk",
+        "sizeOnDiskMb": 30.97,
+        "compressedEntriesMb": 30.79,
+        "uncompressedEntriesMb": 71.76,
+        "entries": 1012,
+        "breakdownCompressedMb": {
+          "classes*.dex": 11.97,
+          "res": 8.43,
+          "assets/webapp": 7.78,
+          "assets/pdfengine": 1.74,
+          "assets/locales": 0.06,
+          "lib": 0.02
+        },
+        "note": "相比 before 的 24.95 MB 增加约 6 MB：dex +3.63（P2/P3/P5/P6 模块类）、assets/pdfengine +1.74（P3 资产，before 那次构建未含）、res +0.15。"
+      },
+      "debugStripIsland": {
+        "command": "gradle -p android :app:assembleDebug -Ptarget=native -PstripIsland=true -PsplitAbi=true",
+        "sizeOnDiskMb": 23.12,
+        "compressedEntriesMb": 22.99,
+        "assetsWebappEntries": 0,
+        "savingMb": 7.85,
+        "note": "L1 杠杆实测成立：assets/webapp 条目数为 0。predicted 的 17.1 MB 是按 before 基数（24.88−7.78）估的，实测基数已到 30.97，故绝对值为 23.12。"
+      },
+      "releaseUnsigned": {
+        "command": "gradle -p android :app:assembleRelease -Ptarget=native（无 keystore，未签名）",
+        "apk": "android/app/build/outputs/apk/release/app-release-unsigned.apk",
+        "sizeOnDiskMb": 18.78,
+        "compressedEntriesMb": 18.64,
+        "entries": 995,
+        "breakdownCompressedMb": {
+          "classes*.dex": 1.18,
+          "res": 8.43,
+          "assets/webapp": 6.62,
+          "lib": 0.02
+        },
+        "note": "L3 杠杆实测：R8 把 dex 从 11.97 MB 压到 1.18 MB。release 形态下 res 的 8.43 MB（其中 8.25 MB 是内置字体）成为最大单项 —— 即 L2。"
+      },
+      "nativeLibraries": {
+        "count": 1,
+        "entries": ["lib/arm64-v8a/libdatastore_shared_counter.so"],
+        "totalBytes": 7112,
+        "source": "androidx.datastore:datastore-preferences:1.1.1（由 :feature:tts 引入）",
+        "elfCheck": "PT_LOAD p_align = 0x4000（16384）→ 满足 Android 15+ 16 KB page size 要求",
+        "note": "★ 本 APK 不再是「零 .so」：P6-TTS 接线引入了第一个原生库，16 KB 守卫从此有真实对象。scripts/check-elf-16kb.js 依赖 unzip+readelf（本机没有），本次改用直接解析 ELF program header 得到上述结论。"
+      }
+    },
     "deliverablePatches": [
       "docs/p8-rollout-patches/android-app-build-gradle.patch（-PstripIsland / -PsplitAbi / benchmark build type / :feature:crash 依赖）",
       "docs/p8-rollout-patches/android-settings-gradle.patch（:feature:crash、:benchmarks 注册）",
@@ -123,9 +174,9 @@
       "id": "L1",
       "lever": "native 变体不再打包兜底岛资产（-PstripIsland=true）",
       "expectedCompressedMb": 7.78,
-      "confidence": "measured（被移除条目实测；成包后需复核）",
+      "confidence": "measured（2026-09-24 出包复测：30.97 → 23.12 MB，assets/webapp 条目 0）",
       "gatedOn": "intent 路由迁移 P8-F1（MainActivity 的 VIEW/SEND 仍指向兜底岛）",
-      "evidence": "assets/webapp/* 压缩字节合计 7.78 MB / 271 条目"
+      "evidence": "assets/webapp/* 压缩字节合计 7.78 MB / 271 条目；见 after.measured.debugStripIsland"
     },
     {
       "id": "L2",
@@ -138,10 +189,10 @@
     {
       "id": "L3",
       "lever": "release + R8（发布形态）",
-      "expectedCompressedMb": null,
-      "confidence": "unmeasured（需签名出包；本机无法执行）",
-      "gatedOn": "CI/本机 gradle + keystore",
-      "evidence": "debug dex 未压缩 22.16 MB / 压缩 8.34 MB；release minifyEnabled true 已在 build.gradle 配置"
+      "expectedCompressedMb": 12.19,
+      "confidence": "measured（2026-09-24 出包复测：debug 30.97 → release 18.78 MB；dex 压缩后 11.97 → 1.18 MB）",
+      "gatedOn": "签名需要 keystore（本次为 unsigned release）",
+      "evidence": "见 after.measured.releaseUnsigned；release minifyEnabled true 已在 build.gradle 配置"
     },
     {
       "id": "L4",
@@ -155,9 +206,9 @@
       "id": "L5",
       "lever": "ABI 拆分（-PsplitAbi=true）",
       "expectedCompressedMb": 0,
-      "confidence": "measured（零 .so）",
+      "confidence": "measured（-PsplitAbi=true 出包成功，体积无变化：唯一 .so 为 7 KB 的 libdatastore_shared_counter.so）",
       "gatedOn": "无（已作为 opt-in 保留，等原生库引入时自动生效）",
-      "evidence": "APK 内 lib/**/*.so 条目数 = 0"
+      "evidence": "APK 内 lib/ 条目 = 1（datastore，非 0）；拆分收益仍为 0，但守卫对象已出现"
     },
     {
       "id": "L6",

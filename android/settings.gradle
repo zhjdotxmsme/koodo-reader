@@ -62,21 +62,30 @@ include ':engine:feature'
 // the Android SDK. The Compose WebView host (engine/pdfhost) lives in :app.
 include ':engine:pdf'
 
-// Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
-// desktop backup bundles. Do not add a fourth ad-hoc ZipFile reader — see
-// docs/fb2-docx-html-mhtml-eval.md risk R1.
-include ':core:archive'
-
-// Native FB2 (FictionBook 2) converter (P5.5a): XML -> XHTML structure +
-// metadata, structure-equivalent to kookit src/libs/fb2.js (CFI parity).
-include ':engine:fb2'
-
-// Native single-file HTML / MHTML converter (P5.5b/c): lenient HTML parse +
-// MIME multipart/related decode -> flattened blocks for :engine:layout.
-include ':engine:htmlbook'
-
-// Native DOCX (WordprocessingML subset) converter (P5.5d).
-include ':engine:docx'
+// ---------------------------------------------------------------------------
+// P5.5 (FB2 / DOCX / HTML / MHTML) — PLANNED, NOT IMPLEMENTED.
+//
+// These four includes were committed by 0ccac028 from the P5-FB2 evaluation card's
+// settings.gradle *template* (docs/patches/p5-fb2-settings-gradle.patch), but the
+// module directories were never created: android/core/archive, android/engine/fb2,
+// android/engine/htmlbook and android/engine/docx do not exist. Gradle tolerates
+// that (they show up in `gradle projects` as empty projects with no tasks), which
+// made 4 phantom modules look like delivered ones.
+//
+// Uncomment them together with the modules themselves, once the two hard
+// prerequisites on the board are done: D0 (XHTML→TextBlock flattener) and R1
+// (core/archive abstraction), then the P5.5 card(s).
+//
+// // Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
+// // desktop backup bundles — see docs/fb2-docx-html-mhtml-eval.md risk R1.
+// include ':core:archive'
+// // Native FB2 (FictionBook 2) converter (P5.5a).
+// include ':engine:fb2'
+// // Native single-file HTML / MHTML converter (P5.5b/c).
+// include ':engine:htmlbook'
+// // Native DOCX (WordprocessingML subset) converter (P5.5d).
+// include ':engine:docx'
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // P2 reading-engine modules — committed by the P2 card but never registered in
