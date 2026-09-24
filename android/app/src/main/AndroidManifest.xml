@@ -21,6 +21,15 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.KoodoReader">
 
+        <!--
+          P8: Macrobenchmark (android/benchmarks) profiles the app through
+          `am profile start`, which Android 10+ only allows for a debuggable or
+          `<profileable>` app. This grants shell profiling ONLY — it does not make
+          the app debuggable, and it is ignored below API 29.
+          Measurement entry point: scripts/ci-macro-benchmark.sh
+        -->
+        <profileable android:shell="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

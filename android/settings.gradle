@@ -77,3 +77,69 @@ include ':engine:htmlbook'
 
 // Native DOCX (WordprocessingML subset) converter (P5.5d).
 include ':engine:docx'
+
+// ---------------------------------------------------------------------------
+// P2 reading-engine modules — committed by the P2 card but never registered in
+// this file, so they were dead code. Pure JVM (same trade-off as :engine:cfi).
+// ---------------------------------------------------------------------------
+
+// Highlights / notes / bookmarks: three-state model, CFI-only positions
+// (ADR-002), column codec aligned with the desktop notes/bookmarks tables.
+include ':engine:annotate'
+
+// Image viewer / footnotes / in-book links: event model, footnote extraction,
+// link classification + routing policy (mirrors NativeEventDispatcher.kt).
+include ':engine:link'
+
+// EPUB spine / TOC, reading position and full-text search.
+include ':engine:toc'
+
+// ---------------------------------------------------------------------------
+// P5/P6/P8 modules delivered in isolated worktrees, integrated here.
+// Provenance per card: docs/MERGE-PLAN-2026-09-24.html
+// ---------------------------------------------------------------------------
+
+// Native comic / image-sequence reader (P5): CBZ / CBT / image-directory
+// unpacking, lazy page window, single/double-page layout, zoom-pan state.
+// CB7 (7z) and CBR (rar) are skeletons — see docs/p5-image-engine-adr.md §4.
+include ':engine:image'
+
+// Simplified/Traditional Chinese conversion (native OpenCC port) + on-demand
+// loading of the remaining locale packs (P6). Pure JVM; persistence is bound in
+// :app through the ZhConvertSettingsStore port (docs/p6-zh-locale-design.md §4).
+include ':core:locale'
+
+// Reading statistics (P6), desktop /stats parity: aggregated metrics, reading
+// time accounting, private `reading_sessions` database.
+include ':feature:stats'
+
+// On-device OCR (P6): ML Kit unbundled model packs + a searchable index of
+// scanned pages. NOTE: the Play-services download adapter is BLOCKED and
+// quarantined in the module's build.gradle (ML Kit options are not
+// `OptionalModuleApi`) — see android/feature/ocr/build.gradle header, and
+// docs/p6-stats-ocr-design.md §5 for the manifest meta-data still to be wired.
+include ':feature:ocr'
+
+// TTS (P6): engine enumeration, persisted rate/pitch/volume, MediaSession media
+// keys, foreground-service keep-alive, reading-position resume.
+// Host binding + manifest entries: docs/p6-tts-semantics-mapping.md §5.
+include ':feature:tts'
+
+// Selection translation (Google / Microsoft / DeepL) + AI assistant (P6).
+// Owns the EncryptedSharedPreferences credential store and its Room history DB.
+include ':feature:translate'
+
+// Native MDX/MDD dictionary (P6). Shares the `OnDemandDownloader` contract with
+// :feature:ocr — both declare it privately, so a single owner must be decided
+// before :app depends on both (docs/p6-stats-ocr-design.md §5.4).
+include ':feature:dictionary'
+
+// Crash-monitoring core (P8): backend-free interfaces + redaction-only
+// before-send hook. :app installs it from KoodoReaderApp.onCreate; that install
+// call is host wiring and is not part of this integration.
+include ':feature:crash'
+
+// Macrobenchmark suite (P8): cold start / open EPUB / page turn / memory peak.
+// `com.android.test` module targeting :app's `benchmark` build type; run via
+// scripts/ci-macro-benchmark.sh on a device (docs/p8-rollout-checklist.md §5).
+include ':benchmarks'

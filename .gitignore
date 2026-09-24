@@ -52,6 +52,9 @@ android/app/build/
 android/build/
 android/engine/*/build/
 android/core/*/build/
+android/feature/*/build/
+android/feature/build/
+android/benchmarks/build/
 android/keystore/
 *.keystore
 

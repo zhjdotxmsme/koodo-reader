@@ -18,6 +18,20 @@ def hasKeystore = keystoreProp.length() > 0
 def buildTarget = (project.findProperty("target") ?: "webview").toString().trim()
 def nativeShell = buildTarget == "native"
 
+// P8 size work — both switches are OPT-IN so nothing changes by default.
+// See docs/p8-rollout-checklist.md §3 and docs/android-baseline-after.json.
+//   -PsplitAbi=true    ABI splits. Kept opt-in because the per-ABI builds driven
+//                      by scripts/build-android.js (-PabiFilters) already cover
+//                      Play/CI delivery, and the two mechanisms must not overlap.
+//   -PstripIsland=true Do not package the staged fallback island
+//                      (src/main/assets/webapp) into the APK. Gated on purpose:
+//                      MainActivity's VIEW/SEND intent filters still point at the
+//                      island, so the intent routing migration
+//                      (docs/p8-rollout-checklist.md §2 step 3) must land first.
+def splitAbi = (project.findProperty("splitAbi") ?: "false").toString().trim() == "true"
+def stripIsland = (project.findProperty("stripIsland") ?: "false").toString().trim() == "true"
+def hasAbiFilters = project.hasProperty("abiFilters")
+
 android {
     namespace 'com.koodoreader.reader'
     compileSdk 34
@@ -53,6 +67,22 @@ android {
         }
     }
 
+    // P8: ABI splits (opt-in, see -PsplitAbi above).
+    // NOTE — measured on the current debug APK: it contains ZERO .so files
+    // (docs/android-baseline-after.json), so splits buy nothing today. They are
+    // declared here so that whichever native library lands next (ML Kit, an NDK
+    // codec) is split automatically instead of re-opening the build script.
+    if (splitAbi && !hasAbiFilters) {
+        splits {
+            abi {
+                enable true
+                reset()
+                include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+                universalApk false
+            }
+        }
+    }
+
     signingConfigs {
         if (hasKeystore) {
             release {
@@ -75,6 +105,18 @@ android {
         debug {
             minifyEnabled false
         }
+
+        // P8 Macrobenchmark (android/benchmarks): a release-shaped, non-debuggable,
+        // debug-signed variant. Macrobenchmark refuses to measure a debuggable app,
+        // and `release` is not locally installable without a keystore — this variant
+        // is both. Kept out of the shipped matrix (never referenced by
+        // scripts/build-android.js).
+        benchmark {
+            initWith release
+            debuggable false
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
     }
 
     compileOptions {
@@ -95,6 +137,18 @@ android {
         // Compose compiler compatible with Kotlin 1.9.24.
         kotlinCompilerExtensionVersion '1.5.14'
     }
+
+    // P8 fallback-island decommission (opt-in, see -PstripIsland above).
+    // scripts/build-android.js stages the web build into src/main/assets/webapp
+    // for the webview target and leaves it on disk (the directory is gitignored),
+    // so a native-only build otherwise packages the island too — measured at
+    // 21.11 MB raw / 7.78 MB compressed of the current APK.
+    if (stripIsland) {
+        androidResources {
+            // aapt2 --ignore-assets: the platform default list + the staged web app.
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:webapp'
+        }
+    }
 }
 
 dependencies {
@@ -110,6 +164,50 @@ dependencies {
     // Native PDF reading core (P3, docs/android-native-migration.md §6):
     // pdf.js in the engine WebView, Apache-2.0, zero .so.
     implementation project(':engine:pdf')
+
+    // P8 crash monitoring core (android/feature/crash): pure JVM, no backend
+    // dependency. The Sentry / Firebase Crashlytics adapter is opt-in — see
+    // CrashBackends.kt and docs/p8-rollout-checklist.md §4.
+    implementation project(':feature:crash')
+
+    // ---------------------------------------------------------------------
+    // P2 / P5 / P6 modules integrated from their worktrees. Registering them on
+    // the :app classpath is the "wiring" half of the merge; each module's
+    // *host* integration (reader screens, services, manifest entries) is tracked
+    // separately in docs/BOARD-2026-09-24.html.
+    // ---------------------------------------------------------------------
+
+    // P2 reading-engine decision layers (highlights/notes/bookmarks, links and
+    // footnotes, TOC/progress/search).
+    implementation project(':engine:annotate')
+    implementation project(':engine:link')
+    implementation project(':engine:toc')
+
+    // P5 native comic / image-sequence reader (CBZ / CBT / image directory).
+    implementation project(':engine:image')
+
+    // P6 simplified/traditional conversion + on-demand locale packs. :app binds
+    // ZhConvertSettingsStore to DataStore (docs/p6-zh-locale-design.md §4.1).
+    implementation project(':core:locale')
+
+    // P6 statistics screen + reading-time accounting.
+    implementation project(':feature:stats')
+
+    // P6 on-device OCR. Still needs the `com.google.mlkit.vision.DEPENDENCIES`
+    // manifest meta-data before the models pre-download at install time
+    // (docs/p6-stats-ocr-design.md §5).
+    implementation project(':feature:ocr')
+
+    // P6 TTS. The manifest entries the foreground service / media-button
+    // receiver need are still pending — see the P6-TTS-WIRE item on the board
+    // and docs/p6-tts-semantics-mapping.md §5.
+    implementation project(':feature:tts')
+
+    // P6 selection translation / AI assistant.
+    implementation project(':feature:translate')
+
+    // P6 native MDX/MDD dictionary.
+    implementation project(':feature:dictionary')
 
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom

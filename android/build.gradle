@@ -2,6 +2,13 @@
 // Declares plugin versions only; the :app module applies them.
 plugins {
     id 'com.android.application' version '8.2.2' apply false
+    // Android library modules (:feature:stats / :feature:ocr / :feature:tts /
+    // :feature:translate / :feature:dictionary — P6). Same AGP version as the
+    // application plugin; without this line a subproject cannot apply
+    // 'com.android.library' (plugin request without a version cannot be resolved).
+    id 'com.android.library' version '8.2.2' apply false
+    // :benchmarks (P8 macrobenchmark suite) applies 'com.android.test'.
+    id 'com.android.test' version '8.2.2' apply false
     id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
     // Pure Kotlin JVM modules (e.g. :engine:cfi) — no Android plugin needed, so
     // they can be unit-tested without the Android SDK.
