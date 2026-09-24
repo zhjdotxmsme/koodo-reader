@@ -1,0 +1,3874 @@
+diff --git a/android/feature/translate/build.gradle b/android/feature/translate/build.gradle
+new file mode 100644
+index 00000000..1fae8e6a
+--- /dev/null
++++ b/android/feature/translate/build.gradle
+@@ -0,0 +1,82 @@
++// feature/translate — P6: selection translation (Google / Microsoft / DeepL) + AI assistant.
++//
++// ANDROID LIBRARY module: it owns the Compose popup surface
++// (TranslationPopupUi.kt), the EncryptedSharedPreferences-backed credential
++// store (EncryptedSecretStore.kt) and the Room database for translation history
++// (TranslationHistoryDatabase.kt).
++//
++// Everything else in this module is deliberately **pure Kotlin** (no Android
++// imports): provider request building / response parsing, the popup state
++// machine, the credential store core, the AI assistant and the history
++// repository. Those files are also compiled by a throwaway pure-JVM Gradle
++// module during development so `test/` runs without the Android SDK — see
++// docs/p6-translate-architecture.md §7 for the exact commands.
++plugins {
++    id 'com.android.library'
++    id 'org.jetbrains.kotlin.android'
++    id 'com.google.devtools.ksp'
++}
++
++android {
++    namespace 'com.koodoreader.feature.translate'
++    compileSdk 34
++
++    defaultConfig {
++        minSdk 24
++    }
++
++    compileOptions {
++        sourceCompatibility JavaVersion.VERSION_17
++        targetCompatibility JavaVersion.VERSION_17
++    }
++
++    kotlinOptions {
++        jvmTarget = '17'
++    }
++
++    buildFeatures {
++        compose true
++    }
++
++    composeOptions {
++        // Compose compiler compatible with Kotlin 1.9.24 (same pin as :app).
++        kotlinCompilerExtensionVersion '1.5.14'
++    }
++
++    testOptions {
++        // Unit tests exercise the pure-Kotlin classes only; android.jar stubs
++        // are never called (hence returnDefaultValues, which turns a stray stub
++        // call into a null/default return instead of a "Stub!" crash).
++        unitTests.returnDefaultValues = true
++    }
++}
++
++dependencies {
++    // P1 data layer: KoodoDatabase conventions + Room/coroutines on the compile
++    // classpath (the history table itself is declared in this module).
++    implementation project(':core:data')
++    // Desktop-parity i18n keys for the popup labels (Localization.t).
++    implementation project(':core:common')
++
++    def roomVersion = '2.6.1'
++    implementation "androidx.room:room-runtime:$roomVersion"
++    implementation "androidx.room:room-ktx:$roomVersion"
++    ksp "androidx.room:room-compiler:$roomVersion"
++
++    // CredentialsStore: EncryptedSharedPreferences (AES-256-SIV keys /
++    // AES-256-GCM values, master key in the Android Keystore).
++    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
++
++    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
++    implementation composeBom
++    implementation 'androidx.compose.ui:ui'
++    implementation 'androidx.compose.foundation:foundation'
++    implementation 'androidx.compose.material3:material3'
++
++    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
++
++    // JVM unit tests (JUnit 4 = the AGP default runner; also runs unchanged in
++    // the throwaway pure-JVM module).
++    testImplementation 'junit:junit:4.13.2'
++    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/AiAssistant.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/AiAssistant.kt
+new file mode 100644
+index 00000000..575839ab
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/AiAssistant.kt
+@@ -0,0 +1,171 @@
++package com.koodoreader.feature.translate
++
++/**
++ * OpenAI-compatible chat model configuration, field-for-field with the desktop
++ * `AiModelConfig` (`src/utils/request/aiBridge.ts`).
++ *
++ * Desktop stores one model per AI feature and picks the first usable one in the
++ * order translate → dict → assistance ([AiConfigKeys]); the Android settings
++ * screen keeps the same reader-config keys so an exported desktop config maps
++ * 1:1.
++ */
++data class AiModelConfig(
++    val endpoint: String = "",
++    val providerId: String = "",
++    val apiKey: String = "",
++    val modelId: String = "",
++) {
++    /** Desktop strips trailing slashes before appending `/chat/completions`. */
++    fun normalizedEndpoint(): String = endpoint.trim().trimEnd('/')
++
++    fun isUsable(): Boolean = normalizedEndpoint().isNotEmpty() && modelId.isNotBlank()
++}
++
++object AiConfigKeys {
++    const val TRANSLATE = "aiTranslateModel"
++    const val DICT = "aiDictModel"
++    const val ASSISTANCE = "aiAssistanceModel"
++
++    /** Desktop priority order for "the one model available to everything". */
++    val PRIORITY = listOf(TRANSLATE, DICT, ASSISTANCE)
++}
++
++sealed interface AiOutcome {
++    data class Success(val text: String) : AiOutcome
++
++    /** No endpoint/model configured — the UI shows "configure an AI service". */
++    data object NotConfigured : AiOutcome
++
++    data class Failure(val reason: FailureReason, val detail: String) : AiOutcome
++}
++
++/**
++ * Prompt templates. Kept byte-identical to the desktop wording so summaries and
++ * answers stay comparable across platforms, and so the prompts are unit-testable
++ * without a model.
++ */
++object AiPrompts {
++
++    fun summaryPrompt(text: String, language: String, maxSentences: Int): String = listOf(
++        "You are a reading assistant inside an ebook reader.",
++        "Summarise the chapter excerpt below in ${sentences(maxSentences)} or fewer sentences, " +
++            "in the language identified by the tag \"$language\".",
++        "Keep names, numbers and the author's intent; do not add information that is not in the text.",
++        "Return plain text only, no markdown, no bullet list, no preamble.",
++        "Chapter excerpt:",
++        text,
++    ).joinToString("\n")
++
++    fun questionPrompt(question: String, context: String): String = listOf(
++        "You are a reading assistant inside an ebook reader.",
++        "Answer the reader's question using ONLY the provided book context.",
++        "If the context does not contain the answer, say so explicitly and do not invent facts.",
++        "Answer in the language of the question. Return plain text only, no markdown.",
++        "Book context:",
++        context,
++        "Reader's question:",
++        question,
++    ).joinToString("\n")
++
++    private fun sentences(count: Int): String = if (count <= 1) "1 sentence" else "$count sentences"
++}
++
++/**
++ * AI assistant (P6 acceptance #3): chapter summary + question answering over the
++ * current book context.
++ *
++ * This is the *接入路径* (integration path): the reader passes the selected
++ * chapter/excerpt, [AiAssistant] builds the request, executes it through the
++ * injected [HttpTransport] and returns an [AiOutcome]. Streaming (`chatStream`
++ * with SSE on desktop) is a follow-up: the non-streaming shape below is the
++ * contract the UI is built against, and `parseCompletion` already tolerates both
++ * the `message.content` and legacy `text` response shapes.
++ *
++ * Logging: [logger] is a [RedactedLogger] bound to the configured API key, so
++ * the key can never reach an info-level line (CLAUDE.md rule).
++ */
++class AiAssistant(
++    private val config: AiModelConfig,
++    private val transport: HttpTransport,
++    rawLogger: Logger = NoopLogger,
++) {
++
++    val logger: Logger = RedactedLogger(
++        rawLogger,
++        secretSource = { listOf(config.apiKey).filter { it.isNotBlank() } },
++    )
++
++    fun isConfigured(): Boolean = config.isUsable()
++
++    /** `POST {endpoint}/chat/completions`, OpenAI-compatible request body. */
++    fun buildChatRequest(prompt: String): HttpRequest {
++        val body = MiniJson.body(
++            "model" to config.modelId,
++            "stream" to false,
++            "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
++        )
++        return HttpRequest(
++            method = "POST",
++            url = "${config.normalizedEndpoint()}/chat/completions",
++            headers = mapOf(
++                "Content-Type" to "application/json",
++                "Authorization" to "Bearer ${config.apiKey}",
++            ),
++            body = body,
++        )
++    }
++
++    /** `choices[0].message.content`, falling back to the legacy `choices[0].text`. */
++    fun parseCompletion(body: String): String? {
++        val json = MiniJson.parse(body) ?: return null
++        val content = json.stringAt("choices", 0, "message", "content")
++            ?: json.stringAt("choices", 0, "text")
++            ?: return null
++        return content.trim().ifEmpty { null }
++    }
++
++    suspend fun complete(prompt: String): AiOutcome {
++        if (prompt.isBlank()) {
++            return AiOutcome.Failure(FailureReason.EMPTY_INPUT, "empty prompt")
++        }
++        if (!isConfigured()) {
++            return AiOutcome.NotConfigured
++        }
++        logger.info("ai request: provider=${config.providerId} model=${config.modelId} promptChars=${prompt.length}")
++        return try {
++            val response = transport.execute(buildChatRequest(prompt))
++            if (!response.isSuccess) {
++                AiOutcome.Failure(FailureReason.HTTP_STATUS, "AI endpoint returned HTTP ${response.statusCode}")
++            } else {
++                val text = parseCompletion(response.body)
++                if (text == null) {
++                    AiOutcome.Failure(FailureReason.MALFORMED_RESPONSE, "AI endpoint returned no completion text")
++                } else {
++                    AiOutcome.Success(text)
++                }
++            }
++        } catch (e: HttpTransportException) {
++            AiOutcome.Failure(FailureReason.NETWORK, e.message ?: "network error")
++        }
++    }
++
++    /** Chapter/selection summary. */
++    suspend fun summarize(text: String, language: String = "zh-CN", maxSentences: Int = DEFAULT_SUMMARY_SENTENCES): AiOutcome {
++        if (text.isBlank()) {
++            return AiOutcome.Failure(FailureReason.EMPTY_INPUT, "nothing to summarise")
++        }
++        return complete(AiPrompts.summaryPrompt(text, language, maxSentences))
++    }
++
++    /** Question answering grounded in [context]. */
++    suspend fun ask(question: String, context: String): AiOutcome {
++        if (question.isBlank()) {
++            return AiOutcome.Failure(FailureReason.EMPTY_INPUT, "empty question")
++        }
++        return complete(AiPrompts.questionPrompt(question, context))
++    }
++
++    companion object {
++        const val DEFAULT_SUMMARY_SENTENCES = 5
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/CredentialsStore.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/CredentialsStore.kt
+new file mode 100644
+index 00000000..68326554
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/CredentialsStore.kt
+@@ -0,0 +1,147 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Key/value seam in front of the encrypted storage.
++ *
++ * Production: [EncryptedSecretStore] (androidx.security EncryptedSharedPreferences,
++ * AES-256-SIV keys / AES-256-GCM values, master key in the Android Keystore).
++ * Unit tests and previews: [InMemorySecretStore].
++ */
++interface SecretStore {
++    fun getString(key: String): String?
++    fun putString(key: String, value: String)
++    fun remove(key: String)
++    fun keys(): Set<String>
++}
++
++class InMemorySecretStore(initial: Map<String, String> = emptyMap()) : SecretStore {
++    private val values = LinkedHashMap<String, String>(initial)
++
++    override fun getString(key: String): String? = values[key]
++    override fun putString(key: String, value: String) {
++        values[key] = value
++    }
++
++    override fun remove(key: String) {
++        values.remove(key)
++    }
++
++    override fun keys(): Set<String> = values.keys.toSet()
++}
++
++/**
++ * Translation-source credentials (API keys / endpoints) for the three built-in
++ * sources.
++ *
++ * Security contract — enforced by construction, not by convention:
++ *
++ *  * values are persisted through [SecretStore] only (encrypted at rest);
++ *  * **every** log line this class emits goes through [logger], a
++ *    [RedactedLogger] whose secret set is *the store itself*. A token that was
++ *    saved (or loaded) can therefore never appear verbatim in an info-level
++ *    line, even when a caller interpolates it into the message
++ *    (CLAUDE.md: 不要将令牌、密码…记录到 info 级别日志 / P6 acceptance #2);
++ *  * UI-facing summaries use [maskedApiKey] (`***wxyz`), never the raw value.
++ *
++ * Keys are namespaced `p6.translate.cred.<pluginKey>.<field>` so the desktop
++ * plugin ids stay the migration key (`google-translate-plugin`, …).
++ */
++class CredentialsStore(
++    private val secretStore: SecretStore,
++    rawLogger: Logger = NoopLogger,
++) {
++
++    private val knownTokensCache = LinkedHashSet<String>()
++    private var scanned = false
++
++    /**
++     * Log through this object, never through a raw logger: it redacts every
++     * token the store has seen.
++     */
++    val logger: Logger = RedactedLogger(rawLogger, secretSource = { knownTokens() })
++
++    fun save(id: TranslationSourceId, credentials: ProviderCredentials) {
++        secretStore.putString(fieldKey(id, FIELD_API_KEY), credentials.apiKey)
++        secretStore.putString(fieldKey(id, FIELD_ENDPOINT), credentials.endpoint)
++        secretStore.putString(fieldKey(id, FIELD_REGION), credentials.region)
++        secretStore.putString(fieldKey(id, FIELD_PLAN), credentials.plan.wireValue)
++        registerSecret(credentials.apiKey)
++        logger.info(
++            "translation credentials saved: source=${id.pluginKey} " +
++                "apiKey=${TokenRedaction.mask(credentials.apiKey)} " +
++                "endpoint=${credentials.endpoint.ifBlank { "<default>" }} region=${credentials.region}",
++        )
++    }
++
++    fun load(id: TranslationSourceId): ProviderCredentials? {
++        val apiKey = secretStore.getString(fieldKey(id, FIELD_API_KEY))
++        val endpoint = secretStore.getString(fieldKey(id, FIELD_ENDPOINT))
++        val region = secretStore.getString(fieldKey(id, FIELD_REGION))
++        val plan = secretStore.getString(fieldKey(id, FIELD_PLAN))
++        if (apiKey == null && endpoint == null && region == null && plan == null) {
++            return null
++        }
++        registerSecret(apiKey)
++        return ProviderCredentials(
++            apiKey = apiKey.orEmpty(),
++            endpoint = endpoint.orEmpty(),
++            region = region.orEmpty(),
++            plan = ApiPlan.fromWire(plan),
++        )
++    }
++
++    fun require(id: TranslationSourceId): ProviderCredentials = load(id) ?: ProviderCredentials()
++
++    fun clear(id: TranslationSourceId) {
++        load(id)?.apiKey?.let { knownTokensCache.remove(it) }
++        listOf(FIELD_API_KEY, FIELD_ENDPOINT, FIELD_REGION, FIELD_PLAN).forEach { field ->
++            secretStore.remove(fieldKey(id, field))
++        }
++        logger.info("translation credentials cleared: source=${id.pluginKey}")
++    }
++
++    /** Sources with a non-blank API key — drives the popup's source chips. */
++    fun configuredSources(): Set<TranslationSourceId> =
++        TranslationSourceId.entries.filter { !load(it)?.apiKey.isNullOrBlank() }.toSet()
++
++    /** Secrets handed to the redactor. Never logged, never rendered. */
++    fun knownTokens(): Set<String> {
++        if (!scanned) {
++            scanned = true
++            secretStore.keys()
++                .filter { it.startsWith(KEY_PREFIX) && it.endsWith(".$FIELD_API_KEY") }
++                .mapNotNullTo(knownTokensCache) { secretStore.getString(it)?.takeIf { value -> value.isNotBlank() } }
++        }
++        return knownTokensCache.toSet()
++    }
++
++    /** `***wxyz` for settings screens; empty string when nothing is stored. */
++    fun maskedApiKey(id: TranslationSourceId): String = TokenRedaction.mask(load(id)?.apiKey)
++
++    fun isConfigured(id: TranslationSourceId): Boolean = !load(id)?.apiKey.isNullOrBlank()
++
++    /** Log/UI-safe one-liner (never contains a token). */
++    fun describe(id: TranslationSourceId): String {
++        val credentials = load(id) ?: return "${id.pluginKey}: not configured"
++        return "${id.pluginKey}: apiKey=${TokenRedaction.mask(credentials.apiKey)} " +
++            "endpoint=${credentials.endpoint.ifBlank { "<default>" }} plan=${credentials.plan.wireValue} " +
++            "region=${credentials.region.ifBlank { "<none>" }}"
++    }
++
++    private fun registerSecret(secret: String?) {
++        if (!secret.isNullOrBlank() && secret.length >= TokenRedaction.MIN_SECRET_LENGTH) {
++            knownTokensCache.add(secret)
++            scanned = true
++        }
++    }
++
++    companion object {
++        const val KEY_PREFIX = "p6.translate.cred."
++        const val FIELD_API_KEY = "apiKey"
++        const val FIELD_ENDPOINT = "endpoint"
++        const val FIELD_REGION = "region"
++        const val FIELD_PLAN = "plan"
++
++        fun fieldKey(id: TranslationSourceId, field: String): String = "$KEY_PREFIX${id.pluginKey}.$field"
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/DeepLTranslateProvider.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/DeepLTranslateProvider.kt
+new file mode 100644
+index 00000000..f213b0b6
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/DeepLTranslateProvider.kt
+@@ -0,0 +1,102 @@
++package com.koodoreader.feature.translate
++
++/**
++ * DeepL translate API v2.
++ *
++ * Desktop reference: `src/utils/plugins/renderer/translation/deeplTranslate.ts`
++ * (plugin key `deepl-translate-plugin`) — the endpoint depends on the plan
++ * (`keyType === "free"` -> api-free.deepl.com), the key travels in the
++ * `Authorization: DeepL-Auth-Key <key>` header, the payload is
++ * `{ text: [...], source_lang, target_lang }` with **upper-case** language tags,
++ * and the answer is `translations[0].text` (plus `detected_source_language`).
++ */
++class DeepLTranslateProvider : TranslationProvider {
++
++    override val id: TranslationSourceId = TranslationSourceId.DEEPL
++
++    override val defaultEndpoint: String = PRO_ENDPOINT
++
++    override val credentialFields: List<CredentialField> = listOf(
++        CredentialField(
++            key = "apiKey",
++            label = "DeepL API key",
++            required = true,
++            secret = true,
++            hint = "Authentication key from the DeepL account page",
++        ),
++        CredentialField(
++            key = "keyType",
++            label = "Plan",
++            required = false,
++            secret = false,
++            hint = "free -> api-free.deepl.com, otherwise api.deepl.com",
++        ),
++        CredentialField(
++            key = "endpoint",
++            label = "Endpoint",
++            required = false,
++            secret = false,
++            hint = "override only for proxies",
++        ),
++    )
++
++    /** Plan-aware default endpoint, also used by the settings screen. */
++    fun endpointFor(credentials: ProviderCredentials): String {
++        if (credentials.endpoint.isNotBlank()) {
++            return credentials.endpoint
++        }
++        return when (credentials.plan) {
++            ApiPlan.FREE -> FREE_ENDPOINT
++            ApiPlan.PRO -> PRO_ENDPOINT
++        }
++    }
++
++    override fun buildRequest(
++        text: String,
++        from: String,
++        to: String,
++        credentials: ProviderCredentials,
++    ): HttpRequest {
++        val fields = mutableListOf<Pair<String, Any?>>(
++            "text" to listOf(text),
++            "target_lang" to LanguageCodes.deeplTag(to),
++        )
++        if (!LanguageCodes.isAuto(from)) {
++            fields += "source_lang" to LanguageCodes.deeplTag(from)
++        }
++        return HttpRequest(
++            method = "POST",
++            url = endpointFor(credentials),
++            headers = mapOf(
++                "Content-Type" to "application/json",
++                "Authorization" to "$AUTH_SCHEME ${credentials.apiKey}",
++            ),
++            body = MiniJson.body(*fields.toTypedArray()),
++        )
++    }
++
++    override fun parseResponse(response: HttpResponse): TranslationOutcome {
++        if (!response.isSuccess) {
++            return TranslationOutcome.Failure(id, FailureReason.HTTP_STATUS, "DeepL returned HTTP ${response.statusCode}")
++        }
++        val json = MiniJson.parse(response.body)
++            ?: return TranslationOutcome.Failure(id, FailureReason.MALFORMED_RESPONSE, "DeepL returned a non-JSON body")
++        val translated = json.stringAt("translations", 0, "text")
++            ?: return TranslationOutcome.Failure(
++                id,
++                FailureReason.MALFORMED_RESPONSE,
++                "DeepL response has no translations[0].text",
++            )
++        return TranslationOutcome.Success(
++            text = translated,
++            provider = id,
++            detectedSourceLanguage = json.stringAt("translations", 0, "detected_source_language"),
++        )
++    }
++
++    companion object {
++        const val FREE_ENDPOINT = "https://api-free.deepl.com/v2/translate"
++        const val PRO_ENDPOINT = "https://api.deepl.com/v2/translate"
++        const val AUTH_SCHEME = "DeepL-Auth-Key"
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/EncryptedSecretStore.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/EncryptedSecretStore.kt
+new file mode 100644
+index 00000000..f3199f71
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/EncryptedSecretStore.kt
+@@ -0,0 +1,50 @@
++package com.koodoreader.feature.translate
++
++import android.content.Context
++import androidx.security.crypto.EncryptedSharedPreferences
++import androidx.security.crypto.MasterKey
++
++/**
++ * [SecretStore] on top of **EncryptedSharedPreferences**.
++ *
++ * File-level encryption: preference *keys* use AES-256-SIV, *values* use
++ * AES-256-GCM, and the master key lives in the Android Keystore (StrongBox
++ * where available). Requires `androidx.security:security-crypto` and `minSdk 24`.
++ *
++ * Nothing in this class logs. [CredentialsStore] wraps the caller's [Logger] and
++ * is the only sanctioned logging path for credentials.
++ */
++class EncryptedSecretStore(context: Context) : SecretStore {
++
++    private val appContext = context.applicationContext
++
++    private val prefs = EncryptedSharedPreferences.create(
++        appContext,
++        FILE_NAME,
++        MasterKey.Builder(appContext)
++            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
++            .build(),
++        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
++        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
++    )
++
++    override fun getString(key: String): String? = prefs.getString(key, null)
++
++    override fun putString(key: String, value: String) {
++        prefs.edit().putString(key, value).apply()
++    }
++
++    override fun remove(key: String) {
++        prefs.edit().remove(key).apply()
++    }
++
++    override fun keys(): Set<String> = prefs.all.keys.toSet()
++
++    companion object {
++        const val FILE_NAME = "koodo_translate_credentials"
++
++        /** Production wiring: encrypted store + a redacting logger. */
++        fun credentialsStore(context: Context, logger: Logger): CredentialsStore =
++            CredentialsStore(EncryptedSecretStore(context), logger)
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/GoogleTranslateProvider.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/GoogleTranslateProvider.kt
+new file mode 100644
+index 00000000..f7c49114
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/GoogleTranslateProvider.kt
+@@ -0,0 +1,82 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Google Cloud Translation v2.
++ *
++ * Desktop reference: `src/utils/plugins/renderer/translation/googleTranslate.ts`
++ * (plugin key `google-translate-plugin`) — API key travels as the `key` query
++ * parameter, the payload carries `q` / `target` / `format`, and the response is
++ * HTML-escaped (`&quot;` etc.), which the desktop builds decode through a
++ * `<textarea>`; here [HtmlEntities.unescape] does the same on the JVM.
++ */
++class GoogleTranslateProvider : TranslationProvider {
++
++    override val id: TranslationSourceId = TranslationSourceId.GOOGLE
++
++    override val defaultEndpoint: String = DEFAULT_ENDPOINT
++
++    override val credentialFields: List<CredentialField> = listOf(
++        CredentialField(
++            key = "apiKey",
++            label = "Google Cloud API key",
++            required = true,
++            secret = true,
++            hint = "Cloud Translation API v2 key; stored encrypted, never logged",
++        ),
++        CredentialField(
++            key = "endpoint",
++            label = "Endpoint",
++            required = false,
++            secret = false,
++            hint = DEFAULT_ENDPOINT,
++        ),
++    )
++
++    override fun buildRequest(
++        text: String,
++        from: String,
++        to: String,
++        credentials: ProviderCredentials,
++    ): HttpRequest {
++        val endpoint = credentials.endpoint.ifBlank { defaultEndpoint }
++        val target = to.ifBlank { DEFAULT_TARGET }
++        val fields = mutableListOf<Pair<String, Any?>>(
++            "q" to text,
++            "target" to target,
++            "format" to "text",
++        )
++        if (!LanguageCodes.isAuto(from)) {
++            fields += "source" to from
++        }
++        return HttpRequest(
++            method = "POST",
++            url = endpoint + UrlEncoding.query("key" to credentials.apiKey),
++            headers = mapOf("Content-Type" to "application/json"),
++            body = MiniJson.body(*fields.toTypedArray()),
++        )
++    }
++
++    override fun parseResponse(response: HttpResponse): TranslationOutcome {
++        if (!response.isSuccess) {
++            return TranslationOutcome.Failure(id, FailureReason.HTTP_STATUS, "Google returned HTTP ${response.statusCode}")
++        }
++        val json = MiniJson.parse(response.body)
++            ?: return TranslationOutcome.Failure(id, FailureReason.MALFORMED_RESPONSE, "Google returned a non-JSON body")
++        val translated = json.stringAt("data", "translations", 0, "translatedText")
++            ?: return TranslationOutcome.Failure(
++                id,
++                FailureReason.MALFORMED_RESPONSE,
++                "Google response has no data.translations[0].translatedText",
++            )
++        return TranslationOutcome.Success(
++            text = HtmlEntities.unescape(translated),
++            provider = id,
++            detectedSourceLanguage = json.stringAt("data", "translations", 0, "detectedSourceLanguage"),
++        )
++    }
++
++    companion object {
++        const val DEFAULT_ENDPOINT = "https://translation.googleapis.com/language/translate/v2"
++        const val DEFAULT_TARGET = "zh-CN"
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt
+new file mode 100644
+index 00000000..939434bc
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt
+@@ -0,0 +1,199 @@
++package com.koodoreader.feature.translate
++
++import androidx.room.ColumnInfo
++import androidx.room.Dao
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.Insert
++import androidx.room.OnConflictStrategy
++import androidx.room.PrimaryKey
++import androidx.room.Query
++import java.security.MessageDigest
++import java.util.UUID
++
++/**
++ * Selection-translation history (`translation_history`).
++ *
++ * Column naming follows the `core/data` convention (desktop `schema.lock` style:
++ * camelCase quoted columns) even though this table has no desktop counterpart —
++ * the desktop keeps translation results in the plugin cache, not in SQLite. The
++ * Room schema for this table is therefore Android-owned; when the entity is
++ * merged into `KoodoDatabase` (see docs/p6-translate-architecture.md) it is a
++ * pure `ALTER`-free additive migration.
++ */
++@Entity(
++    tableName = "translation_history",
++    indices = [
++        Index(value = ["createdAt"]),
++        Index(value = ["bookKey"]),
++        Index(value = ["provider"]),
++    ],
++)
++data class TranslationHistoryEntity(
++    @PrimaryKey @ColumnInfo(name = "key") val key: String,
++    @ColumnInfo(name = "sourceText") val sourceText: String,
++    @ColumnInfo(name = "translatedText") val translatedText: String,
++    @ColumnInfo(name = "sourceLang") val sourceLang: String? = null,
++    @ColumnInfo(name = "targetLang") val targetLang: String,
++    /** [TranslationSourceId.pluginKey] — survives provider renames. */
++    @ColumnInfo(name = "provider") val provider: String,
++    @ColumnInfo(name = "bookKey") val bookKey: String? = null,
++    @ColumnInfo(name = "cfi") val cfi: String? = null,
++    @ColumnInfo(name = "createdAt") val createdAt: Long,
++)
++
++@Dao
++interface TranslationHistoryDao {
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsert(entry: TranslationHistoryEntity)
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertAll(entries: List<TranslationHistoryEntity>)
++
++    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT :limit")
++    suspend fun recent(limit: Int): List<TranslationHistoryEntity>
++
++    @Query(
++        "SELECT * FROM translation_history " +
++            "WHERE sourceText LIKE '%' || :query || '%' OR translatedText LIKE '%' || :query || '%' " +
++            "ORDER BY createdAt DESC LIMIT :limit",
++    )
++    suspend fun search(query: String, limit: Int): List<TranslationHistoryEntity>
++
++    @Query("SELECT * FROM translation_history WHERE `key` = :key LIMIT 1")
++    suspend fun findByKey(key: String): TranslationHistoryEntity?
++
++    @Query("SELECT * FROM translation_history WHERE bookKey = :bookKey ORDER BY createdAt DESC LIMIT :limit")
++    suspend fun forBook(bookKey: String, limit: Int): List<TranslationHistoryEntity>
++
++    /** Rows older than the newest [keep] entries — the pruning work list. */
++    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT -1 OFFSET :keep")
++    suspend fun beyondNewest(keep: Int): List<TranslationHistoryEntity>
++
++    @Query("DELETE FROM translation_history WHERE `key` = :key")
++    suspend fun deleteByKey(key: String)
++
++    @Query("DELETE FROM translation_history")
++    suspend fun deleteAll()
++
++    @Query("SELECT COUNT(*) FROM translation_history")
++    suspend fun count(): Long
++}
++
++/**
++ * History persistence + retrieval on top of [TranslationHistoryDao].
++ *
++ * Pure Kotlin (the DAO is injected), so the whole behaviour — dedupe key,
++ * ordering, search matching, retention — is unit-tested against a fake DAO
++ * without Room, the Android SDK or a device.
++ */
++class TranslationHistoryRepository(
++    private val dao: TranslationHistoryDao,
++    private val logger: Logger = NoopLogger,
++    private val clock: () -> Long = System::currentTimeMillis,
++    private val idFactory: () -> String = { UUID.randomUUID().toString() },
++    private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
++) {
++
++    /**
++     * Stores one translation. The same selection translated again by the same
++     * provider into the same target language updates the existing row (and its
++     * timestamp) instead of duplicating it.
++     *
++     * Logs only counts/lengths: the selected text is book content and the
++     * credentials are never passed to this layer.
++     */
++    suspend fun record(
++        sourceText: String,
++        translatedText: String,
++        targetLang: String,
++        provider: TranslationSourceId,
++        sourceLang: String? = null,
++        bookKey: String? = null,
++        cfi: String? = null,
++    ): TranslationHistoryEntity {
++        val entry = TranslationHistoryEntity(
++            key = stableKey(sourceText, targetLang, provider),
++            sourceText = sourceText,
++            translatedText = translatedText,
++            sourceLang = sourceLang,
++            targetLang = targetLang,
++            provider = provider.pluginKey,
++            bookKey = bookKey,
++            cfi = cfi,
++            createdAt = clock(),
++        )
++        dao.upsert(entry)
++        if (dao.count() > maxEntries) {
++            prune()
++        }
++        logger.info(
++            "translation history recorded: provider=${provider.pluginKey} target=$targetLang " +
++                "sourceChars=${sourceText.length} translatedChars=${translatedText.length}",
++        )
++        return entry
++    }
++
++    suspend fun recent(limit: Int = DEFAULT_PAGE_SIZE): List<TranslationHistoryEntity> =
++        dao.recent(limit)
++
++    suspend fun search(query: String, limit: Int = DEFAULT_PAGE_SIZE): List<TranslationHistoryEntity> {
++        val trimmed = query.trim()
++        return if (trimmed.isEmpty()) {
++            dao.recent(limit)
++        } else {
++            dao.search(trimmed, limit)
++        }
++    }
++
++    suspend fun forBook(bookKey: String, limit: Int = DEFAULT_PAGE_SIZE): List<TranslationHistoryEntity> =
++        dao.forBook(bookKey, limit)
++
++    /** Drops everything beyond the newest [keep] rows; returns the removed count. */
++    suspend fun prune(keep: Int = maxEntries): Int {
++        val excess = dao.beyondNewest(keep)
++        excess.forEach { dao.deleteByKey(it.key) }
++        if (excess.isNotEmpty()) {
++            logger.info("translation history pruned: removed=${excess.size} keep=$keep")
++        }
++        return excess.size
++    }
++
++    suspend fun clear() {
++        dao.deleteAll()
++        logger.info("translation history cleared")
++    }
++
++    suspend fun count(): Long = dao.count()
++
++    /**
++     * Dedupe key: SHA-256 over `provider|target|text` (trimmed, case-folded).
++     * Deterministic across launches and free of the raw selection text, so the
++     * key can be logged or exported without leaking book content.
++     */
++    fun stableKey(sourceText: String, targetLang: String, provider: TranslationSourceId): String {
++        val material = "${provider.pluginKey}|${targetLang.trim().lowercase()}|${sourceText.trim().lowercase()}"
++        val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
++        val hex = digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
++        return "${provider.pluginKey.take(12)}-${hex.take(32)}"
++    }
++
++    /** In-memory matcher with the same semantics as the SQL `LIKE` query. */
++    fun matches(entry: TranslationHistoryEntity, query: String): Boolean {
++        val needle = query.trim()
++        if (needle.isEmpty()) {
++            return true
++        }
++        return entry.sourceText.contains(needle, ignoreCase = true) ||
++            entry.translatedText.contains(needle, ignoreCase = true)
++    }
++
++    /** Creates a fresh id (exposed for tests that need the injected factory). */
++    fun newId(): String = idFactory()
++
++    companion object {
++        const val DEFAULT_PAGE_SIZE = 50
++        const val DEFAULT_MAX_ENTRIES = 500
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HttpTransport.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HttpTransport.kt
+new file mode 100644
+index 00000000..e0071182
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HttpTransport.kt
+@@ -0,0 +1,73 @@
++package com.koodoreader.feature.translate
++
++/** Envelope of a single outbound HTTP call. Transport-agnostic on purpose. */
++enum class HttpBodyKind { NONE, JSON }
++
++/**
++ * One outbound request. Instances are plain data so unit tests can assert the
++ * exact wire shape (URL, query string, headers, body) without a network stack.
++ *
++ * Logging rule: never log [headers] or [body] directly. Use
++ * [redactedDescription] — it masks sensitive headers and sensitive query
++ * parameters (CLAUDE.md: "不要将令牌、密码…记录到 info 级别日志").
++ */
++data class HttpRequest(
++    val method: String,
++    val url: String,
++    val headers: Map<String, String> = emptyMap(),
++    val body: String? = null,
++    val bodyKind: HttpBodyKind = if (body == null) HttpBodyKind.NONE else HttpBodyKind.JSON,
++) {
++    fun header(name: String): String? =
++        headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
++
++    /** `POST https://…?key=*** headers=[Authorization:***] body=42 chars` */
++    fun redactedDescription(): String {
++        val headerText = headers.entries.joinToString(", ") { (name, value) ->
++            "$name:${if (SensitiveHeaders.isSensitive(name)) TokenRedaction.MASK else value}"
++        }
++        val bodyText = body?.let { "${it.length} chars" } ?: "<none>"
++        return "$method ${redactUrl(url)} headers=[$headerText] body=$bodyText"
++    }
++
++    private fun redactUrl(raw: String): String =
++        SENSITIVE_QUERY.replace(raw) { match -> "${match.groupValues[1]}${TokenRedaction.MASK}" }
++
++    private companion object {
++        /** `key=`, `api_key=`, `access_token=`, … in a query string or fragment. */
++        val SENSITIVE_QUERY = Regex(
++            "(?i)([?&#](?:key|api[-_]?key|apikey|access[-_]?token|auth[-_]?token|token|subscription[-_]?key|password)=)[^&#\\s]+",
++        )
++    }
++}
++
++data class HttpResponse(val statusCode: Int, val body: String) {
++    val isSuccess: Boolean get() = statusCode in 200..299
++}
++
++/** Raised by [HttpTransport] implementations on DNS/TLS/timeout/IO failure. */
++class HttpTransportException(message: String, cause: Throwable? = null) : Exception(message, cause)
++
++/**
++ * Single seam between provider logic and the network. Production supplies an
++ * OkHttp/HttpURLConnection-backed implementation from `:app`; unit tests supply
++ * a fake that returns canned [HttpResponse]s (or throws [HttpTransportException]).
++ */
++interface HttpTransport {
++    suspend fun execute(request: HttpRequest): HttpResponse
++}
++
++object SensitiveHeaders {
++    private val NAMES = setOf(
++        "authorization",
++        "proxy-authorization",
++        "ocp-apim-subscription-key",
++        "x-api-key",
++        "api-key",
++        "x-goog-api-key",
++        "cookie",
++        "set-cookie",
++    )
++
++    fun isSensitive(name: String): Boolean = NAMES.contains(name.trim().lowercase())
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MicrosoftTranslateProvider.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MicrosoftTranslateProvider.kt
+new file mode 100644
+index 00000000..96ebb191
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MicrosoftTranslateProvider.kt
+@@ -0,0 +1,97 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Microsoft (Azure) Translator v3.
++ *
++ * Desktop reference: `src/utils/plugins/renderer/translation/azureTranslate.ts`
++ * (plugin key `azure-translate-plugin`) — subscription key in the
++ * `Ocp-Apim-Subscription-Key` header, optional `Ocp-Apim-Subscription-Region`,
++ * `api-version=3.0` + `to` (and `from` when known) as query parameters, payload
++ * `[{ "text": ... }]`, answer `[0].translations[0].text`.
++ */
++class MicrosoftTranslateProvider : TranslationProvider {
++
++    override val id: TranslationSourceId = TranslationSourceId.MICROSOFT
++
++    override val defaultEndpoint: String = DEFAULT_ENDPOINT
++
++    override val credentialFields: List<CredentialField> = listOf(
++        CredentialField(
++            key = "apiKey",
++            label = "Subscription key",
++            required = true,
++            secret = true,
++            hint = "Azure Translator resource key",
++        ),
++        CredentialField(
++            key = "region",
++            label = "Region",
++            required = false,
++            secret = false,
++            hint = "e.g. eastasia (required by multi-service resources)",
++        ),
++        CredentialField(
++            key = "endpoint",
++            label = "Endpoint",
++            required = false,
++            secret = false,
++            hint = DEFAULT_ENDPOINT,
++        ),
++    )
++
++    override fun buildRequest(
++        text: String,
++        from: String,
++        to: String,
++        credentials: ProviderCredentials,
++    ): HttpRequest {
++        val endpoint = credentials.endpoint.ifBlank { defaultEndpoint }.trimEnd('/')
++        val url = endpoint + "/translate" + UrlEncoding.query(
++            "api-version" to API_VERSION,
++            "to" to to,
++            "from" to if (LanguageCodes.isAuto(from)) null else from,
++        )
++        val headers = LinkedHashMap<String, String>()
++        headers["Content-Type"] = "application/json"
++        headers[SUBSCRIPTION_KEY_HEADER] = credentials.apiKey
++        if (credentials.region.isNotBlank()) {
++            headers[SUBSCRIPTION_REGION_HEADER] = credentials.region
++        }
++        return HttpRequest(
++            method = "POST",
++            url = url,
++            headers = headers,
++            body = "[{" + MiniJson.quote("text") + ":" + MiniJson.quote(text) + "}]",
++        )
++    }
++
++    override fun parseResponse(response: HttpResponse): TranslationOutcome {
++        if (!response.isSuccess) {
++            return TranslationOutcome.Failure(
++                id,
++                FailureReason.HTTP_STATUS,
++                "Microsoft returned HTTP ${response.statusCode}",
++            )
++        }
++        val json = MiniJson.parse(response.body)
++            ?: return TranslationOutcome.Failure(id, FailureReason.MALFORMED_RESPONSE, "Microsoft returned a non-JSON body")
++        val translated = json.stringAt(0, "translations", 0, "text")
++            ?: return TranslationOutcome.Failure(
++                id,
++                FailureReason.MALFORMED_RESPONSE,
++                "Microsoft response has no [0].translations[0].text",
++            )
++        return TranslationOutcome.Success(
++            text = translated,
++            provider = id,
++            detectedSourceLanguage = json.stringAt(0, "detectedLanguage", "language"),
++        )
++    }
++
++    companion object {
++        const val DEFAULT_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
++        const val API_VERSION = "3.0"
++        const val SUBSCRIPTION_KEY_HEADER = "Ocp-Apim-Subscription-Key"
++        const val SUBSCRIPTION_REGION_HEADER = "Ocp-Apim-Subscription-Region"
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MiniJson.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MiniJson.kt
+new file mode 100644
+index 00000000..c3da6f16
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/MiniJson.kt
+@@ -0,0 +1,363 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Dependency-free JSON reader/writer.
++ *
++ * Why not org.json / kotlinx.serialization:
++ *  - `org.json` is part of the Android framework: its stubs throw
++ *    `RuntimeException("Stub!")` in plain JVM unit tests, which would make the
++ *    response-parsing tests Android-instrumented.
++ *  - kotlinx.serialization would add a compiler plugin to a module whose only
++ *    JSON needs are "read a nested field" and "write a small request body".
++ *
++ * The parser is a strict recursive-descent reader for RFC 8259 documents
++ * (objects, arrays, strings with `\uXXXX` escapes, numbers, booleans, null).
++ * It returns `null` for malformed input instead of throwing, because every
++ * caller here maps a parse failure onto a user-visible "provider returned an
++ * unexpected payload" state.
++ */
++sealed interface JsonValue {
++    data class JsonString(val value: String) : JsonValue
++    data class JsonNumber(val raw: String) : JsonValue {
++        val value: Double get() = raw.toDoubleOrNull() ?: Double.NaN
++        val longValue: Long get() = raw.toDoubleOrNull()?.toLong() ?: 0L
++    }
++
++    data class JsonBool(val value: Boolean) : JsonValue
++    data object JsonNull : JsonValue
++    data class JsonArray(val items: List<JsonValue>) : JsonValue
++    data class JsonObject(val fields: Map<String, JsonValue>) : JsonValue
++}
++
++private class JsonParseException(message: String) : Exception(message)
++
++object MiniJson {
++
++    /** Parses [text]; returns `null` when the document is malformed. */
++    fun parse(text: String): JsonValue? {
++        if (text.isBlank()) {
++            return null
++        }
++        return try {
++            val reader = JsonReader(text)
++            val value = reader.readValue()
++            reader.skipWhitespace()
++            if (!reader.atEnd()) {
++                null
++            } else {
++                value
++            }
++        } catch (_: JsonParseException) {
++            null
++        }
++    }
++
++    /** Parses and requires a top-level object (LLM/providers always answer with one). */
++    fun parseObject(text: String): JsonValue.JsonObject? = parse(text) as? JsonValue.JsonObject
++
++    /** Parses and requires a top-level array (Microsoft Translator answers with one). */
++    fun parseArray(text: String): JsonValue.JsonArray? = parse(text) as? JsonValue.JsonArray
++
++    /** Serialises one of `String` / `Number` / `Boolean` / `List<*>` / `JsonValue` / `null`. */
++    fun write(value: Any?): String = buildString { writeValue(this, value) }
++
++    /**
++     * Builds a flat JSON object body, e.g.
++     * `body("q" to text, "target" to to, "format" to "text")`.
++     */
++    fun body(vararg fields: Pair<String, Any?>): String =
++        fields.joinToString(prefix = "{", postfix = "}", separator = ",") { (key, value) ->
++            "${quote(key)}:${write(value)}"
++        }
++
++    fun quote(value: String): String = buildString {
++        append('"')
++        value.forEach { ch ->
++            when (ch) {
++                '"' -> append("\\\"")
++                '\\' -> append("\\\\")
++                '\n' -> append("\\n")
++                '\r' -> append("\\r")
++                '\t' -> append("\\t")
++                '\b' -> append("\\b")
++                '\u000C' -> append("\\f")
++                else -> if (ch < ' ') {
++                    append("\\u").append(ch.code.toString(16).padStart(4, '0'))
++                } else {
++                    append(ch)
++                }
++            }
++        }
++        append('"')
++    }
++
++    private fun writeValue(out: StringBuilder, value: Any?) {
++        when (value) {
++            null -> out.append("null")
++            is JsonValue -> out.append(writeJsonValue(value))
++            is String -> out.append(quote(value))
++            is Boolean -> out.append(value.toString())
++            is Int, is Long, is Short, is Byte -> out.append(value.toString())
++            is Double -> out.append(if (value.isFinite()) value.toString() else "0")
++            is Float -> out.append(if (value.isFinite()) value.toString() else "0")
++            is List<*> -> {
++                out.append('[')
++                value.forEachIndexed { position, item ->
++                    if (position > 0) {
++                        out.append(',')
++                    }
++                    writeValue(out, item)
++                }
++                out.append(']')
++            }
++            is Map<*, *> -> out.append(
++                value.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { (k, v) ->
++                    "${quote(k.toString())}:${write(v)}"
++                },
++            )
++            else -> out.append(quote(value.toString()))
++        }
++    }
++
++    private fun writeJsonValue(value: JsonValue): String = when (value) {
++        is JsonValue.JsonString -> quote(value.value)
++        is JsonValue.JsonNumber -> value.raw
++        is JsonValue.JsonBool -> value.value.toString()
++        JsonValue.JsonNull -> "null"
++        is JsonValue.JsonArray -> value.items.joinToString(prefix = "[", postfix = "]", separator = ",") { writeJsonValue(it) }
++        is JsonValue.JsonObject -> value.fields.entries.joinToString(prefix = "{", postfix = "}", separator = ",") {
++            "${quote(it.key)}:${writeJsonValue(it.value)}"
++        }
++    }
++}
++
++/** Path lookup: `String` steps address object fields, `Int` steps address array indices. */
++fun JsonValue?.at(vararg path: Any): JsonValue? {
++    var current: JsonValue? = this
++    for (step in path) {
++        current = when (step) {
++            is String -> (current as? JsonValue.JsonObject)?.fields?.get(step)
++            is Int -> (current as? JsonValue.JsonArray)?.items?.getOrNull(step)
++            else -> null
++        }
++        if (current == null) {
++            return null
++        }
++    }
++    return current
++}
++
++fun JsonValue?.stringAt(vararg path: Any): String? = (this.at(*path) as? JsonValue.JsonString)?.value
++
++fun JsonValue?.intAt(vararg path: Any): Int? = (this.at(*path) as? JsonValue.JsonNumber)?.value?.toInt()
++
++/** `&quot;`-style entities are returned verbatim by the Google v2 endpoint. */
++object HtmlEntities {
++    fun unescape(text: String): String {
++        if (!text.contains('&')) {
++            return text
++        }
++        val out = StringBuilder(text.length)
++        var index = 0
++        while (index < text.length) {
++            val ch = text[index]
++            if (ch != '&') {
++                out.append(ch)
++                index++
++                continue
++            }
++            val end = text.indexOf(';', startIndex = index + 1)
++            if (end == -1 || end - index > 12) {
++                out.append(ch)
++                index++
++                continue
++            }
++            val entity = text.substring(index + 1, end)
++            val decoded = decodeEntity(entity)
++            if (decoded == null) {
++                out.append(ch)
++                index++
++            } else {
++                out.append(decoded)
++                index = end + 1
++            }
++        }
++        return out.toString()
++    }
++
++    private fun decodeEntity(entity: String): String? = when {
++        entity.startsWith("#x") || entity.startsWith("#X") ->
++            entity.drop(2).toIntOrNull(16)?.let { codePointToString(it) }
++        entity.startsWith("#") -> entity.drop(1).toIntOrNull()?.let { codePointToString(it) }
++        else -> when (entity.lowercase()) {
++            "quot" -> "\""
++            "apos" -> "'"
++            "amp" -> "&"
++            "lt" -> "<"
++            "gt" -> ">"
++            "nbsp" -> "\u00A0"
++            "hellip" -> "\u2026"
++            "mdash" -> "\u2014"
++            "ndash" -> "\u2013"
++            "lsquo" -> "\u2018"
++            "rsquo" -> "\u2019"
++            "ldquo" -> "\u201C"
++            "rdquo" -> "\u201D"
++            else -> null
++        }
++    }
++
++    private fun codePointToString(codePoint: Int): String? =
++        if (codePoint in 1..0x10FFFF) String(Character.toChars(codePoint)) else null
++}
++
++private class JsonReader(private val text: String) {
++    private var index = 0
++
++    fun atEnd(): Boolean = index >= text.length
++
++    fun skipWhitespace() {
++        while (index < text.length && text[index].isJsonWhitespace()) {
++            index++
++        }
++    }
++
++    fun readValue(): JsonValue {
++        skipWhitespace()
++        if (atEnd()) {
++            throw JsonParseException("unexpected end of input")
++        }
++        return when (val ch = text[index]) {
++            '{' -> readObject()
++            '[' -> readArray()
++            '"' -> JsonValue.JsonString(readString())
++            't' -> readLiteral("true", JsonValue.JsonBool(true))
++            'f' -> readLiteral("false", JsonValue.JsonBool(false))
++            'n' -> readLiteral("null", JsonValue.JsonNull)
++            else -> if (ch == '-' || ch.isDigit()) readNumber() else throw JsonParseException("unexpected character '$ch'")
++        }
++    }
++
++    private fun readObject(): JsonValue.JsonObject {
++        expect('{')
++        val fields = LinkedHashMap<String, JsonValue>()
++        skipWhitespace()
++        if (peek() == '}') {
++            index++
++            return JsonValue.JsonObject(fields)
++        }
++        while (true) {
++            skipWhitespace()
++            val key = readString()
++            skipWhitespace()
++            expect(':')
++            fields[key] = readValue()
++            skipWhitespace()
++            when (peek()) {
++                ',' -> index++
++                '}' -> {
++                    index++
++                    return JsonValue.JsonObject(fields)
++                }
++                else -> throw JsonParseException("expected ',' or '}' at $index")
++            }
++        }
++    }
++
++    private fun readArray(): JsonValue.JsonArray {
++        expect('[')
++        val items = ArrayList<JsonValue>()
++        skipWhitespace()
++        if (peek() == ']') {
++            index++
++            return JsonValue.JsonArray(items)
++        }
++        while (true) {
++            items.add(readValue())
++            skipWhitespace()
++            when (peek()) {
++                ',' -> index++
++                ']' -> {
++                    index++
++                    return JsonValue.JsonArray(items)
++                }
++                else -> throw JsonParseException("expected ',' or ']' at $index")
++            }
++        }
++    }
++
++    private fun readString(): String {
++        expect('"')
++        val out = StringBuilder()
++        while (true) {
++            if (atEnd()) {
++                throw JsonParseException("unterminated string")
++            }
++            val ch = text[index++]
++            when {
++                ch == '"' -> return out.toString()
++                ch == '\\' -> {
++                    if (atEnd()) {
++                        throw JsonParseException("unterminated escape")
++                    }
++                    when (val esc = text[index++]) {
++                        '"' -> out.append('"')
++                        '\\' -> out.append('\\')
++                        '/' -> out.append('/')
++                        'b' -> out.append('\b')
++                        'f' -> out.append('\u000C')
++                        'n' -> out.append('\n')
++                        'r' -> out.append('\r')
++                        't' -> out.append('\t')
++                        'u' -> {
++                            if (index + 4 > text.length) {
++                                throw JsonParseException("truncated \\u escape")
++                            }
++                            val hex = text.substring(index, index + 4)
++                            index += 4
++                            val code = hex.toIntOrNull(16) ?: throw JsonParseException("bad \\u escape '$hex'")
++                            out.append(code.toChar())
++                        }
++                        else -> throw JsonParseException("bad escape '\\$esc'")
++                    }
++                }
++                else -> out.append(ch)
++            }
++        }
++    }
++
++    private fun readNumber(): JsonValue.JsonNumber {
++        val start = index
++        if (peek() == '-') {
++            index++
++        }
++        while (index < text.length && (text[index].isDigit() || text[index] in ".eE+-")) {
++            index++
++        }
++        val raw = text.substring(start, index)
++        if (raw.toDoubleOrNull() == null) {
++            throw JsonParseException("bad number '$raw'")
++        }
++        return JsonValue.JsonNumber(raw)
++    }
++
++    private fun <T : JsonValue> readLiteral(literal: String, value: T): T {
++        if (!text.startsWith(literal, index)) {
++            throw JsonParseException("expected '$literal' at $index")
++        }
++        index += literal.length
++        return value
++    }
++
++    private fun expect(ch: Char) {
++        skipWhitespace()
++        if (peek() != ch) {
++            throw JsonParseException("expected '$ch' at $index")
++        }
++        index++
++    }
++
++    private fun peek(): Char = if (atEnd()) '\u0000' else text[index]
++}
++
++private fun Char.isJsonWhitespace(): Boolean = this == ' ' || this == '\t' || this == '\n' || this == '\r'
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/RedactedLogger.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/RedactedLogger.kt
+new file mode 100644
+index 00000000..dede83ea
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/RedactedLogger.kt
+@@ -0,0 +1,115 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Logging seam. Implemented by an `android.util.Log` wrapper in `:app` and by a
++ * recording fake in unit tests.
++ */
++interface Logger {
++    fun info(message: String)
++    fun warn(message: String)
++    fun error(message: String, throwable: Throwable? = null)
++}
++
++object NoopLogger : Logger {
++    override fun info(message: String) = Unit
++    override fun warn(message: String) = Unit
++    override fun error(message: String, throwable: Throwable?) = Unit
++}
++
++/**
++ * Token masking helpers.
++ *
++ * Project rule (CLAUDE.md / P6 acceptance #2): **a full token must never reach
++ * an info-level log line**. Two independent defences are applied by
++ * [RedactedLogger]:
++ *
++ *  1. value-based — every secret the app has ever loaded (API keys, bearer
++ *     tokens) is replaced literally, wherever it appears;
++ *  2. shape-based — anything that *looks* like `key=…`, `Authorization: Bearer …`,
++ *     `sk-…`, `AIza…` is masked even if the app never saw that secret.
++ */
++object TokenRedaction {
++    const val MASK = "***"
++
++    private val KEY_VALUE = Regex(
++        "(?i)\\b(api[-_]?key|apikey|subscription[-_]?key|auth[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|passphrase)\\b(\"?\\s*[:=]\\s*\"?|\\s+)([A-Za-z0-9\\-._~+/=]{6,})",
++    )
++
++    private val PATTERNS: List<Pair<Regex, (MatchResult) -> String>> = listOf(
++        // key=value / key: value / key value pairs (query strings, JSON, headers)
++        KEY_VALUE to { match -> "${match.groupValues[1]}${match.groupValues[2]}$MASK" },
++        // Authorization schemes
++        Regex("(?i)\\b(bearer|deepl-auth-key|basic|token)\\s+([A-Za-z0-9\\-._~+/=]{6,})") to { match ->
++            "${match.groupValues[1]} $MASK"
++        },
++        // Well-known token shapes (OpenAI/Anthropic/HuggingFace, Google API keys)
++        Regex("\\b(sk|pk|rk|hf)-[A-Za-z0-9\\-_]{8,}\\b") to { MASK },
++        Regex("\\bAIza[0-9A-Za-z\\-_]{20,}\\b") to { MASK },
++        // Long base64-ish blobs that are not part of a word
++        Regex("\\b[A-Za-z0-9+/]{40,}={0,2}\\b") to { MASK },
++    )
++
++    /**
++     * @param secrets values that must never appear in the output, matched
++     *   literally and case-sensitively (they are compared byte-for-byte).
++     */
++    fun redact(message: String, secrets: Collection<String> = emptyList()): String {
++        var result = message
++        for (secret in secrets) {
++            if (secret.length >= MIN_SECRET_LENGTH && result.contains(secret)) {
++                result = result.replace(secret, MASK)
++            }
++        }
++        for ((pattern, replacement) in PATTERNS) {
++            result = pattern.replace(result, replacement)
++        }
++        return result
++    }
++
++    /** `sk-abcd…wxyz` -> `***wxyz`; short values are masked entirely. */
++    fun mask(secret: String?): String {
++        if (secret.isNullOrEmpty()) {
++            return ""
++        }
++        return if (secret.length <= KEEP_SUFFIX) {
++            MASK
++        } else {
++            MASK + secret.takeLast(KEEP_SUFFIX)
++        }
++    }
++
++    /** Number of trailing characters preserved by [mask] for operator support. */
++    const val KEEP_SUFFIX = 4
++
++    /** Secrets shorter than this are not value-matched (too many false hits). */
++    const val MIN_SECRET_LENGTH = 6
++}
++
++/**
++ * [Logger] decorator that redacts before delegating.
++ *
++ * The [secretSource] lambda is re-evaluated on every call, so secrets that are
++ * saved *after* the logger was constructed are covered as well.
++ */
++class RedactedLogger(
++    private val delegate: Logger,
++    private val secretSource: () -> Collection<String> = { emptyList() },
++) : Logger {
++
++    override fun info(message: String) {
++        delegate.info(redact(message))
++    }
++
++    override fun warn(message: String) {
++        delegate.warn(redact(message))
++    }
++
++    override fun error(message: String, throwable: Throwable?) {
++        // The message is sanitised; a throwable's own message is not rewritten
++        // (Java throwables are immutable). Network layers therefore translate
++        // IO failures into HttpTransportException with a token-free message.
++        delegate.error(redact(message), throwable)
++    }
++
++    fun redact(message: String): String = TokenRedaction.redact(message, secretSource())
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt
+new file mode 100644
+index 00000000..ee7ba504
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt
+@@ -0,0 +1,40 @@
++package com.koodoreader.feature.translate
++
++import android.content.Context
++import androidx.room.Database
++import androidx.room.Room
++import androidx.room.RoomDatabase
++
++/**
++ * Room database holding [TranslationHistoryEntity].
++ *
++ * Design note (see docs/p6-translate-architecture.md §5): the table lives in its
++ * own database file so `:feature:translate` stays self-contained and does not
++ * require editing `core/data`'s `KoodoDatabase` (P6 is not allowed to touch the
++ * P1 data layer). Because `KoodoDatabase` is a Room database with a fixed entity
++ * list, merging this table into it is an additive `@Database(entities = [...,
++ * TranslationHistoryEntity::class], version = n + 1)` change plus a
++ * `Migration(n, n + 1)` containing the same `CREATE TABLE` Room derives here —
++ * the DAO compiles against either database.
++ */
++@Database(entities = [TranslationHistoryEntity::class], version = 1, exportSchema = false)
++abstract class TranslationHistoryDatabase : RoomDatabase() {
++
++    abstract fun historyDao(): TranslationHistoryDao
++
++    companion object {
++        const val NAME = "koodo_translation_history.db"
++
++        @Volatile
++        private var instance: TranslationHistoryDatabase? = null
++
++        fun get(context: Context): TranslationHistoryDatabase =
++            instance ?: synchronized(this) {
++                instance ?: Room.databaseBuilder(
++                    context.applicationContext,
++                    TranslationHistoryDatabase::class.java,
++                    NAME,
++                ).build().also { instance = it }
++            }
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopup.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopup.kt
+new file mode 100644
+index 00000000..c2a197ad
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopup.kt
+@@ -0,0 +1,240 @@
++package com.koodoreader.feature.translate
++
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++
++enum class PopupStatus {
++    IDLE,
++    TRANSLATING,
++    DONE,
++    FAILED,
++
++    /** Selected source has no API key yet — the UI links to the settings screen. */
++    NEEDS_CREDENTIALS,
++}
++
++/** Selection geometry in view coordinates, used to place the popup. */
++data class SelectionAnchor(
++    val startX: Float,
++    val startY: Float,
++    val endX: Float,
++    val endY: Float,
++    val selectionFromBottomToTop: Boolean = false,
++) {
++    companion object {
++        val NONE = SelectionAnchor(0f, 0f, 0f, 0f)
++    }
++}
++
++/** One entry of the popup's source switcher (P6 acceptance #1: 多源切换). */
++data class SourceChip(
++    val id: TranslationSourceId,
++    val displayName: String,
++    val configured: Boolean,
++    val active: Boolean,
++    val credentialHint: String,
++)
++
++data class TranslationPopupState(
++    val visible: Boolean = false,
++    val selection: String = "",
++    val sourceLanguage: String = LanguageCodes.AUTO,
++    val targetLanguage: String = GoogleTranslateProvider.DEFAULT_TARGET,
++    val activeSource: TranslationSourceId = TranslationSourceId.GOOGLE,
++    val status: PopupStatus = PopupStatus.IDLE,
++    val translatedText: String? = null,
++    val failureDetail: String? = null,
++    val pinned: Boolean = false,
++    val recordedInHistory: Boolean = false,
++    val anchor: SelectionAnchor = SelectionAnchor.NONE,
++) {
++    val hasResult: Boolean get() = !translatedText.isNullOrEmpty()
++
++    /** What the popup body shows: the translation once available, else the selection. */
++    fun displayText(): String = translatedText?.takeIf { it.isNotEmpty() } ?: selection
++}
++
++/**
++ * State machine behind the selection-translation popup.
++ *
++ * Deliberately free of Android/Compose types: the Compose surface
++ * (`TranslationPopupUi.kt`) only renders [state] and forwards intents, and the
++ * whole flow — show, switch source, translate, fail, dismiss — is unit-tested on
++ * the JVM. Nothing here logs credentials; provider calls go through
++ * [CredentialsStore] + [RedactedLogger].
++ */
++class TranslationPopupController(
++    private val selector: ProviderSelector,
++    private val credentialsStore: CredentialsStore,
++    private val transport: HttpTransport,
++    private val logger: Logger = NoopLogger,
++    private val history: TranslationHistoryRepository? = null,
++    private val defaultTargetLanguage: String = GoogleTranslateProvider.DEFAULT_TARGET,
++    private val defaultSourceLanguage: String = LanguageCodes.AUTO,
++) {
++
++    private val _state = MutableStateFlow(
++        TranslationPopupState(
++            targetLanguage = defaultTargetLanguage,
++            sourceLanguage = defaultSourceLanguage,
++            activeSource = selector.active,
++        ),
++    )
++
++    val state: StateFlow<TranslationPopupState> = _state.asStateFlow()
++
++    private var pendingBookKey: String? = null
++    private var pendingCfi: String? = null
++
++    /** Called by the reader when a new selection is made. */
++    fun show(
++        selection: String,
++        targetLanguage: String = defaultTargetLanguage,
++        bookKey: String? = null,
++        cfi: String? = null,
++        anchor: SelectionAnchor = SelectionAnchor.NONE,
++    ): TranslationPopupState {
++        pendingBookKey = bookKey
++        pendingCfi = cfi
++        val resolved = selector.resolve(credentialsStore.configuredSources())
++        selector.select(resolved)
++        _state.value = _state.value.copy(
++            visible = selection.isNotBlank(),
++            selection = selection,
++            targetLanguage = targetLanguage,
++            activeSource = resolved,
++            status = PopupStatus.IDLE,
++            translatedText = null,
++            failureDetail = null,
++            recordedInHistory = false,
++            anchor = anchor,
++        )
++        return _state.value
++    }
++
++    fun dismiss(): TranslationPopupState {
++        _state.value = _state.value.copy(visible = false, status = PopupStatus.IDLE)
++        return _state.value
++    }
++
++    fun setPinned(pinned: Boolean): TranslationPopupState {
++        _state.value = _state.value.copy(pinned = pinned)
++        return _state.value
++    }
++
++    fun sources(): List<SourceChip> {
++        val configured = credentialsStore.configuredSources()
++        return selector.providers.map { provider ->
++            SourceChip(
++                id = provider.id,
++                displayName = provider.id.displayName,
++                configured = configured.contains(provider.id),
++                active = provider.id == selector.active,
++                credentialHint = provider.credentialFields.firstOrNull { it.secret }?.hint.orEmpty(),
++            )
++        }
++    }
++
++    /** Source switcher; keeps the current selection so the caller can re-translate. */
++    fun switchProvider(id: TranslationSourceId): Boolean {
++        if (!selector.select(id)) {
++            logger.warn("translation source ${id.pluginKey} is not registered")
++            return false
++        }
++        _state.value = _state.value.copy(activeSource = id, status = PopupStatus.IDLE, failureDetail = null)
++        logger.info("translation source switched: ${id.pluginKey}")
++        return true
++    }
++
++    fun cycleProvider(): TranslationSourceId {
++        val next = selector.next()
++        _state.value = _state.value.copy(activeSource = next, status = PopupStatus.IDLE, failureDetail = null)
++        return next
++    }
++
++    /** Switch + translate in one step (popup chip tap). */
++    suspend fun switchProviderAndTranslate(id: TranslationSourceId): TranslationPopupState {
++        switchProvider(id)
++        return translate()
++    }
++
++    /** Runs the translation for [TranslationPopupState.selection]. */
++    suspend fun translate(): TranslationPopupState {
++        val current = _state.value
++        if (current.selection.isBlank()) {
++            return current
++        }
++        val sourceId = selector.resolve(credentialsStore.configuredSources())
++        selector.select(sourceId)
++        val credentials = credentialsStore.require(sourceId)
++        if (!credentials.hasApiKey()) {
++            _state.value = current.copy(
++                activeSource = sourceId,
++                status = PopupStatus.NEEDS_CREDENTIALS,
++                failureDetail = "Add an API key for ${sourceId.displayName} to translate.",
++                translatedText = null,
++            )
++            return _state.value
++        }
++        _state.value = current.copy(activeSource = sourceId, status = PopupStatus.TRANSLATING, failureDetail = null)
++        val outcome = selector.provider(sourceId).translate(
++            text = current.selection,
++            from = current.sourceLanguage,
++            to = current.targetLanguage,
++            credentials = credentials,
++            transport = transport,
++        )
++        return when (outcome) {
++            is TranslationOutcome.Success -> {
++                val recorded = record(outcome, current)
++                _state.value = _state.value.copy(
++                    status = PopupStatus.DONE,
++                    translatedText = outcome.text,
++                    failureDetail = null,
++                    recordedInHistory = recorded,
++                )
++                _state.value
++            }
++
++            is TranslationOutcome.Failure -> {
++                _state.value = _state.value.copy(
++                    status = PopupStatus.FAILED,
++                    translatedText = null,
++                    failureDetail = outcome.detail,
++                )
++                logger.warn("translation failed: source=${sourceId.pluginKey} reason=${outcome.reason}")
++                _state.value
++            }
++        }
++    }
++
++    /** Text handed to the clipboard / share sheet. */
++    fun copyPayload(): String? {
++        val current = _state.value
++        if (!current.hasResult) {
++            return null
++        }
++        return buildString {
++            append(current.selection)
++            append('\n')
++            append(current.translatedText)
++            append("\n— ")
++            append(current.activeSource.displayName)
++        }
++    }
++
++    private suspend fun record(outcome: TranslationOutcome.Success, current: TranslationPopupState): Boolean {
++        val repository = history ?: return false
++        repository.record(
++            sourceText = current.selection,
++            translatedText = outcome.text,
++            targetLang = current.targetLanguage,
++            provider = outcome.provider,
++            sourceLang = outcome.detectedSourceLanguage ?: current.sourceLanguage,
++            bookKey = pendingBookKey,
++            cfi = pendingCfi,
++        )
++        return true
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopupUi.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopupUi.kt
+new file mode 100644
+index 00000000..6c3cbaaf
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationPopupUi.kt
+@@ -0,0 +1,202 @@
++package com.koodoreader.feature.translate
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.layout.widthIn
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++
++/**
++ * User-visible labels. Keys are the **desktop react-i18next keys** (identical
++ * strings in `src/assets/locales/`), resolved through
++ * `core:common`'s `Localization` — e.g.
++ * `TranslationPopupLabels.from(localization::t)`. Missing keys fall back to the
++ * key itself, which for these labels is already the English text.
++ */
++data class TranslationPopupLabels(
++    val title: String = "Translate",
++    val translating: String = "Translating…",
++    val failed: String = "Translation failed",
++    val copy: String = "Copy",
++    val close: String = "Close",
++    val retry: String = "Retry",
++    val configureKey: String = "AI service",
++) {
++    companion object {
++        fun from(translate: (String) -> String): TranslationPopupLabels = TranslationPopupLabels(
++            title = translate("Translate"),
++            translating = translate("Translating"),
++            failed = translate("Translation failed"),
++            copy = translate("Copy"),
++            close = translate("Close"),
++            retry = translate("Retry"),
++            configureKey = translate("AI service"),
++        )
++    }
++}
++
++/**
++ * Selection-translation popup (P6 acceptance #1): source switcher chips, the
++ * translated text, the original selection and the copy/retry/close actions.
++ *
++ * Stateless by design — the reader owns a [TranslationPopupController] and just
++ * re-renders this surface from [state]; every intent is a callback. On a wide
++ * screen the caller wraps it in a `Popup` anchored to
++ * [TranslationPopupState.anchor].
++ */
++@Composable
++fun TranslationPopup(
++    state: TranslationPopupState,
++    sources: List<SourceChip>,
++    onSourceSelected: (TranslationSourceId) -> Unit,
++    onRetry: () -> Unit,
++    onCopy: (String) -> Unit,
++    onDismiss: () -> Unit,
++    modifier: Modifier = Modifier,
++    labels: TranslationPopupLabels = TranslationPopupLabels(),
++) {
++    if (!state.visible) {
++        return
++    }
++    Surface(
++        modifier = modifier.widthIn(min = 240.dp, max = 380.dp),
++        shape = MaterialTheme.shapes.medium,
++        color = MaterialTheme.colorScheme.surface,
++        tonalElevation = 6.dp,
++        shadowElevation = 8.dp,
++    ) {
++        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
++            Header(state = state, labels = labels)
++            Spacer(Modifier.height(6.dp))
++            SourceSwitcher(sources = sources, onSourceSelected = onSourceSelected, labels = labels)
++            Spacer(Modifier.height(8.dp))
++            Body(state = state, labels = labels)
++            Spacer(Modifier.height(4.dp))
++            Actions(state = state, onCopy = onCopy, onRetry = onRetry, onDismiss = onDismiss, labels = labels)
++        }
++    }
++}
++
++@Composable
++private fun Header(state: TranslationPopupState, labels: TranslationPopupLabels) {
++    Row(verticalAlignment = Alignment.CenterVertically) {
++        Text(
++            text = labels.title,
++            style = MaterialTheme.typography.titleSmall,
++            fontWeight = FontWeight.SemiBold,
++            color = MaterialTheme.colorScheme.onSurface,
++        )
++        Spacer(Modifier.width(8.dp))
++        Text(
++            text = "${state.sourceLanguage} → ${state.targetLanguage}",
++            style = MaterialTheme.typography.labelSmall,
++            color = MaterialTheme.colorScheme.onSurfaceVariant,
++        )
++    }
++}
++
++@Composable
++private fun SourceSwitcher(
++    sources: List<SourceChip>,
++    onSourceSelected: (TranslationSourceId) -> Unit,
++    labels: TranslationPopupLabels,
++) {
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.spacedBy(4.dp),
++        verticalAlignment = Alignment.CenterVertically,
++    ) {
++        sources.forEach { chip ->
++            TextButton(
++                onClick = { onSourceSelected(chip.id) },
++                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
++            ) {
++                Text(
++                    text = if (chip.configured) chip.displayName else "${chip.displayName} · ${labels.configureKey}",
++                    style = MaterialTheme.typography.labelMedium,
++                    fontWeight = if (chip.active) FontWeight.Bold else FontWeight.Normal,
++                    color = when {
++                        chip.active -> MaterialTheme.colorScheme.primary
++                        chip.configured -> MaterialTheme.colorScheme.onSurfaceVariant
++                        else -> MaterialTheme.colorScheme.outline
++                    },
++                )
++            }
++        }
++    }
++}
++
++@Composable
++private fun Body(state: TranslationPopupState, labels: TranslationPopupLabels) {
++    Column(modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
++        if (state.hasResult) {
++            Text(
++                text = state.translatedText.orEmpty(),
++                style = MaterialTheme.typography.bodyMedium,
++                color = MaterialTheme.colorScheme.onSurface,
++            )
++            Spacer(Modifier.height(6.dp))
++            Text(
++                text = state.selection,
++                style = MaterialTheme.typography.bodySmall,
++                color = MaterialTheme.colorScheme.onSurfaceVariant,
++            )
++        } else {
++            Text(
++                text = when (state.status) {
++                    PopupStatus.TRANSLATING -> labels.translating
++                    PopupStatus.FAILED, PopupStatus.NEEDS_CREDENTIALS ->
++                        state.failureDetail ?: labels.failed
++                    else -> state.selection
++                },
++                style = MaterialTheme.typography.bodyMedium,
++                color = if (state.status == PopupStatus.FAILED || state.status == PopupStatus.NEEDS_CREDENTIALS) {
++                    MaterialTheme.colorScheme.error
++                } else {
++                    MaterialTheme.colorScheme.onSurface
++                },
++            )
++        }
++    }
++}
++
++@Composable
++private fun Actions(
++    state: TranslationPopupState,
++    onCopy: (String) -> Unit,
++    onRetry: () -> Unit,
++    onDismiss: () -> Unit,
++    labels: TranslationPopupLabels,
++) {
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.End,
++        verticalAlignment = Alignment.CenterVertically,
++    ) {
++        TextButton(
++            onClick = { state.translatedText?.let(onCopy) },
++            enabled = state.hasResult,
++        ) { Text(labels.copy) }
++        TextButton(
++            onClick = onRetry,
++            enabled = state.selection.isNotBlank() && state.status != PopupStatus.TRANSLATING,
++        ) { Text(labels.retry) }
++        TextButton(onClick = onDismiss) { Text(labels.close) }
++    }
++}
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationProvider.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationProvider.kt
+new file mode 100644
+index 00000000..6a1c0293
+--- /dev/null
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationProvider.kt
+@@ -0,0 +1,246 @@
++package com.koodoreader.feature.translate
++
++/**
++ * The three translation sources that ship built into the app (P6).
++ *
++ * Desktop ships 25 translation plugins in
++ * `src/utils/plugins/renderer/translation/` plus a renderer plugin registry.
++ * Per the P6 card only the three core sources are promoted to native features;
++ * the remaining plugin sources stay desktop-only (no plugin registry, no
++ * JavaScript bridge). [pluginKey] keeps the desktop plugin id so settings can be
++ * migrated 1:1.
++ */
++enum class TranslationSourceId(val pluginKey: String, val displayName: String) {
++    GOOGLE("google-translate-plugin", "Google Translate"),
++    MICROSOFT("azure-translate-plugin", "Microsoft Translator"),
++    DEEPL("deepl-translate-plugin", "DeepL"),
++    ;
++
++    companion object {
++        fun fromPluginKey(key: String): TranslationSourceId? =
++            entries.firstOrNull { it.pluginKey.equals(key, ignoreCase = true) }
++    }
++}
++
++/** DeepL splits its API by plan; desktop stores this as `keyType: "free" | ""`. */
++enum class ApiPlan(val wireValue: String) {
++    FREE("free"),
++    PRO("pro"),
++    ;
++
++    companion object {
++        fun fromWire(value: String?): ApiPlan = if (value.equals(FREE.wireValue, ignoreCase = true)) FREE else PRO
++    }
++}
++
++/**
++ * Credentials + endpoint for one source. Mirrors the desktop plugin `config`
++ * object field-for-field (`apiKey`, `endpoint`, `location`, `keyType`).
++ */
++data class ProviderCredentials(
++    val apiKey: String = "",
++    val endpoint: String = "",
++    val region: String = "",
++    val plan: ApiPlan = ApiPlan.FREE,
++) {
++    fun hasApiKey(): Boolean = apiKey.isNotBlank()
++}
++
++/** Field descriptor used to render the settings form and to validate input. */
++data class CredentialField(
++    val key: String,
++    val label: String,
++    val required: Boolean,
++    val secret: Boolean,
++    val hint: String = "",
++)
++
++enum class FailureReason {
++    EMPTY_INPUT,
++    MISSING_CREDENTIALS,
++
++    /** No provider configured at all (AI assistant path). */
++    NOT_CONFIGURED,
++    NETWORK,
++    HTTP_STATUS,
++    MALFORMED_RESPONSE,
++}
++
++sealed interface TranslationOutcome {
++    data class Success(
++        val text: String,
++        val provider: TranslationSourceId,
++        val detectedSourceLanguage: String? = null,
++    ) : TranslationOutcome
++
++    data class Failure(
++        val provider: TranslationSourceId,
++        val reason: FailureReason,
++        val detail: String,
++    ) : TranslationOutcome
++}
++
++/**
++ * One translation source.
++ *
++ * The contract is split so that everything except the network hop is a pure
++ * function: [buildRequest] and [parseResponse] are unit-testable on the JVM,
++ * and [translate] only glues them together through an injected [HttpTransport].
++ */
++interface TranslationProvider {
++
++    val id: TranslationSourceId
++    val credentialFields: List<CredentialField>
++    val defaultEndpoint: String
++
++    fun buildRequest(
++        text: String,
++        from: String,
++        to: String,
++        credentials: ProviderCredentials,
++    ): HttpRequest
++
++    fun parseResponse(response: HttpResponse): TranslationOutcome
++
++    suspend fun translate(
++        text: String,
++        from: String,
++        to: String,
++        credentials: ProviderCredentials,
++        transport: HttpTransport,
++    ): TranslationOutcome {
++        if (text.isBlank()) {
++            return TranslationOutcome.Failure(id, FailureReason.EMPTY_INPUT, "nothing selected")
++        }
++        if (!credentials.hasApiKey()) {
++            return TranslationOutcome.Failure(
++                id,
++                FailureReason.MISSING_CREDENTIALS,
++                "missing API key for ${id.displayName}",
++            )
++        }
++        if (LanguageCodes.sameLanguage(from, to)) {
++            // Desktop Google plugin short-circuits identical languages; doing it
++            // for every source saves a round trip and a quota unit.
++            return TranslationOutcome.Success(text, id, from)
++        }
++        return try {
++            parseResponse(transport.execute(buildRequest(text, from, to, credentials)))
++        } catch (e: HttpTransportException) {
++            TranslationOutcome.Failure(id, FailureReason.NETWORK, e.message ?: "network error")
++        }
++    }
++}
++
++/** Desktop language codes; `Automatic`/`auto` mean "let the provider decide". */
++object LanguageCodes {
++    const val AUTO = "auto"
++    private const val DESKTOP_AUTO = "Automatic"
++
++    fun isAuto(code: String?): Boolean =
++        code.isNullOrBlank() || code.equals(AUTO, ignoreCase = true) || code.equals(DESKTOP_AUTO, ignoreCase = true)
++
++    fun sameLanguage(from: String?, to: String?): Boolean =
++        !isAuto(from) && !isAuto(to) && from.equals(to, ignoreCase = true)
++
++    /** DeepL (and some Microsoft endpoints) want upper-case language tags. */
++    fun upperTag(code: String): String = code.trim().uppercase()
++
++    /**
++     * DeepL tag mapping: `zh-CN` -> `ZH`, `zh-TW`/`zh-Hant` -> `ZH-HANT`,
++     * `en-us` -> `EN-US`, `en` -> `EN`.
++     */
++    fun deeplTag(code: String): String {
++        val normalized = code.trim().replace('_', '-')
++        val primary = normalized.substringBefore('-').lowercase()
++        val subtag = normalized.substringAfter('-', "").lowercase()
++        return when (primary) {
++            "zh" -> if (subtag.startsWith("tw") || subtag.startsWith("hk") || subtag.startsWith("hant")) {
++                "ZH-HANT"
++            } else {
++                "ZH"
++            }
++            else -> if (subtag.isEmpty()) primary.uppercase() else "${primary.uppercase()}-${subtag.uppercase()}"
++        }
++    }
++}
++
++internal object UrlEncoding {
++    private const val UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
++
++    fun encode(value: String): String {
++        val bytes = value.toByteArray(Charsets.UTF_8)
++        val out = StringBuilder(bytes.size)
++        for (byte in bytes) {
++            val ch = byte.toInt().toChar()
++            if (UNRESERVED.indexOf(ch) >= 0) {
++                out.append(ch)
++            } else {
++                out.append('%').append("%02X".format(byte.toInt() and 0xFF))
++            }
++        }
++        return out.toString()
++    }
++
++    /** `query("api-version" to "3.0", "to" to "zh-CN")` -> `?api-version=3.0&to=zh-CN`. */
++    fun query(vararg params: Pair<String, String?>): String {
++        val encoded = params
++            .filter { it.second != null && it.second!!.isNotEmpty() }
++            .joinToString("&") { "${encode(it.first)}=${encode(it.second!!)}" }
++        return if (encoded.isEmpty()) "" else "?$encoded"
++    }
++}
++
++/**
++ * Active source + switching order for the selection-translation popup.
++ *
++ * Selection rules (desktop parity): the configured source wins when it is
++ * usable, otherwise fall back to the first usable source, otherwise keep the
++ * configured one so the UI can show "add an API key".
++ */
++class ProviderSelector(
++    val providers: List<TranslationProvider>,
++    initialActive: TranslationSourceId? = null,
++) {
++    init {
++        require(providers.isNotEmpty()) { "at least one translation provider is required" }
++    }
++
++    var active: TranslationSourceId = initialActive?.takeIf { id -> providers.any { it.id == id } }
++        ?: providers.first().id
++        private set
++
++    fun activeProvider(): TranslationProvider = provider(active)
++
++    fun provider(id: TranslationSourceId): TranslationProvider =
++        providers.firstOrNull { it.id == id } ?: error("provider ${id.pluginKey} is not registered")
++
++    fun select(id: TranslationSourceId): Boolean {
++        if (providers.none { it.id == id }) {
++            return false
++        }
++        active = id
++        return true
++    }
++
++    fun isRegistered(id: TranslationSourceId): Boolean = providers.any { it.id == id }
++
++    /** Cycles in registration order (used by the popup's "next source" chip). */
++    fun next(): TranslationSourceId {
++        val index = providers.indexOfFirst { it.id == active }
++        active = providers[(index + 1) % providers.size].id
++        return active
++    }
++
++    /** Providers whose credentials are present, registration order preserved. */
++    fun usable(configured: Set<TranslationSourceId>): List<TranslationProvider> =
++        providers.filter { configured.contains(it.id) }
++
++    /** Resolves the source to use for the next translation. */
++    fun resolve(configured: Set<TranslationSourceId>): TranslationSourceId =
++        when {
++            configured.contains(active) -> active
++            usable(configured).isNotEmpty() -> usable(configured).first().id
++            else -> active
++        }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/AiAssistantTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/AiAssistantTest.kt
+new file mode 100644
+index 00000000..9f0dd19d
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/AiAssistantTest.kt
+@@ -0,0 +1,144 @@
++package com.koodoreader.feature.translate
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** P6 acceptance #3: AI assistant integration path (chapter summary + Q&A). */
++class AiAssistantTest {
++
++    private val sink = RecordingLogger()
++    private val completion =
++        """{"choices":[{"index":0,"message":{"role":"assistant","content":"  This chapter introduces the lighthouse.  "}}]}"""
++
++    private fun assistant(
++        config: AiModelConfig = AiModelConfig(
++            endpoint = "https://ai.example.test/v1/",
++            providerId = "openai-compatible",
++            apiKey = TestTokens.DEEPL,
++            modelId = "gpt-4o-mini",
++        ),
++        transport: HttpTransport = FakeHttpTransport.returning(completion),
++    ) = AiAssistant(config, transport, sink)
++
++    @Test
++    fun `unconfigured assistant returns NotConfigured without any request`() {
++        val transport = FakeHttpTransport.returning(completion)
++        val ai = assistant(config = AiModelConfig(), transport = transport)
++
++        assertFalse(ai.isConfigured())
++        assertEquals(AiOutcome.NotConfigured, runBlocking { ai.summarize("chapter text") })
++        assertEquals(AiOutcome.NotConfigured, runBlocking { ai.ask("who?", "context") })
++        assertTrue(transport.requests.isEmpty())
++    }
++
++    @Test
++    fun `builds an openai compatible chat request`() {
++        val request = assistant().buildChatRequest("Summarise this.")
++
++        assertEquals("POST", request.method)
++        assertEquals("https://ai.example.test/v1/chat/completions", request.url)
++        assertEquals("Bearer ${TestTokens.DEEPL}", request.header("Authorization"))
++        assertEquals("application/json", request.header("Content-Type"))
++        val body = request.body.orEmpty()
++        assertTrue(body.contains("\"model\":\"gpt-4o-mini\""))
++        assertTrue(body.contains("\"stream\":false"))
++        assertTrue(body.contains("\"role\":\"user\""))
++        assertTrue(body.contains("\"content\":\"Summarise this.\""))
++        assertFalse(request.redactedDescription().contains(TestTokens.DEEPL))
++    }
++
++    @Test
++    fun `parses message content and the legacy text shape`() {
++        val ai = assistant()
++
++        assertEquals("This chapter introduces the lighthouse.", ai.parseCompletion(completion))
++        assertEquals("legacy", ai.parseCompletion("""{"choices":[{"text":"legacy"}]}"""))
++        assertNull(ai.parseCompletion("""{"choices":[]}"""))
++        assertNull(ai.parseCompletion("not json"))
++    }
++
++    @Test
++    fun `summarize sends the summary prompt and returns the completion`() {
++        val transport = FakeHttpTransport.returning(completion)
++        val ai = assistant(transport = transport)
++
++        val outcome = runBlocking { ai.summarize("The lighthouse stood alone.", language = "zh-CN", maxSentences = 3) }
++
++        assertEquals(AiOutcome.Success("This chapter introduces the lighthouse."), outcome)
++        val prompt = MiniJson.parseObject(transport.requests.single().body.orEmpty())
++            ?.stringAt("messages", 0, "content")
++            .orEmpty()
++        assertTrue(prompt.contains("3 sentences"))
++        assertTrue(prompt.contains("\"zh-CN\""))
++        assertTrue(prompt.contains("The lighthouse stood alone."))
++        assertTrue(sink.infos.any { it.startsWith("INFO ai request:") })
++        assertFalse(sink.text().contains(TestTokens.DEEPL))
++    }
++
++    @Test
++    fun `ask sends question and book context`() {
++        val transport = FakeHttpTransport.returning(completion)
++        val ai = assistant(transport = transport)
++
++        val outcome = runBlocking { ai.ask("Who built the lighthouse?", "Chapter 2 book context") }
++
++        assertTrue(outcome is AiOutcome.Success)
++        val prompt = MiniJson.parseObject(transport.requests.single().body.orEmpty())
++            ?.stringAt("messages", 0, "content")
++            .orEmpty()
++        assertTrue(prompt.contains("Who built the lighthouse?"))
++        assertTrue(prompt.contains("Chapter 2 book context"))
++        assertTrue(prompt.contains("ONLY the provided book context"))
++    }
++
++    @Test
++    fun `empty inputs are rejected before the request`() {
++        val transport = FakeHttpTransport.returning(completion)
++        val ai = assistant(transport = transport)
++
++        assertEquals(FailureReason.EMPTY_INPUT, (runBlocking { ai.summarize("  ") } as AiOutcome.Failure).reason)
++        assertEquals(FailureReason.EMPTY_INPUT, (runBlocking { ai.ask(" ", "ctx") } as AiOutcome.Failure).reason)
++        assertTrue(transport.requests.isEmpty())
++    }
++
++    @Test
++    fun `http errors and malformed completions are mapped`() {
++        val failing = assistant(transport = FakeHttpTransport.returning("""{"error":"nope"}""", status = 500))
++        val malformed = assistant(transport = FakeHttpTransport.returning("""{"choices":[{"message":{}}]}"""))
++        val offline = assistant(transport = FakeHttpTransport.failing("dns failure"))
++
++        assertEquals(
++            FailureReason.HTTP_STATUS,
++            (runBlocking { failing.summarize("text") } as AiOutcome.Failure).reason,
++        )
++        assertEquals(
++            FailureReason.MALFORMED_RESPONSE,
++            (runBlocking { malformed.summarize("text") } as AiOutcome.Failure).reason,
++        )
++        assertEquals(FailureReason.NETWORK, (runBlocking { offline.summarize("text") } as AiOutcome.Failure).reason)
++    }
++
++    @Test
++    fun `api key never reaches an info level log line`() {
++        val ai = assistant()
++
++        ai.logger.info("using endpoint=${ai.hashCode()} apiKey=${TestTokens.DEEPL}")
++        runBlocking { ai.summarize("chapter") }
++
++        assertNotNull(sink.infos)
++        assertFalse(sink.text().contains(TestTokens.DEEPL))
++        assertTrue(sink.text().contains(TokenRedaction.MASK))
++    }
++
++    @Test
++    fun `desktop config keys stay in parity`() {
++        assertEquals(listOf("aiTranslateModel", "aiDictModel", "aiAssistanceModel"), AiConfigKeys.PRIORITY)
++        assertEquals("aiAssistanceModel", AiConfigKeys.ASSISTANCE)
++        assertEquals(5, AiAssistant.DEFAULT_SUMMARY_SENTENCES)
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/CredentialsStoreTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/CredentialsStoreTest.kt
+new file mode 100644
+index 00000000..b752fc64
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/CredentialsStoreTest.kt
+@@ -0,0 +1,108 @@
++package com.koodoreader.feature.translate
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class CredentialsStoreTest {
++
++    private val sink = RecordingLogger()
++
++    @Test
++    fun `save and load round trips every field`() {
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++        val credentials = ProviderCredentials(
++            apiKey = TestTokens.MICROSOFT,
++            endpoint = "https://api.cognitive.microsofttranslator.com",
++            region = "eastasia",
++            plan = ApiPlan.PRO,
++        )
++
++        store.save(TranslationSourceId.MICROSOFT, credentials)
++
++        assertEquals(credentials, store.load(TranslationSourceId.MICROSOFT))
++        assertTrue(store.isConfigured(TranslationSourceId.MICROSOFT))
++        assertEquals(setOf(TranslationSourceId.MICROSOFT), store.configuredSources())
++    }
++
++    @Test
++    fun `values are stored under desktop-parity namespaced keys`() {
++        val secrets = InMemorySecretStore()
++        val store = CredentialsStore(secrets, sink)
++
++        store.save(TranslationSourceId.DEEPL, ProviderCredentials(apiKey = TestTokens.DEEPL, plan = ApiPlan.FREE))
++
++        assertTrue(
++            secrets.keys().containsAll(
++                listOf(
++                    "p6.translate.cred.deepl-translate-plugin.apiKey",
++                    "p6.translate.cred.deepl-translate-plugin.endpoint",
++                    "p6.translate.cred.deepl-translate-plugin.region",
++                    "p6.translate.cred.deepl-translate-plugin.plan",
++                ),
++            ),
++        )
++        assertEquals("free", secrets.getString("p6.translate.cred.deepl-translate-plugin.plan"))
++        assertEquals(ApiPlan.FREE, store.load(TranslationSourceId.DEEPL)?.plan)
++    }
++
++    @Test
++    fun `unknown source returns null and require falls back to empty credentials`() {
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++
++        assertNull(store.load(TranslationSourceId.GOOGLE))
++        assertFalse(store.require(TranslationSourceId.GOOGLE).hasApiKey())
++        assertEquals("google-translate-plugin: not configured", store.describe(TranslationSourceId.GOOGLE))
++    }
++
++    @Test
++    fun `clear removes every field and forgets the token`() {
++        val secrets = InMemorySecretStore()
++        val store = CredentialsStore(secrets, sink)
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++
++        store.clear(TranslationSourceId.GOOGLE)
++
++        assertNull(store.load(TranslationSourceId.GOOGLE))
++        assertTrue(store.configuredSources().isEmpty())
++        assertTrue(store.knownTokens().isEmpty())
++        assertTrue(secrets.keys().isEmpty())
++    }
++
++    @Test
++    fun `knownTokens exposes stored secrets for redaction but never logs them`() {
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++        store.save(TranslationSourceId.DEEPL, ProviderCredentials(apiKey = TestTokens.DEEPL))
++
++        assertTrue(store.knownTokens().contains(TestTokens.DEEPL))
++        assertFalse(sink.text().contains(TestTokens.DEEPL))
++        assertTrue(store.maskedApiKey(TranslationSourceId.DEEPL).startsWith(TokenRedaction.MASK))
++    }
++
++    @Test
++    fun `configuredSources reflects only sources with a key`() {
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        store.save(TranslationSourceId.DEEPL, ProviderCredentials(apiKey = "   "))
++
++        assertEquals(setOf(TranslationSourceId.GOOGLE), store.configuredSources())
++    }
++
++    @Test
++    fun `describe never contains the raw key`() {
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++        store.save(
++            TranslationSourceId.GOOGLE,
++            ProviderCredentials(apiKey = TestTokens.GOOGLE, endpoint = "https://proxy.test/v2"),
++        )
++
++        val description = store.describe(TranslationSourceId.GOOGLE)
++
++        assertNotNull(description)
++        assertFalse(description.contains(TestTokens.GOOGLE))
++        assertTrue(description.contains("https://proxy.test/v2"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt
+new file mode 100644
+index 00000000..ca7a2344
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt
+@@ -0,0 +1,185 @@
++package com.koodoreader.feature.translate
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** P6 acceptance #4: 翻译历史持久化与检索. */
++class HistoryRepositoryTest {
++
++    private val sink = RecordingLogger()
++    private val dao = FakeTranslationHistoryDao()
++
++    private fun repository(maxEntries: Int = TranslationHistoryRepository.DEFAULT_MAX_ENTRIES) =
++        TranslationHistoryRepository(dao, sink, FakeClock(), maxEntries = maxEntries)
++
++    @Test
++    fun `records are listed newest first`() = runBlocking {
++        val repository = repository()
++
++        repository.record("first text", "第一条", "zh-CN", TranslationSourceId.GOOGLE)
++        repository.record("second text", "第二条", "zh-CN", TranslationSourceId.GOOGLE)
++        repository.record("third text", "第三条", "zh-CN", TranslationSourceId.DEEPL)
++
++        val recent = repository.recent(2)
++
++        assertEquals(listOf("third text", "second text"), recent.map { it.sourceText })
++        assertEquals(3L, repository.count())
++        assertTrue(recent.first().createdAt > recent.last().createdAt)
++    }
++
++    @Test
++    fun `the same selection translated again updates the existing row`() = runBlocking {
++        val repository = repository()
++
++        repository.record("Hello world", "你好世界", "zh-CN", TranslationSourceId.GOOGLE)
++        repository.record("Hello world", "你好，世界", "zh-CN", TranslationSourceId.GOOGLE)
++
++        assertEquals(1L, repository.count())
++        assertEquals("你好，世界", repository.recent(1).single().translatedText)
++        assertEquals(2, dao.upsertCount)
++    }
++
++    @Test
++    fun `schema matches the documented table`() = runBlocking {
++        val repository = repository()
++
++        val entry = repository.record(
++            sourceText = "Hello",
++            translatedText = "你好",
++            targetLang = "zh-CN",
++            provider = TranslationSourceId.MICROSOFT,
++            sourceLang = "en",
++            bookKey = "bk-9",
++            cfi = "epubcfi(/6/2)",
++        )
++
++        assertEquals("azure-translate-plugin", entry.provider)
++        assertEquals("en", entry.sourceLang)
++        assertEquals("bk-9", entry.bookKey)
++        assertEquals("epubcfi(/6/2)", entry.cfi)
++        assertEquals(repository.stableKey("Hello", "zh-CN", TranslationSourceId.MICROSOFT), entry.key)
++        assertTrue(dao.findByKey(entry.key) != null)
++    }
++
++    @Test
++    fun `different provider or target language keeps separate rows`() = runBlocking {
++        val repository = repository()
++
++        repository.record("Hello", "你好", "zh-CN", TranslationSourceId.GOOGLE)
++        repository.record("Hello", "你好", "zh-CN", TranslationSourceId.DEEPL)
++        repository.record("Hello", "Hello", "en", TranslationSourceId.GOOGLE)
++
++        assertEquals(3L, repository.count())
++    }
++
++    @Test
++    fun `search matches both source and translated text case insensitively`() = runBlocking {
++        val repository = repository()
++        repository.record("The Lighthouse Keeper", "灯塔守护者", "zh-CN", TranslationSourceId.GOOGLE)
++        repository.record("Another chapter", "另一章", "zh-CN", TranslationSourceId.GOOGLE)
++
++        assertEquals(1, repository.search("lighthouse").size)
++        assertEquals(1, repository.search("守护").size)
++        assertTrue(repository.search("nothing here").isEmpty())
++        assertEquals(2, repository.search("   ").size)
++    }
++
++    @Test
++    fun `history can be filtered by book`() = runBlocking {
++        val repository = repository()
++        repository.record("a", "甲", "zh-CN", TranslationSourceId.GOOGLE, bookKey = "bk-1")
++        repository.record("b", "乙", "zh-CN", TranslationSourceId.GOOGLE, bookKey = "bk-2")
++
++        assertEquals(listOf("a"), repository.forBook("bk-1").map { it.sourceText })
++    }
++
++    @Test
++    fun `retention keeps only the newest entries`() = runBlocking {
++        val repository = repository(maxEntries = 3)
++
++        (1..5).forEach { index ->
++            repository.record("text $index", "译文 $index", "zh-CN", TranslationSourceId.GOOGLE)
++        }
++
++        val remaining = repository.recent(10)
++        assertEquals(3, remaining.size)
++        assertEquals(listOf("text 5", "text 4", "text 3"), remaining.map { it.sourceText })
++        assertTrue(repository.search("text 1").isEmpty())
++    }
++
++    @Test
++    fun `explicit prune removes everything beyond the newest n`() = runBlocking {
++        val repository = repository(maxEntries = 100)
++        (1..4).forEach { index -> repository.record("text $index", "t$index", "zh-CN", TranslationSourceId.GOOGLE) }
++
++        val removed = repository.prune(keep = 2)
++
++        assertEquals(2, removed)
++        assertEquals(listOf("text 4", "text 3"), repository.recent(10).map { it.sourceText })
++        assertTrue(sink.infos.any { it.contains("translation history pruned: removed=2 keep=2") })
++    }
++
++    @Test
++    fun `clear empties the table`() = runBlocking {
++        val repository = repository()
++        repository.record("Hello", "你好", "zh-CN", TranslationSourceId.GOOGLE)
++
++        repository.clear()
++
++        assertEquals(0L, repository.count())
++        assertTrue(repository.recent(10).isEmpty())
++        assertTrue(sink.infos.any { it.contains("translation history cleared") })
++    }
++
++    @Test
++    fun `stable key is deterministic, content free and provider aware`() {
++        val repository = repository()
++
++        val first = repository.stableKey("Hello world", "zh-CN", TranslationSourceId.GOOGLE)
++        val again = repository.stableKey("Hello world", "zh-CN", TranslationSourceId.GOOGLE)
++        val otherTarget = repository.stableKey("Hello world", "en", TranslationSourceId.GOOGLE)
++        val otherProvider = repository.stableKey("Hello world", "zh-CN", TranslationSourceId.DEEPL)
++
++        assertEquals(first, again)
++        assertNotEquals(first, otherTarget)
++        assertNotEquals(first, otherProvider)
++        assertFalse(first.contains("hello"))
++        assertTrue(first.startsWith("google-trans"))
++    }
++
++    @Test
++    fun `in memory matcher mirrors the sql like semantics`() {
++        val repository = repository()
++        val entry = TranslationHistoryEntity(
++            key = "k",
++            sourceText = "The Lighthouse Keeper",
++            translatedText = "灯塔守护者",
++            targetLang = "zh-CN",
++            provider = "google-translate-plugin",
++            createdAt = 0L,
++        )
++
++        assertTrue(repository.matches(entry, "lighthouse"))
++        assertTrue(repository.matches(entry, "守护"))
++        assertTrue(repository.matches(entry, "  "))
++        assertFalse(repository.matches(entry, "harbour"))
++    }
++
++    @Test
++    fun `history logging carries lengths only, never the selected text`() = runBlocking {
++        val repository = repository()
++
++        repository.record("Very private sentence about the author", "非常私密的句子", "zh-CN", TranslationSourceId.GOOGLE)
++
++        val selected = "Very private sentence about the author"
++        val log = sink.text()
++        assertTrue(log.contains("translation history recorded: provider=google-translate-plugin"))
++        assertTrue(log.contains("sourceChars=${selected.length}"))
++        assertFalse(log.contains(selected))
++        assertFalse(log.contains("非常私密的句子"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/MiniJsonTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/MiniJsonTest.kt
+new file mode 100644
+index 00000000..d4de4c4c
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/MiniJsonTest.kt
+@@ -0,0 +1,72 @@
++package com.koodoreader.feature.translate
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class MiniJsonTest {
++
++    @Test
++    fun `parses nested documents`() {
++        val value = MiniJson.parse(
++            """{"a":{"b":[1,2.5,true,false,null,"s"]},"c":"d"}""",
++        )
++
++        assertEquals("d", value.stringAt("c"))
++        assertEquals("s", value.stringAt("a", "b", 5))
++        assertEquals(1, value.intAt("a", "b", 0))
++        assertTrue(value.at("a", "b", 2) is JsonValue.JsonBool)
++        assertNull(value.at("a", "b", 9))
++        assertNull(value.stringAt("missing"))
++    }
++
++    @Test
++    fun `decodes escapes and unicode`() {
++        val value = MiniJson.parse("""{"s":"a\nb\t\"q\"\\ \u4f60\u597d"}""")
++
++        assertEquals("a\nb\t\"q\"\\ 你好", value.stringAt("s"))
++    }
++
++    @Test
++    fun `malformed documents return null instead of throwing`() {
++        assertNull(MiniJson.parse(""))
++        assertNull(MiniJson.parse("{"));
++        assertNull(MiniJson.parse("""{"a":}"""))
++        assertNull(MiniJson.parse("[1,2"))
++        assertNull(MiniJson.parse("not json"))
++        assertNull(MiniJson.parse("""{"a":1} {"b":2}"""))
++        assertNull(MiniJson.parseArray("""{"a":1}"""))
++        assertNull(MiniJson.parseObject("[1]"))
++    }
++
++    @Test
++    fun `writes bodies with proper escaping`() {
++        assertEquals("""{"q":"a\"b","n":2,"ok":true}""", MiniJson.body("q" to "a\"b", "n" to 2, "ok" to true))
++        assertEquals("""{"text":["a","b"]}""", MiniJson.body("text" to listOf("a", "b")))
++        assertEquals("""{"text":["x"],"target_lang":"ZH"}""", MiniJson.body("text" to listOf("x"), "target_lang" to "ZH"))
++        assertEquals("null", MiniJson.write(null))
++        assertEquals(""""line\nbreak"""", MiniJson.write("line\nbreak"))
++    }
++
++    @Test
++    fun `round trips a written body`() {
++        val body = MiniJson.body("model" to "m", "messages" to listOf(mapOf("role" to "user", "content" to "hi")))
++
++        val parsed = MiniJson.parseObject(body)
++
++        assertEquals("m", parsed.stringAt("model"))
++        assertEquals("user", parsed.stringAt("messages", 0, "role"))
++        assertEquals("hi", parsed.stringAt("messages", 0, "content"))
++    }
++
++    @Test
++    fun `html entities are decoded like the desktop textarea trick`() {
++        assertEquals("你好 & 欢迎 '朋友'", HtmlEntities.unescape("你好 &amp; 欢迎 &#39;朋友&#39;"))
++        assertEquals("\"quoted\" <tag>", HtmlEntities.unescape("&quot;quoted&quot; &lt;tag&gt;"))
++        assertEquals("你", HtmlEntities.unescape("&#x4F60;"))
++        assertEquals("plain", HtmlEntities.unescape("plain"))
++        assertEquals("&unknown; stays", HtmlEntities.unescape("&unknown; stays"))
++        assertEquals("100% & more", HtmlEntities.unescape("100% & more"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/ProviderSelectorTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/ProviderSelectorTest.kt
+new file mode 100644
+index 00000000..fadeb52d
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/ProviderSelectorTest.kt
+@@ -0,0 +1,92 @@
++package com.koodoreader.feature.translate
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class ProviderSelectorTest {
++
++    private val providers = listOf(GoogleTranslateProvider(), MicrosoftTranslateProvider(), DeepLTranslateProvider())
++
++    @Test
++    fun `defaults to the first registered provider`() {
++        val selector = ProviderSelector(providers)
++
++        assertEquals(TranslationSourceId.GOOGLE, selector.active)
++        assertEquals(TranslationSourceId.GOOGLE, selector.activeProvider().id)
++    }
++
++    @Test
++    fun `an unknown initial source falls back to the first provider`() {
++        val selector = ProviderSelector(providers, initialActive = TranslationSourceId.DEEPL)
++
++        assertEquals(TranslationSourceId.DEEPL, selector.active)
++        assertTrue(ProviderSelector(listOf(GoogleTranslateProvider()), TranslationSourceId.DEEPL).active == TranslationSourceId.GOOGLE)
++    }
++
++    @Test
++    fun `select only accepts registered providers`() {
++        val selector = ProviderSelector(listOf(GoogleTranslateProvider()))
++
++        assertTrue(selector.select(TranslationSourceId.GOOGLE))
++        assertFalse(selector.select(TranslationSourceId.DEEPL))
++        assertEquals(TranslationSourceId.GOOGLE, selector.active)
++        assertFalse(selector.isRegistered(TranslationSourceId.DEEPL))
++    }
++
++    @Test
++    fun `next cycles through the registration order`() {
++        val selector = ProviderSelector(providers)
++
++        assertEquals(TranslationSourceId.MICROSOFT, selector.next())
++        assertEquals(TranslationSourceId.DEEPL, selector.next())
++        assertEquals(TranslationSourceId.GOOGLE, selector.next())
++    }
++
++    @Test
++    fun `resolve prefers the active source when it is configured`() {
++        val selector = ProviderSelector(providers, TranslationSourceId.MICROSOFT)
++
++        assertEquals(
++            TranslationSourceId.MICROSOFT,
++            selector.resolve(setOf(TranslationSourceId.MICROSOFT, TranslationSourceId.DEEPL)),
++        )
++    }
++
++    @Test
++    fun `resolve falls back to the first configured source`() {
++        val selector = ProviderSelector(providers, TranslationSourceId.DEEPL)
++
++        assertEquals(
++            TranslationSourceId.MICROSOFT,
++            selector.resolve(setOf(TranslationSourceId.MICROSOFT)),
++        )
++    }
++
++    @Test
++    fun `resolve keeps the active source when nothing is configured`() {
++        val selector = ProviderSelector(providers, TranslationSourceId.DEEPL)
++
++        assertEquals(TranslationSourceId.DEEPL, selector.resolve(emptySet()))
++        assertTrue(selector.usable(emptySet()).isEmpty())
++    }
++
++    @Test
++    fun `usable keeps registration order`() {
++        val selector = ProviderSelector(providers)
++
++        val usable = selector.usable(setOf(TranslationSourceId.DEEPL, TranslationSourceId.GOOGLE))
++
++        assertEquals(listOf(TranslationSourceId.GOOGLE, TranslationSourceId.DEEPL), usable.map { it.id })
++    }
++
++    @Test
++    fun `provider ids keep the desktop plugin keys`() {
++        assertEquals("google-translate-plugin", TranslationSourceId.GOOGLE.pluginKey)
++        assertEquals("azure-translate-plugin", TranslationSourceId.MICROSOFT.pluginKey)
++        assertEquals("deepl-translate-plugin", TranslationSourceId.DEEPL.pluginKey)
++        assertEquals(TranslationSourceId.MICROSOFT, TranslationSourceId.fromPluginKey("azure-translate-plugin"))
++        assertEquals(null, TranslationSourceId.fromPluginKey("baidu-general-translate-plugin"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/RedactedLoggerTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/RedactedLoggerTest.kt
+new file mode 100644
+index 00000000..a63123d4
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/RedactedLoggerTest.kt
+@@ -0,0 +1,121 @@
++package com.koodoreader.feature.translate
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * CLAUDE.md hard rule / P6 acceptance #2:
++ * **a full API token must never reach an info-level log line.**
++ *
++ * These assertions run against the *production* logging path
++ * (`CredentialsStore.logger` -> `RedactedLogger` -> delegate), not against a
++ * test-only helper: the store builds the redacting logger itself, so any caller
++ * that logs through the store is covered.
++ */
++class RedactedLoggerTest {
++
++    private val token = TestTokens.GOOGLE
++
++    @Test
++    fun `info log line from CredentialsStore never contains the full token`() {
++        val sink = RecordingLogger()
++        val store = CredentialsStore(InMemorySecretStore(), sink)
++
++        store.save(
++            TranslationSourceId.GOOGLE,
++            ProviderCredentials(apiKey = token, endpoint = "", region = ""),
++        )
++        // A careless call site interpolates the key into an info line; the store's
++        // logger still has to strip it.
++        store.logger.info("google request url=https://translation.googleapis.com/language/translate/v2?key=$token")
++        store.logger.warn("retrying with apiKey=$token")
++        store.logger.error("provider failed, Authorization: Bearer $token", null)
++
++        assertTrue("sink captured nothing - assertion would be vacuous", sink.entries.isNotEmpty())
++        assertTrue(
++            "the save() info line must actually be emitted",
++            sink.infos.any { it.contains("translation credentials saved") },
++        )
++        assertFalse("full token leaked into a log line:\n${sink.text()}", sink.text().contains(token))
++        assertTrue(sink.text().contains(TokenRedaction.MASK))
++        // The masked form (last 4 chars only) is what operators get to see.
++        assertTrue(store.maskedApiKey(TranslationSourceId.GOOGLE).endsWith(token.takeLast(4)))
++        assertFalse(store.describe(TranslationSourceId.GOOGLE).contains(token))
++    }
++
++    @Test
++    fun `token loaded from storage is redacted even before this process saved it`() {
++        val sink = RecordingLogger()
++        val seeded = InMemorySecretStore(
++            mapOf(CredentialsStore.fieldKey(TranslationSourceId.DEEPL, CredentialsStore.FIELD_API_KEY) to TestTokens.DEEPL),
++        )
++        val store = CredentialsStore(seeded, sink)
++
++        store.load(TranslationSourceId.DEEPL)
++        store.logger.info("deepl header Authorization: DeepL-Auth-Key ${TestTokens.DEEPL}")
++
++        assertTrue(sink.entries.isNotEmpty())
++        assertFalse(sink.text().contains(TestTokens.DEEPL))
++    }
++
++    @Test
++    fun `shape based redaction catches tokens the app has never seen`() {
++        val sink = RecordingLogger()
++        val logger = RedactedLogger(sink)
++
++        logger.info("apiKey=unknown-key-1234567890")
++        logger.info("Authorization: Bearer bearer-value-abcdef")
++        logger.info("openai key sk-proj-abcdefghijklmnop")
++        logger.info("google key AIzaSyD-UNSEEN-abcdefghijklmnop1234")
++        logger.info("url=https://example.test/translate?api_key=qwerty9876543210&to=en")
++
++        val output = sink.text()
++        assertFalse(output.contains("unknown-key-1234567890"))
++        assertFalse(output.contains("bearer-value-abcdef"))
++        assertFalse(output.contains("sk-proj-abcdefghijklmnop"))
++        assertFalse(output.contains("AIzaSyD-UNSEEN-abcdefghijklmnop1234"))
++        assertFalse(output.contains("qwerty9876543210"))
++        assertTrue(sink.infos.size == 5)
++    }
++
++    @Test
++    fun `non secret text is preserved`() {
++        val sink = RecordingLogger()
++        val logger = RedactedLogger(sink)
++
++        logger.info("translation history recorded: provider=google-translate-plugin target=zh-CN sourceChars=42")
++
++        assertEquals(
++            "INFO translation history recorded: provider=google-translate-plugin target=zh-CN sourceChars=42",
++            sink.entries.single(),
++        )
++    }
++
++    @Test
++    fun `mask keeps only a short suffix`() {
++        assertEquals("", TokenRedaction.mask(null))
++        assertEquals("", TokenRedaction.mask(""))
++        assertEquals("***", TokenRedaction.mask("abc"))
++        assertEquals("***cdef", TokenRedaction.mask("abcdef"))
++    }
++
++    @Test
++    fun `redacted request description hides header and query credentials`() {
++        val request = HttpRequest(
++            method = "POST",
++            url = "https://translation.googleapis.com/language/translate/v2?key=${TestTokens.GOOGLE}&target=zh-CN",
++            headers = mapOf("Authorization" to "DeepL-Auth-Key ${TestTokens.DEEPL}", "Content-Type" to "application/json"),
++            body = "{\"q\":\"secret book text\"}",
++        )
++
++        val description = request.redactedDescription()
++
++        assertFalse(description.contains(TestTokens.GOOGLE))
++        assertFalse(description.contains(TestTokens.DEEPL))
++        assertFalse("request body content must not be logged", description.contains("secret book text"))
++        assertTrue(description.contains("target=zh-CN"))
++        assertTrue(description.contains("Content-Type:application/json"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslateProvidersTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslateProvidersTest.kt
+new file mode 100644
+index 00000000..6500641c
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslateProvidersTest.kt
+@@ -0,0 +1,256 @@
++package com.koodoreader.feature.translate
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Wire-format parity with the desktop plugins
++ * (`src/utils/plugins/renderer/translation/googleTranslate.ts`,
++ * `azureTranslate.ts`, `deeplTranslate.ts`): request shape, response parsing,
++ * error mapping and "no token in any log/description".
++ */
++class TranslateProvidersTest {
++
++    private val google = GoogleTranslateProvider()
++    private val microsoft = MicrosoftTranslateProvider()
++    private val deepl = DeepLTranslateProvider()
++
++    // ---------------------------------------------------------------- Google
++
++    @Test
++    fun `google builds the v2 request like the desktop plugin`() {
++        val request = google.buildRequest(
++            text = "Hello world",
++            from = "en",
++            to = "zh-CN",
++            credentials = ProviderCredentials(apiKey = TestTokens.GOOGLE),
++        )
++
++        assertEquals("POST", request.method)
++        assertEquals(
++            "https://translation.googleapis.com/language/translate/v2?key=${TestTokens.GOOGLE}",
++            request.url,
++        )
++        assertEquals("application/json", request.header("Content-Type"))
++        assertTrue(request.body.orEmpty().contains("\"q\":\"Hello world\""))
++        assertTrue(request.body.orEmpty().contains("\"target\":\"zh-CN\""))
++        assertTrue(request.body.orEmpty().contains("\"format\":\"text\""))
++        assertTrue(request.body.orEmpty().contains("\"source\":\"en\""))
++        assertFalse(request.redactedDescription().contains(TestTokens.GOOGLE))
++    }
++
++    @Test
++    fun `google omits source when the language is automatic`() {
++        val request = google.buildRequest("Hi", "auto", "zh-CN", ProviderCredentials(apiKey = "k"))
++
++        assertFalse(request.body.orEmpty().contains("\"source\""))
++        assertFalse(request.body.orEmpty().contains("\"source\""))
++    }
++
++    @Test
++    fun `google decodes html entities from the response`() {
++        val transport = FakeHttpTransport.returning(
++            """{"data":{"translations":[{"translatedText":"你好 &amp; 欢迎 &#39;朋友&#39;","detectedSourceLanguage":"en"}]}}""",
++        )
++
++        val outcome = runBlocking {
++            google.translate("Hello & welcome", "en", "zh-CN", ProviderCredentials(apiKey = TestTokens.GOOGLE), transport)
++        }
++
++        assertTrue(outcome is TranslationOutcome.Success)
++        val success = outcome as TranslationOutcome.Success
++        assertEquals("你好 & 欢迎 '朋友'", success.text)
++        assertEquals("en", success.detectedSourceLanguage)
++        assertEquals(TranslationSourceId.GOOGLE, success.provider)
++        assertEquals(1, transport.requests.size)
++    }
++
++    @Test
++    fun `google reports missing credentials without calling the network`() {
++        val transport = FakeHttpTransport.returning("{}")
++
++        val outcome = runBlocking { google.translate("Hi", "en", "zh-CN", ProviderCredentials(), transport) }
++
++        assertEquals(
++            TranslationOutcome.Failure(TranslationSourceId.GOOGLE, FailureReason.MISSING_CREDENTIALS, "missing API key for Google Translate"),
++            outcome,
++        )
++        assertTrue(transport.requests.isEmpty())
++    }
++
++    @Test
++    fun `identical languages short circuit before the network call`() {
++        val transport = FakeHttpTransport.returning("{}")
++
++        val outcome = runBlocking {
++            google.translate("你好", "zh-CN", "zh-CN", ProviderCredentials(apiKey = TestTokens.GOOGLE), transport)
++        }
++
++        assertEquals("你好", (outcome as TranslationOutcome.Success).text)
++        assertTrue(transport.requests.isEmpty())
++    }
++
++    @Test
++    fun `empty selection is rejected`() {
++        val outcome = runBlocking {
++            google.translate("   ", "en", "zh-CN", ProviderCredentials(apiKey = "k"), FakeHttpTransport.returning("{}"))
++        }
++
++        assertEquals(FailureReason.EMPTY_INPUT, (outcome as TranslationOutcome.Failure).reason)
++    }
++
++    @Test
++    fun `google maps non-2xx and malformed bodies to failures`() {
++        val forbidden = google.parseResponse(HttpResponse(403, """{"error":{"code":403}}"""))
++        val malformed = google.parseResponse(HttpResponse(200, "<html>nope</html>"))
++        val missingField = google.parseResponse(HttpResponse(200, """{"data":{"translations":[]}}"""))
++
++        assertEquals(FailureReason.HTTP_STATUS, (forbidden as TranslationOutcome.Failure).reason)
++        assertEquals(FailureReason.MALFORMED_RESPONSE, (malformed as TranslationOutcome.Failure).reason)
++        assertEquals(FailureReason.MALFORMED_RESPONSE, (missingField as TranslationOutcome.Failure).reason)
++    }
++
++    @Test
++    fun `transport errors become NETWORK failures`() {
++        val outcome = runBlocking {
++            google.translate(
++                "Hi",
++                "en",
++                "zh-CN",
++                ProviderCredentials(apiKey = TestTokens.GOOGLE),
++                FakeHttpTransport.failing("timeout"),
++            )
++        }
++
++        val failure = outcome as TranslationOutcome.Failure
++        assertEquals(FailureReason.NETWORK, failure.reason)
++        assertEquals("timeout", failure.detail)
++    }
++
++    // ------------------------------------------------------------- Microsoft
++
++    @Test
++    fun `microsoft builds the v3 request like the desktop plugin`() {
++        val request = microsoft.buildRequest(
++            text = "Hi there",
++            from = "en",
++            to = "zh-CN",
++            credentials = ProviderCredentials(apiKey = TestTokens.MICROSOFT, region = "eastasia"),
++        )
++
++        assertEquals(
++            "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-CN&from=en",
++            request.url,
++        )
++        assertEquals(TestTokens.MICROSOFT, request.header("Ocp-Apim-Subscription-Key"))
++        assertEquals("eastasia", request.header("Ocp-Apim-Subscription-Region"))
++        assertEquals("""[{"text":"Hi there"}]""", request.body)
++        assertFalse(request.redactedDescription().contains(TestTokens.MICROSOFT))
++    }
++
++    @Test
++    fun `microsoft omits the from parameter and the region header when not set`() {
++        val request = microsoft.buildRequest("Hi", "auto", "zh-CN", ProviderCredentials(apiKey = "k"))
++
++        assertEquals(
++            "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-CN",
++            request.url,
++        )
++        assertTrue(request.headers.keys.none { it.equals(MicrosoftTranslateProvider.SUBSCRIPTION_REGION_HEADER, true) })
++    }
++
++    @Test
++    fun `microsoft honours a custom endpoint and parses the translations array`() {
++        val request = microsoft.buildRequest(
++            "Hi",
++            "en",
++            "zh-CN",
++            ProviderCredentials(apiKey = "k", endpoint = "https://proxy.test/translator/"),
++        )
++        assertEquals("https://proxy.test/translator/translate?api-version=3.0&to=zh-CN&from=en", request.url)
++
++        val outcome = microsoft.parseResponse(
++            HttpResponse(
++                200,
++                """[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-CN"}]}]""",
++            ),
++        )
++
++        assertEquals("你好", (outcome as TranslationOutcome.Success).text)
++        assertEquals("en", outcome.detectedSourceLanguage)
++    }
++
++    @Test
++    fun `microsoft maps 401 to HTTP_STATUS`() {
++        val outcome = microsoft.parseResponse(HttpResponse(401, """{"error":{"code":401001}}"""))
++
++        assertEquals(FailureReason.HTTP_STATUS, (outcome as TranslationOutcome.Failure).reason)
++    }
++
++    // ----------------------------------------------------------------- DeepL
++
++    @Test
++    fun `deepl free plan uses the free endpoint and upper-case tags`() {
++        val request = deepl.buildRequest(
++            text = "Hello",
++            from = "en",
++            to = "zh-CN",
++            credentials = ProviderCredentials(apiKey = TestTokens.DEEPL, plan = ApiPlan.FREE),
++        )
++
++        assertEquals("https://api-free.deepl.com/v2/translate", request.url)
++        assertEquals("DeepL-Auth-Key ${TestTokens.DEEPL}", request.header("Authorization"))
++        assertTrue(request.body.orEmpty().contains("\"text\":[\"Hello\"]"))
++        assertTrue(request.body.orEmpty().contains("\"target_lang\":\"ZH\""))
++        assertTrue(request.body.orEmpty().contains("\"source_lang\":\"EN\""))
++        assertFalse(request.redactedDescription().contains(TestTokens.DEEPL))
++    }
++
++    @Test
++    fun `deepl pro plan uses the paid endpoint and traditional chinese maps to ZH-HANT`() {
++        val request = deepl.buildRequest(
++            "Hello",
++            "auto",
++            "zh-TW",
++            ProviderCredentials(apiKey = "k", plan = ApiPlan.PRO),
++        )
++
++        assertEquals("https://api.deepl.com/v2/translate", request.url)
++        assertTrue(request.body.orEmpty().contains("\"target_lang\":\"ZH-HANT\""))
++        assertFalse(request.body.orEmpty().contains("source_lang"))
++    }
++
++    @Test
++    fun `deepl parses translations and detected source language`() {
++        val outcome = deepl.parseResponse(
++            HttpResponse(200, """{"translations":[{"detected_source_language":"EN","text":"你好"}]}"""),
++        )
++
++        val success = outcome as TranslationOutcome.Success
++        assertEquals("你好", success.text)
++        assertEquals("EN", success.detectedSourceLanguage)
++    }
++
++    @Test
++    fun `deepl maps 456 quota errors to HTTP_STATUS`() {
++        val outcome = deepl.parseResponse(HttpResponse(456, """{"message":"Quota exceeded"}"""))
++
++        assertEquals(FailureReason.HTTP_STATUS, (outcome as TranslationOutcome.Failure).reason)
++    }
++
++    @Test
++    fun `language tag helpers follow the desktop semantics`() {
++        assertTrue(LanguageCodes.isAuto("auto"))
++        assertTrue(LanguageCodes.isAuto("Automatic"))
++        assertTrue(LanguageCodes.isAuto(""))
++        assertTrue(LanguageCodes.sameLanguage("zh-CN", "zh-cn"))
++        assertFalse(LanguageCodes.sameLanguage("auto", "zh-CN"))
++        assertEquals("ZH", LanguageCodes.deeplTag("zh-CN"))
++        assertEquals("ZH-HANT", LanguageCodes.deeplTag("zh-Hant"))
++        assertEquals("EN-US", LanguageCodes.deeplTag("en-us"))
++        assertEquals("a%20b%2Fc", UrlEncoding.encode("a b/c"))
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationPopupControllerTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationPopupControllerTest.kt
+new file mode 100644
+index 00000000..0d083ff6
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationPopupControllerTest.kt
+@@ -0,0 +1,212 @@
++package com.koodoreader.feature.translate
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** P6 acceptance #1: 划词翻译弹窗 + 多源切换. */
++class TranslationPopupControllerTest {
++
++    private val sink = RecordingLogger()
++    private val secrets = InMemorySecretStore()
++    private val store = CredentialsStore(secrets, sink)
++    private val providers = listOf(GoogleTranslateProvider(), MicrosoftTranslateProvider(), DeepLTranslateProvider())
++    private val selector = ProviderSelector(providers, TranslationSourceId.GOOGLE)
++    private val dao = FakeTranslationHistoryDao()
++    private val history = TranslationHistoryRepository(dao, sink, FakeClock())
++
++    private val googleBody =
++        """{"data":{"translations":[{"translatedText":"你好，世界","detectedSourceLanguage":"en"}]}}"""
++    private val deeplBody = """{"translations":[{"detected_source_language":"EN","text":"你好，世界 (DeepL)"}]}"""
++
++    private val transport = FakeHttpTransport { request ->
++        if (request.url.contains("deepl.com")) {
++            HttpResponse(200, deeplBody)
++        } else {
++            HttpResponse(200, googleBody)
++        }
++    }
++
++    private fun controller(
++        http: HttpTransport = transport,
++        withHistory: Boolean = true,
++    ) = TranslationPopupController(
++        selector = selector,
++        credentialsStore = store,
++        transport = http,
++        logger = sink,
++        history = if (withHistory) history else null,
++    )
++
++    @Test
++    fun `show opens the popup for the selection and dismiss closes it`() {
++        val popup = controller()
++
++        val shown = popup.show("Hello world", bookKey = "bk-1", cfi = "epubcfi(/6/4!/4/2)")
++
++        assertTrue(shown.visible)
++        assertEquals("Hello world", shown.selection)
++        assertEquals(PopupStatus.IDLE, shown.status)
++        assertNull(shown.translatedText)
++        assertNull(popup.copyPayload())
++
++        val dismissed = popup.dismiss()
++        assertFalse(dismissed.visible)
++    }
++
++    @Test
++    fun `blank selection does not open the popup`() {
++        val popup = controller()
++
++        assertFalse(popup.show("   ").visible)
++        assertTrue(runBlocking { popup.translate() }.status == PopupStatus.IDLE)
++    }
++
++    @Test
++    fun `translating without a key asks for credentials and never hits the network`() {
++        val popup = controller()
++
++        popup.show("Hello world")
++        val state = runBlocking { popup.translate() }
++
++        assertEquals(PopupStatus.NEEDS_CREDENTIALS, state.status)
++        assertTrue(state.failureDetail.orEmpty().contains("API key"))
++        assertTrue(transport.requests.isEmpty())
++        assertTrue(runBlocking { dao.count() } == 0L)
++    }
++
++    @Test
++    fun `successful translation fills the popup and records history with context`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        val popup = controller()
++
++        popup.show("Hello world", bookKey = "bk-1", cfi = "epubcfi(/6/4!/4/2)")
++        val state = runBlocking { popup.translate() }
++
++        assertEquals(PopupStatus.DONE, state.status)
++        assertEquals("你好，世界", state.translatedText)
++        assertEquals("你好，世界", state.displayText())
++        assertTrue(state.recordedInHistory)
++
++        val entry = runBlocking { history.recent(1).first() }
++        assertEquals("bk-1", entry.bookKey)
++        assertEquals("epubcfi(/6/4!/4/2)", entry.cfi)
++        assertEquals("zh-CN", entry.targetLang)
++        assertEquals("google-translate-plugin", entry.provider)
++        assertEquals("Hello world", entry.sourceText)
++        assertEquals(1, transport.requests.size)
++    }
++
++    @Test
++    fun `switching source re-translates through the new provider`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        store.save(
++            TranslationSourceId.DEEPL,
++            ProviderCredentials(apiKey = TestTokens.DEEPL),
++        )
++        val popup = controller()
++        popup.show("Hello world")
++
++        assertTrue(popup.switchProvider(TranslationSourceId.DEEPL))
++        assertEquals(TranslationSourceId.DEEPL, popup.state.value.activeSource)
++        assertTrue(popup.sources().first { it.id == TranslationSourceId.DEEPL }.active)
++        assertEquals(
++            listOf(TranslationSourceId.GOOGLE, TranslationSourceId.DEEPL),
++            popup.sources().filter { it.configured }.map { it.id },
++        )
++        assertTrue(popup.sources().first { it.id == TranslationSourceId.MICROSOFT }.configured.not())
++
++        val state = runBlocking { popup.switchProviderAndTranslate(TranslationSourceId.DEEPL) }
++
++        assertEquals(PopupStatus.DONE, state.status)
++        assertEquals("你好，世界 (DeepL)", state.translatedText)
++        assertEquals("https://api-free.deepl.com/v2/translate", transport.requests.last().url)
++        assertEquals("deepl-translate-plugin", runBlocking { history.recent(1).first() }.provider)
++    }
++
++    @Test
++    fun `unknown source is rejected and logged`() {
++        val googleOnly = ProviderSelector(listOf(GoogleTranslateProvider()))
++        val popup = TranslationPopupController(googleOnly, store, transport, sink, history)
++
++        assertFalse(popup.switchProvider(TranslationSourceId.DEEPL))
++        assertTrue(sink.warnings.any { it.contains("deepl-translate-plugin is not registered") })
++    }
++
++    @Test
++    fun `cycle provider walks the registration order`() {
++        val popup = controller()
++
++        assertEquals(TranslationSourceId.MICROSOFT, popup.cycleProvider())
++        assertEquals(TranslationSourceId.MICROSOFT, popup.state.value.activeSource)
++    }
++
++    @Test
++    fun `popup picks a configured source even when it is not the current one`() {
++        store.save(TranslationSourceId.DEEPL, ProviderCredentials(apiKey = TestTokens.DEEPL))
++        val popup = controller()
++
++        val state = popup.show("Hello world")
++
++        assertEquals(TranslationSourceId.DEEPL, state.activeSource)
++        assertEquals(PopupStatus.IDLE, state.status)
++    }
++
++    @Test
++    fun `provider failure keeps the selection and reports the reason without recording history`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        val popup = controller(http = FakeHttpTransport.returning("""{"error":"boom"}""", status = 500))
++
++        popup.show("Hello world")
++        val state = runBlocking { popup.translate() }
++
++        assertEquals(PopupStatus.FAILED, state.status)
++        assertNull(state.translatedText)
++        assertEquals("Google returned HTTP 500", state.failureDetail)
++        assertEquals("Hello world", state.selection)
++        assertTrue(runBlocking { dao.count() } == 0L)
++        assertTrue(sink.warnings.any { it.contains("translation failed: source=google-translate-plugin reason=HTTP_STATUS") })
++    }
++
++    @Test
++    fun `copy payload contains selection translation and provider`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        val popup = controller()
++        popup.show("Hello world")
++        runBlocking { popup.translate() }
++
++        val payload = popup.copyPayload().orEmpty()
++
++        assertTrue(payload.contains("Hello world"))
++        assertTrue(payload.contains("你好，世界"))
++        assertTrue(payload.contains("Google Translate"))
++    }
++
++    @Test
++    fun `popup works without a history repository`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        val popup = controller(withHistory = false)
++
++        popup.show("Hello world")
++        val state = runBlocking { popup.translate() }
++
++        assertEquals(PopupStatus.DONE, state.status)
++        assertFalse(state.recordedInHistory)
++        assertTrue(runBlocking { dao.count() } == 0L)
++    }
++
++    @Test
++    fun `popup logging never contains the api key`() {
++        store.save(TranslationSourceId.GOOGLE, ProviderCredentials(apiKey = TestTokens.GOOGLE))
++        val popup = controller()
++
++        popup.show("Hello world")
++        runBlocking { popup.translate() }
++
++        assertFalse(sink.text().contains(TestTokens.GOOGLE))
++        assertTrue(sink.infos.isNotEmpty())
++    }
++}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt
+new file mode 100644
+index 00000000..5a25af44
+--- /dev/null
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt
+@@ -0,0 +1,111 @@
++package com.koodoreader.feature.translate
++
++/**
++ * Shared test doubles. Kept in the test source set so the production sources stay
++ * dependency-free (no test library leaks into the app).
++ */
++class RecordingLogger : Logger {
++
++    val entries = mutableListOf<String>()
++
++    val infos: List<String> get() = entries.filter { it.startsWith("INFO ") }
++    val warnings: List<String> get() = entries.filter { it.startsWith("WARN ") }
++    val errors: List<String> get() = entries.filter { it.startsWith("ERROR ") }
++
++    fun text(): String = entries.joinToString("\n")
++
++    override fun info(message: String) {
++        entries += "INFO $message"
++    }
++
++    override fun warn(message: String) {
++        entries += "WARN $message"
++    }
++
++    override fun error(message: String, throwable: Throwable?) {
++        entries += "ERROR $message"
++    }
++}
++
++class FakeHttpTransport(
++    private val responder: (HttpRequest) -> HttpResponse,
++) : HttpTransport {
++
++    val requests = mutableListOf<HttpRequest>()
++
++    override suspend fun execute(request: HttpRequest): HttpResponse {
++        requests += request
++        return responder(request)
++    }
++
++    companion object {
++        fun returning(body: String, status: Int = 200): FakeHttpTransport =
++            FakeHttpTransport { HttpResponse(status, body) }
++
++        fun failing(message: String = "connection reset"): FakeHttpTransport =
++            FakeHttpTransport { throw HttpTransportException(message) }
++    }
++}
++
++/** In-memory [TranslationHistoryDao] with the same semantics as the SQL queries. */
++class FakeTranslationHistoryDao : TranslationHistoryDao {
++
++    private val rows = LinkedHashMap<String, TranslationHistoryEntity>()
++
++    var upsertCount: Int = 0
++        private set
++
++    override suspend fun upsert(entry: TranslationHistoryEntity) {
++        upsertCount++
++        rows[entry.key] = entry
++    }
++
++    override suspend fun upsertAll(entries: List<TranslationHistoryEntity>) {
++        entries.forEach { upsert(it) }
++    }
++
++    override suspend fun recent(limit: Int): List<TranslationHistoryEntity> =
++        rows.values.sortedByDescending { it.createdAt }.take(limit)
++
++    override suspend fun search(query: String, limit: Int): List<TranslationHistoryEntity> =
++        rows.values
++            .filter {
++                it.sourceText.contains(query, ignoreCase = true) ||
++                    it.translatedText.contains(query, ignoreCase = true)
++            }
++            .sortedByDescending { it.createdAt }
++            .take(limit)
++
++    override suspend fun findByKey(key: String): TranslationHistoryEntity? = rows[key]
++
++    override suspend fun forBook(bookKey: String, limit: Int): List<TranslationHistoryEntity> =
++        rows.values.filter { it.bookKey == bookKey }.sortedByDescending { it.createdAt }.take(limit)
++
++    override suspend fun beyondNewest(keep: Int): List<TranslationHistoryEntity> =
++        rows.values.sortedByDescending { it.createdAt }.drop(keep)
++
++    override suspend fun deleteByKey(key: String) {
++        rows.remove(key)
++    }
++
++    override suspend fun deleteAll() {
++        rows.clear()
++    }
++
++    override suspend fun count(): Long = rows.size.toLong()
++}
++
++/** Monotonic fake clock so ordering assertions are deterministic. */
++class FakeClock(private var now: Long = 1_700_000_000_000L) : () -> Long {
++    override fun invoke(): Long {
++        now += 1_000
++        return now
++    }
++}
++
++object TestTokens {
++    /** Shape-compatible with the `sk-` rule and long enough for value matching. */
++    const val GOOGLE: String = "AIzaSyD-EXAMPLE-9f3c1a77b2e4d5f608a1"
++    const val DEEPL: String = "deepl-key-3f9c1a77b2e4d5f608a1c2d3"
++    const val MICROSOFT: String = "ms-sub-7c1f9a2b3d4e5f60718293a4b5"
++}
+diff --git a/docs/p6-translate-architecture.md b/docs/p6-translate-architecture.md
+new file mode 100644
+index 00000000..e6455766
+--- /dev/null
++++ b/docs/p6-translate-architecture.md
+@@ -0,0 +1,214 @@
++# P6：划词翻译 / AI 助手（`android/feature/translate`）
++
++| 项 | 值 |
++|---|---|
++| 任务卡 | `t-muexn696-xzgcrk`（P6：划词翻译 / AI（feature/translate）） |
++| 隔离 | git worktree `task/p6-translate-xzgcrk` |
++| 模块 | 新增 `android/feature/translate/`（Android library，`com.android.library` + Kotlin + KSP/Room + Compose） |
++| 规模 | 主源码 14 个 `.kt`（2127 行）；单测 9 个 `.kt`（1301 行，78 个 `@Test`） |
++| 状态 | 实现完成；`settings.gradle` 注册与 `:app` 接线留给主线程（本卡禁止改这三个 gradle 文件） |
++
++---
++
++## 1. 范围
++
++桌面端参考：`src/utils/plugins/renderer/translation/`（25 个翻译插件）、
++`src/utils/request/aiBridge.ts`。
++
++本卡按描述**只把 3 个核心翻译源内置为 feature**，其余 22 个插件源（百度/腾讯/火山/有道/ollama/…）
++与 15 个 voice 插件保持桌面独占：**不实现插件注册表**、不做 JS 桥、不做插件市场。
++
++交付四项（对应验收清单 4 条）：
++
++| 验收项 | 实现位置 |
++|---|---|
++| ① 划词翻译弹窗 + 多源切换 | `TranslationPopup.kt`（状态机/控制器）+ `TranslationPopupUi.kt`（Compose 表面）+ `TranslationProvider.kt` 的 `ProviderSelector` |
++| ② 翻译源配置与凭据安全存储（不落 info 日志） | `CredentialsStore.kt` + `RedactedLogger.kt` + `EncryptedSecretStore.kt` |
++| ③ AI 助手接入路径（摘要/问答） | `AiAssistant.kt` |
++| ④ 翻译历史持久化与检索 | `HistoryRepository.kt`（Room Entity/DAO/Repository）+ `TranslationHistoryDatabase.kt` |
++
++## 2. 模块结构
++
++```
++android/feature/translate/
++├── build.gradle
++└── src/
++    ├── main/kotlin/com/koodoreader/feature/translate/
++    │   ├── MiniJson.kt                     无依赖 JSON 读写 + HTML 实体解码
++    │   ├── HttpTransport.kt                请求/响应数据类、SensitiveHeaders、脱敏描述
++    │   ├── RedactedLogger.kt               Logger 接口 + TokenRedaction + RedactedLogger
++    │   ├── TranslationProvider.kt          Provider 接口、ProviderCredentials、语种工具、ProviderSelector
++    │   ├── GoogleTranslateProvider.kt      Google Cloud Translation v2
++    │   ├── MicrosoftTranslateProvider.kt   Azure/Microsoft Translator v3
++    │   ├── DeepLTranslateProvider.kt       DeepL v2（free/pro）
++    │   ├── CredentialsStore.kt             凭据读写 + 命名空间 key + 只读脱敏视图
++    │   ├── EncryptedSecretStore.kt         EncryptedSharedPreferences 实现 SecretStore（Android）
++    │   ├── TranslationPopup.kt             弹窗状态 + TranslationPopupController（StateFlow）
++    │   ├── TranslationPopupUi.kt           Compose 弹窗（Android）
++    │   ├── HistoryRepository.kt            Room Entity/DAO + TranslationHistoryRepository
++    │   ├── TranslationHistoryDatabase.kt   Room 数据库（Android）
++    │   └── AiAssistant.kt                  AiModelConfig + 提示词 + 摘要/问答
++    └── test/kotlin/com/koodoreader/feature/translate/   ← 8 个测试类 + 测试替身
++```
++
++设计基线：**除 3 个 Android 专属文件**（`EncryptedSecretStore.kt`、`TranslationPopupUi.kt`、
++`TranslationHistoryDatabase.kt`）**外，全部为纯 Kotlin**（不 import `android.*`）。
++网络、存储、DAO、时钟、ID 生成、日志全部走接口注入，因此业务逻辑可在无 SDK、无设备、
++无 Room 编译器的 JVM 上验证（§7）。
++
++## 3. 三个内置翻译源（桌面字段级对齐）
++
++| 源 | 插件 key（桌面同值） | 端点默认值 | 凭据位置 | 请求体 | 响应路径 |
++|---|---|---|---|---|---|
++| Google | `google-translate-plugin` | `https://translation.googleapis.com/language/translate/v2` | 查询参数 `key` | `{"q":…,"target":…,"format":"text"[,"source":…]}` | `data.translations[0].translatedText`（HTML 实体解码）+ `detectedSourceLanguage` |
++| Microsoft | `azure-translate-plugin` | `https://api.cognitive.microsofttranslator.com` | 头 `Ocp-Apim-Subscription-Key`（+ 可选 `Ocp-Apim-Subscription-Region`） | `[{"text":…}]` | `[0].translations[0].text` + `detectedLanguage.language` |
++| DeepL | `deepl-translate-plugin` | free：`https://api-free.deepl.com/v2/translate`；pro：`https://api.deepl.com/v2/translate` | 头 `Authorization: DeepL-Auth-Key …` | `{"text":[…],"target_lang":…[,"source_lang":…]}`（大写标签） | `translations[0].text` + `detected_source_language` |
++
++与桌面差异（有意为之）：
++
++* 桌面 Google 插件用 `<textarea>` 解 HTML 实体；这里用 `HtmlEntities.unescape`（纯 JVM，`&amp;`/`&#39;`/`&#x4F60;`）。
++* 桌面 `azureTranslate.ts` 的 `to`/`from` 直接透传；这里 `from=Automatic/auto` 时**不发送** `from` 参数（与插件等价，且避免 Azure 400）。
++* DeepL 语种标签：桌面透传，这里按 API 要求转大写并做 `zh` → `ZH` / `ZH-HANT` 映射。
++* 语种相同（`from == to` 且非 auto）时不发请求直接回原文（对齐桌面 Google 插件短路行为）。
++* 错误映射统一为 `TranslationOutcome.Failure(reason=EMPTY_INPUT | MISSING_CREDENTIALS | NETWORK | HTTP_STATUS | MALFORMED_RESPONSE)`，UI 只渲染 `detail`。
++
++`ProviderSelector` 负责“多源切换”：注册顺序、当前源、`next()` 轮换、
++`resolve(configured)`（当前源无凭据 → 退到第一个有凭据的源 → 都没有则保持当前源以便提示配置）。
++
++## 4. 凭据存储与日志安全（CLAUDE.md 强规则）
++
++存储链路：`CredentialsStore` → `SecretStore` 接口 → `EncryptedSecretStore`
++（`androidx.security:security-crypto` 的 **EncryptedSharedPreferences**：键 AES-256-SIV、
++值 AES-256-GCM、主密钥在 Android Keystore；`minSdk 24` 满足要求）。
++存储 key 带命名空间：`p6.translate.cred.<pluginKey>.{apiKey,endpoint,region,plan}` —
++桌面插件 id 即迁移键。
++
++**token 不落 info 级日志由构造保证，而不是靠约定：**
++
++1. `CredentialsStore` 自己把调用方给的 logger 包成 `RedactedLogger`，并把**自己的**
++   `knownTokens()`（save/load/扫描到的全部密钥）作为脱敏词表；对外只暴露 `store.logger`，
++   生产代码想记录配置信息必须走它。
++2. `TokenRedaction` 双重防线：**值匹配**（逐字替换已见密钥）+ **形状匹配**
++   （`apiKey=…`、`Authorization: Bearer …`、`sk-…`、`AIza…`、长 base64 块）。
++   即使某个密钥本进程从未见过，形状规则也会把它抹掉。
++3. UI/日志只暴露 `maskedApiKey()`（`***` + 末 4 位）与 `describe()`；
++   `HttpRequest.redactedDescription()` 屏蔽敏感头与 `?key=…` 查询参数，且**不打印 body**。
++4. 单测硬断言（`RedactedLoggerTest`，生产路径，非测试替身）：
++   * `store.save(...)` 后，模拟“粗心调用点”把 token 插进 `info/warn/error` 三行 — 断言日志文本
++     **不含完整 token**，且断言日志确实写出了（避免空断言假通过）；
++   * 进程重启场景（密钥已在存储里、本实例未 save）同样不泄漏；
++   * 未见过的密钥靠形状规则抹掉；
++   * `mask()` 只留末 4 位；历史/弹窗/AI 的 info 行同样断言无 token；
++   * `describe()`、`redactedDescription()` 无 token、无正文。
++
++已知边界：`Throwable` 自带的 message 无法改写（Java 异常不可变），因此网络层把 IO 异常
++统一转成 `HttpTransportException(免密消息)`；这一限制写在 `RedactedLogger.error` 的注释里。
++
++## 5. 翻译历史持久化与检索（Room）
++
++`HistoryRepository.kt` 定义 `TranslationHistoryEntity` / `TranslationHistoryDao` /
++`TranslationHistoryRepository`：
++
++* 表 `translation_history`，列名沿用 `core/data` 风格（camelCase 引号列）：
++  `key`(PK) / `sourceText` / `translatedText` / `sourceLang` / `targetLang` / `provider` /
++  `bookKey` / `cfi` / `createdAt`，索引 `createdAt`、`bookKey`、`provider`。
++  桌面把翻译结果放在插件缓存里，SQLite 无对应表 → 该表为 Android 自有 schema。
++* `key` = `SHA-256("provider|target|text")` 前 32 hex（带插件前缀）：同一段落同一目标语言
++  重复翻译是**更新**而非新增，且 key 本身不含正文，可安全记录/导出。
++* 检索：`recent(limit)`（按 `createdAt DESC`）、`search(q)`（`LIKE '%q%'` 同时匹配原文与译文）、
++  `forBook(bookKey)`；`matches()` 提供与 SQL 同语义的内存匹配器供测试。
++* 保留策略：`maxEntries`（默认 500），`record()` 超限即 `prune()`；`prune(keep)` 用
++  `ORDER BY createdAt DESC LIMIT -1 OFFSET :keep` 取超龄行再删除。
++* 日志只记 `provider/target/字符数`，**不记选中的正文**（单测断言）。
++
++数据库装配（`TranslationHistoryDatabase`）默认独立成库
++（`koodo_translation_history.db`），这样本卡无需改 `core/data` 的 `KoodoDatabase`（P1 数据层，
++本卡禁改）。合并路径已留好：`KoodoDatabase` 是 Room 数据库，把
++`TranslationHistoryEntity` 加进它的 `entities` 并把版本 +1、补一条同样 DDL 的 `Migration`
++即可，DAO 在两个库里都成立。
++
++## 6. AI 助手接入路径
++
++* `AiModelConfig(endpoint, providerId, apiKey, modelId)` 与桌面 `AiModelConfig` 字段一致；
++  `endpoint` 去尾斜杠后拼 `/chat/completions`（OpenAI 兼容），Bearer 鉴权，
++  `{"model":…,"stream":false,"messages":[{"role":"user","content":…}]}`。
++* `AiConfigKeys` 保留桌面 reader-config 键与优先级（`aiTranslateModel` → `aiDictModel` →
++  `aiAssistanceModel`），便于桌面配置导入。
++* 两个入口：`summarize(text, language, maxSentences=5)`（章节摘要）与
++  `ask(question, context)`（基于选中/章节上下文问答）；提示词模板 `AiPrompts` 与桌面
++  `aiBridge.ts` 的措辞保持一致（“只用给定上下文，不知道就说不知道，纯文本输出”）。
++* 返回 `AiOutcome.Success | NotConfigured | Failure(reason,detail)`；未配置模型时
++  UI 显示“请先配置 AI 服务”，与桌面同一语义。
++* `parseCompletion` 同时兼容 `choices[0].message.content` 与旧式 `choices[0].text`。
++* 后续（不在本卡）：桌面 `chatStream` 的 SSE 逐字流式；届时在 `HttpTransport` 上增加
++  流式接口，`AiAssistant` 的提示词与结果契约不变。
++* 真实 HTTP 实现（OkHttp/HttpURLConnection）与 `android.util.Log` 版 Logger 由 `:app` 提供，
++  本模块只声明 [HttpTransport]/[Logger] 两个 seam。
++
++## 7. 验证
++
++### 7.1 已执行的 JVM 验证（本环境）
++
++本 sandbox 禁止写 `~/.gradle`（Gradle 无法解出 `native-platform.dll`），
++且本卡禁止改 `android/settings.gradle`，因此**没有**、也不能用 `gradlew` 跑测试。
++替代方案 = 一次性纯 JVM 验证（临时目录，不入库）：
++
++```powershell
++# 1) 用缓存里的 kotlinc 编译「纯 Kotlin 源码 + 全部单测」
++#    排除 EncryptedSecretStore.kt / TranslationPopupUi.kt / TranslationHistoryDatabase.kt
++java -cp "<kotlin-compiler-embeddable;stdlib;script-runtime;trove4j;reflect;annotations>" `
++  org.jetbrains.kotlin.cli.jvm.K2JVMCompiler `
++  -classpath "<kotlin-stdlib;room-common-2.6.1;kotlinx-coroutines-core-jvm-1.7.1;annotation;junit-4.13.2;hamcrest-core-1.3>" `
++  -jvm-target 17 -d <out> <main sources…> <test sources…>
++# 2) 运行
++java -cp "<out;deps>" org.junit.runner.JUnitCore `
++  MiniJsonTest RedactedLoggerTest CredentialsStoreTest TranslateProvidersTest `
++  ProviderSelectorTest TranslationPopupControllerTest AiAssistantTest HistoryRepositoryTest
++```
++
++结果（本次）：`kotlinc exit=0`；`OK (78 tests)`。
++
++补充检查：把**全部 14 个主源码**（含 3 个 Android 专属文件）对
++`platforms/android-34/android.jar + room-common + coroutines` 编译 →
++`kotlinc exit=1`，但 **115 条报错全部是 `unresolved reference`，且全部指向缺失的 Android 依赖**
++（Compose 的 `Column/Row/Text/Surface/TextButton/MaterialTheme/…`、
++`androidx.security.crypto.{EncryptedSharedPreferences,MasterKey}`、
++`androidx.room.{Room,RoomDatabase}`）。**零语法错误、零类型错误、零“overrides nothing”**，
++说明这三个文件在补齐依赖后可编译。
++
++### 7.2 接入后应跑的（主线程）
++
++```bash
++# 注册模块后（settings.gradle 加 include ':feature:translate'）
++./gradlew :feature:translate:testDebugUnitTest     # AGP 默认 JUnit4 runner，无需额外插件
++./gradlew :feature:translate:assembleDebug
++```
++
++单测覆盖（78 个）：JSON 解析/写体/实体解码 6、脱敏日志 6、凭据存储 7、三源 wire 格式 17、
++源选择 9、弹窗与历史联动 12、AI 助手 9、历史仓储（去重/检索/保留/清空）12。
++
++## 8. 集成步骤（留给主线程，本卡禁改）
++
++1. `android/settings.gradle`：`include ':feature:translate'`（与 `:engine:*` 同段注释风格）。
++2. `android/app/build.gradle`：`implementation project(':feature:translate')`。
++3. `:app` 提供两个 seam 实现：`HttpTransport`（OkHttp/HttpURLConnection，负责把 IO 异常
++   转成 `HttpTransportException`）与 `Logger`（`android.util.Log`，按级别分流）。
++4. 生产装配：
++   `CredentialsStore(EncryptedSecretStore(context), appLogger)`；
++   `TranslationPopupController(ProviderSelector(listOf(GoogleTranslateProvider(), MicrosoftTranslateProvider(), DeepLTranslateProvider())), credentialsStore, transport, logger, TranslationHistoryRepository(TranslationHistoryDatabase.get(context).historyDao()))`。
++5. 需要网络下载的新依赖：`androidx.security:security-crypto:1.1.0-alpha06`
++   （Compose BOM / Room 2.6.1 / coroutines 1.7.1 仓库里已用过）。
++6. 可选：把 `TranslationHistoryEntity` 合并进 `KoodoDatabase`（§5），或保持独立库。
++7. 设置页翻译源表单可直接用 `TranslationProvider.credentialFields` 渲染，
++   回显用 `CredentialsStore.maskedApiKey()`。
++
++## 9. 边界与未做
++
++* 不做插件注册表、不做 22 个桌面独占插件源、不做 voice 插件（按卡面要求）。
++* 不做设置页 UI 与历史列表页 UI（本卡交付弹窗表面 + 状态机；设置/历史列表属 `:app` 设置与库页）。
++* 不做 SSE 流式 AI、不做整书翻译编排（`aiTranslateTexts` 的 8 段分块逻辑属后续卡片）。
++* 用户可见文案未硬编码：`TranslationPopupLabels.from(localization::t)` 使用桌面同键
++  （`Translate` / `Translation failed` / `Copy` / `Close` / `AI service`），
++  由 `core:common` 的 `Localization` 解析。
++* 未触碰禁改文件：`android/app/build.gradle`、`android/settings.gradle`、
++  `android/build.gradle`、`package.json`、`main.js`（worktree 内 `git status` 可复核）。

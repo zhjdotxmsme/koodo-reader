@@ -1,0 +1,82 @@
+// feature/translate — P6: selection translation (Google / Microsoft / DeepL) + AI assistant.
+//
+// ANDROID LIBRARY module: it owns the Compose popup surface
+// (TranslationPopupUi.kt), the EncryptedSharedPreferences-backed credential
+// store (EncryptedSecretStore.kt) and the Room database for translation history
+// (TranslationHistoryDatabase.kt).
+//
+// Everything else in this module is deliberately **pure Kotlin** (no Android
+// imports): provider request building / response parsing, the popup state
+// machine, the credential store core, the AI assistant and the history
+// repository. Those files are also compiled by a throwaway pure-JVM Gradle
+// module during development so `test/` runs without the Android SDK — see
+// docs/p6-translate-architecture.md §7 for the exact commands.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp'
+}
+
+android {
+    namespace 'com.koodoreader.feature.translate'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        // Compose compiler compatible with Kotlin 1.9.24 (same pin as :app).
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+
+    testOptions {
+        // Unit tests exercise the pure-Kotlin classes only; android.jar stubs
+        // are never called (hence returnDefaultValues, which turns a stray stub
+        // call into a null/default return instead of a "Stub!" crash).
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    // P1 data layer: KoodoDatabase conventions + Room/coroutines on the compile
+    // classpath (the history table itself is declared in this module).
+    implementation project(':core:data')
+    // Desktop-parity i18n keys for the popup labels (Localization.t).
+    implementation project(':core:common')
+
+    def roomVersion = '2.6.1'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    ksp "androidx.room:room-compiler:$roomVersion"
+
+    // CredentialsStore: EncryptedSharedPreferences (AES-256-SIV keys /
+    // AES-256-GCM values, master key in the Android Keystore).
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+
+    // JVM unit tests (JUnit 4 = the AGP default runner; also runs unchanged in
+    // the throwaway pure-JVM module).
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+}
