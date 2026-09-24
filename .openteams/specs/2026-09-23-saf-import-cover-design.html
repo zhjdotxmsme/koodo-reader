@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计：P1 SAF 批量导入 + 封面生成（android native 壳）</title>
+<style>
+  :root { --bg:#10141a; --card:#18202b; --line:#263242; --tx:#dce6f2; --dim:#8fa1b8;
+          --acc:#4da3ff; --ok:#3fb950; --warn:#d4a72c; --bad:#f47067; --code-bg:#0c1016; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 16px; background:var(--bg); color:var(--tx);
+         font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:12px 0; }
+  code, pre { font-family:ui-monospace,Cascadia Code,Consolas,monospace; font-size:13px; }
+  code { background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; }
+  pre code { border:none; background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); }
+  .tag { display:inline-block; font-size:12px; border-radius:999px; padding:1px 10px; margin-right:6px; }
+  .ok { background:#123d1f; color:var(--ok); } .warn { background:#3d3212; color:var(--warn); }
+  .acc { background:#122c47; color:var(--acc); } .new { background:#2d123d; color:#c792ea; }
+  ul { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .kv { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>P1：SAF 批量导入 + 封面生成/缓存（android native 壳）</h1>
+<div class="meta">
+  任务卡 <code>t-mudyjpgw</code>（in_progress）· 2026-09-23 · 状态：用户已确认设计<br>
+  上游依据：<code>docs/android-native-migration.md</code> §3 目标架构 / §6 P1 / 附录 A.1「批量导入」「封面生成/缓存」行
+</div>
+
+<h2>0. 现状（本会话核实的代码事实）</h2>
+<div class="card">
+  <ul>
+    <li><span class="tag new">已有</span><code>android/core/importer</code>：纯 JVM 模块（settings.gradle 已挂）。<code>BookRules.kt</code> 实现 17 种格式白名单 / MIME / key 生成 / <code>filterBooks</code>（声明为 folderBridge 的 Kotlin 单一事实源）；<code>BookRulesTest</code> 17+ 用例。</li>
+    <li><span class="tag warn">已发现缺陷</span>① Kotlin <code>MIME_BY_EXT["xhtml"] = "text/html"</code>，与既有测试期望 <code>application/xhtml+xml</code>（JS mirror）不符——<code>:core:importer:test</code> 当前会红。② Kotlin 比桌面导入清单（<code>src/utils/common.ts</code> supportedFormats，18 种，含 <code>.xml</code>）少 <code>xml</code>。③ 模块注释引用的守卫脚本 <code>scripts/check-import-rules.js</code> <b>不存在</b>，CI 未接入。</li>
+    <li><span class="tag acc">缺</span>SAF 接线 / 封面提取（EPUB OPF、CBZ 首图）/ MD5 流式 / 导入管线 / <code>CoverStore</code> / Compose 导入 UI / Room 批量入库 / 守卫脚本与 CI。</li>
+    <li><span class="tag ok">复用</span><code>core:data</code> Room（<code>BookDao.getByMd5/upsertAll</code> 已就绪）；<code>BookCard</code> 已有 base64 封面解码 + 占位图链路。</li>
+  </ul>
+</div>
+
+<h2>1. 已确认决策</h2>
+<table>
+  <tr><th>#</th><th>决策</th><th>取值</th></tr>
+  <tr><td>D1</td><td>元数据/封面深度</td><td>EPUB=OPF 全量元数据（title/creator/description/publisher）+ 封面抽取；CBZ=首图封面；其余格式=文件名/格式/大小/md5/path。不做 PDF/MOBI/TXT 等深度解析（P2+ 引擎补全）</td></tr>
+  <tr><td>D2</td><td>模块归属</td><td>扩展现有 <code>core/importer</code>（用户已裁决），不新建 core/common</td></tr>
+  <tr><td>D3</td><td>格式清单事实源</td><td>Kotlin <code>BookRules</code> 对齐<b>桌面导入清单</b> <code>src/utils/common.ts</code>（18 种，含 xml）；<code>folderBridge.js</code>（17 种）作为 WebView 轨协议子集保留，守卫检查其为子集</td></tr>
+  <tr><td>D4</td><td>书籍文件落盘</td><td>导入时把书流式拷入 <code>filesDir/books/&lt;key&gt;.&lt;ext&gt;</code>，<code>books.path</code> 记该绝对路径 —— native 读引擎（P2+）不再依赖 SAF 权限存活；EPUB/CBZ 封面抽取直接用 <code>java.util.zip.ZipFile</code> 随机访问</td></tr>
+  <tr><td>D5</td><td>key / 去重</td><td>沿用既有 <code>BookRules.buildBookKey</code>（时间戳+随机3位，桌面 comic 同款）；内容去重 = <code>BookDao.getByMd5</code> + 批内 md5 去重（桌面 <code>getBookByMd5</code> 同款语义）</td></tr>
+</table>
+
+<h2>2. 组件设计</h2>
+
+<h3>2.1 <code>core/importer</code>（纯 JVM，零 Android 依赖）</h3>
+<table>
+  <tr><th>文件</th><th>职责</th></tr>
+  <tr><td><code>BookRules.kt</code>（改）</td><td>+ <code>xml</code> 进白名单与 MIME（<code>application/xml</code>）；xhtml MIME 修正为 <code>application/xhtml+xml</code>（对齐 JS 与既有测试）；注释更新事实源为桌面 common.ts 清单 ∪ folderBridge 协议常量</td></tr>
+  <tr><td><code>FileMd5.kt</code>（新）</td><td>流式 MD5：16KB 分块读 <code>File</code>，返回 32 位小写 hex（与桌面 CryptoJS MD5 同算法同表示）</td></tr>
+  <tr><td><code>EpubBook.kt</code>（新）</td><td>基于 <code>ZipFile</code>：读 <code>META-INF/container.xml</code> → OPF 路径（回退：首个 <code>*.opf</code> 条目）→ <code>XmlPullParser</code> 解析 <code>dc:title/creator/description/publisher</code> → 封面：<code>&lt;meta name="cover" content="ID"/&gt;</code> → manifest href（回退：manifest 中文件名含 "cover" 的首张图）；路径解析处理前导 <code>/</code> 与 <code>..</code></td></tr>
+  <tr><td><code>ComicCover.kt</code>（新）</td><td>CBZ（ZipFile）：白名单扩展过滤（importLocal COMIC_IMAGE_EXTS 同款 14 种）→ <b>numeric natural sort</b> → 首图 bytes + 类型（jpg→jpeg）；与桌面 comic 封面规则一致</td></tr>
+  <tr><td><code>ImportPipeline.kt</code>（新）</td><td>纯函数管线 <code>process(books: List&lt;LocalBookInput&gt;, dedup: ExistingMd5Check, outDir: File): ImportResult</code>：逐本 格式过滤→拷贝落盘→MD5→去重→按格式提取（EPUB/CBZ/基础）→产出 <code>BookRecord</code>（映射 <code>BookEntity</code> 全列）+ 可选 <code>CoverData(ext, bytes)</code>；单本失败隔离计入 <code>failures</code>，不中断批次</td></tr>
+</table>
+
+<h3>2.2 <code>app</code> 模块（Compose 壳）</h3>
+<table>
+  <tr><th>文件</th><th>职责</th></tr>
+  <tr><td><code>CoverStore.kt</code>（新）</td><td><code>filesDir/cover/&lt;bookKey&gt;.&lt;ext&gt;</code>（与桌面 <code>cover/</code> 目录同命名约定，P7 备份兼容）；<code>save(bookKey, CoverData)</code>（覆盖旧文件）/ <code>fileFor(bookKey)</code>（key 边界精确匹配）；线程安全（IO 侧调用）</td></tr>
+  <tr><td><code>ImportViewModel.kt</code>（新）</td><td><code>AndroidViewModel</code>：SAF launcher（<code>OpenMultipleDocuments</code>+<code>OpenDocumentTree</code>）→ 权限持久化（<code>takePersistableUriPermission</code>）→ 目录递归走（DocumentFile，上限 <code>MAX_FILES</code>）→ <code>Dispatchers.IO</code> 顺序跑 <code>ImportPipeline</code> → 每 50 本一批 <code>upsertAll</code> → 封面写 <code>CoverStore</code>；进度 <code>StateFlow(ImportUiState)</code>：total/processed/imported/duplicate/unsupported/failed+首条错误摘要</td></tr>
+  <tr><td><code>ImportSheet.kt</code>（新，Compose）</td><td>TopAppBar「导入」icon → 模态底部菜单：「选择书籍文件（多选）」「选择书籍文件夹」；进行中进度条 + 结果摘要行；文案走 <code>strings.xml</code></td></tr>
+  <tr><td><code>LibraryScreen.kt</code>（改）</td><td>挂接 ImportSheet；空库提示文案更新（导入入口已就绪）</td></tr>
+  <tr><td><code>BookCard.kt</code>（改）</td><td>封面解析顺序：<code>book.cover</code>（base64，桌面回填）→ <code>CoverStore.fileFor(key)</code>（磁盘文件）→ 占位图；文件解码走 <code>BitmapFactory</code></td></tr>
+  <tr><td><code>build.gradle</code>（改）</td><td><code>implementation project(':core:importer')</code></td></tr>
+</table>
+
+<h3>2.3 单一事实源守卫</h3>
+<pre><code>scripts/check-import-rules.js [--verbose]   # 退出码 0 通过 / 2 漂移
+  1. src/utils/common.ts `supportedFormats`  ==  BookRules.kt `BOOK_EXTENSIONS`（集合相等，主校验）
+  2. folderBridge.js `BOOK_EXTENSIONS`  ⊆  校验集（WebView 轨允许子集，超集/拼写错误判失败）
+CI：release-android.yml 新增两步——守卫 + `gradle :core:importer:test`（与 :engine:cfi 同位置）</code></pre>
+
+<h3>2.4 数据流</h3>
+<pre><code>SAF(文件/目录树) ──DocumentFile──▶ ImportViewModel（IO）
+  └─▶ ImportPipeline.process
+        ├─ BookRules.isBookName?  ─否─▶ skipped(unsupported)
+        ├─ ContentResolver 流式拷贝 → filesDir/books/&lt;key&gt;.&lt;ext&gt;
+        ├─ FileMd5（16KB 分块）
+        ├─ 去重：Room.getByMd5 / 批内 md5  ─命中─▶ skipped(duplicate)
+        ├─ EPUB → EpubBook（元数据+封面）｜CBZ → ComicCover（首图）｜其它 → 基础字段
+        └─▶ BookRecord + CoverData
+  └─▶ CoverStore.save（filesDir/cover/&lt;key&gt;.&lt;ext&gt;）＋ Room upsertAll（50/批）
+  └─▶ LibraryScreen（StateFlow 自动刷新）→ BookCard 显示封面</code></pre>
+
+<h2>3. 验收映射（卡内 5 项）</h2>
+<table>
+  <tr><th>清单项</th><th>实现</th><th>验证</th></tr>
+  <tr><td>1 SAF 目录/多选导入，桌面同格式清单</td><td>§2.2 launcher + §2.1 BookRules(+xml)</td><td><code>:app:assembleDebug -Ptarget=native</code> 编译 + 守护脚本</td></tr>
+  <tr><td>2 规则单一事实源</td><td>§2.3 守卫 + CI</td><td><code>node scripts/check-import-rules.js</code></td></tr>
+  <tr><td>3 封面生成+磁盘缓存</td><td>EpubBook/ComicCover + CoverStore</td><td>JVM 单测（构造 zip fixture）</td></tr>
+  <tr><td>4 Room 入库+书架刷新</td><td>ImportViewModel + 既有 observeAll StateFlow</td><td>编译 + 架构（同进程 DB 自动刷新）</td></tr>
+  <tr><td>5 1000 本压测不 OOM</td><td>JVM 侧 1000 本合成管线压测（计时/结果正确性）；真机 1000 本步骤写入 <code>docs/android-native-verify.md</code></td><td>JVM 测试通过；真机项标记待回填</td></tr>
+</table>
+
+<h2>4. 边界、风险与回滚</h2>
+<ul>
+  <li><b>不做</b>：PDF/MOBI/TXT 封面与深度元数据、URL/OPDS 导入、AI 标题解析、JS 侧任何改动（WebView 轨不动）、云同步。</li>
+  <li><b>R-1</b> 非常规 EPUB（缺 container.xml / 空 OPF）：回退链（首 .opf → 无封面）保证仍可入库，封面占位。<b>R-2</b> SAF 树权限个别 ROM 行为差异：文件已被拷入内部存储，读权限失效只影响“重新导入新文件”，不影响已入库书。<b>R-3</b> 磁盘占用：书库文件双份（SAF 源 + 内部副本）——为 P2 引擎与权限健壮性付的代价，P8 体积优化时评估。</li>
+  <li><b>回滚</b>：本卡全部为新增文件 + 少量既有文件增量修改；revert 该提交即回到现状，无数据迁移。</li>
+</ul>
+
+<h2>5. 测试计划（全部本机 JVM 可跑）</h2>
+<ul>
+  <li><code>:core:importer:test</code>：FileMd5（已知向量+分块边界）、EpubBook（构造 EPUB zip：元数据/cover meta/回退 cover.png/相对路径 ../）、ComicCover（natural sort 1/2/10、扩展过滤、jpg→jpeg）、ImportPipeline（去重跨批/批内、unsupported 跳过、单本失败隔离、1000 本压测）、BookRules 既有 17 用例（xhtml 修正后转绿）。</li>
+  <li><code>:app:assembleDebug -Ptarget=native</code>：Compose/SAF 接线编译通过。</li>
+  <li><code>node scripts/check-import-rules.js</code>：事实源对齐。</li>
+  <li>既有 <code>check-room-schema.js</code> / <code>gen-cfi-golden.js --check</code>：回归不受影响。</li>
+</ul>
+
+</div>
+</body>
+</html>

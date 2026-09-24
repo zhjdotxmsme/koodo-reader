@@ -7,9 +7,13 @@ import kotlin.random.Random
  * Book-file import rules — the KOTLIN SINGLE SOURCE OF TRUTH for the native
  * track (P1: "SAF 导入（规则迁 Kotlin 为单一事实源）").
  *
- * Semantics are a 1:1 port of `src/utils/android/folderBridge.js`, which the
- * WebView track keeps using until P8. CI runs `node scripts/check-import-rules.js`
- * to fail on drift between the two.
+ * Format list parity:
+ *  - `BOOK_EXTENSIONS` mirrors the DESKTOP import list in
+ *    `src/utils/common.ts` (`supportedFormats`, 18 formats incl. `xml`) —
+ *    CI runs `node scripts/check-import-rules.js` to fail on drift.
+ *  - `src/utils/android/folderBridge.js` (WebView track, `xml` excluded) is a
+ *    legacy protocol SUBSET of the desktop list; it retires with the WebView
+ *    track (P8) and is only subset-checked by the parity guard.
  *
  * Book-row key/name/format generation mirrors the desktop importer
  * (`src/components/importLocal/component.tsx`): key = timestamp + random
@@ -26,11 +30,16 @@ object BookRules {
     /** Directory depth below the root to enumerate (folderBridge FOLDER_DEPTH). */
     const val FOLDER_DEPTH: Int = 2
 
-    /** Book extensions the reader supports (lower-case), same order as JS. */
+    /**
+     * Book extensions the reader supports (lower-case) — set-equal to the
+     * desktop import list `src/utils/common.ts` `supportedFormats` (kept in
+     * order; the parity guard is order-insensitive).
+     */
     val BOOK_EXTENSIONS: List<String> = listOf(
-        "epub", "pdf", "mobi", "azw3", "azw", "txt", "fb2",
-        "cbz", "cbr", "cbt", "cb7", "md", "docx",
-        "html", "htm", "xhtml", "mhtml",
+        "epub", "pdf", "txt", "mobi", "azw3", "azw",
+        "htm", "html", "xml", "xhtml", "mhtml",
+        "docx", "md", "fb2",
+        "cbz", "cbt", "cbr", "cb7",
     )
 
     /** Canonical MIME type per book extension. */
@@ -50,6 +59,7 @@ object BookRules {
         "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "html" to "text/html",
         "htm" to "text/html",
+        "xml" to "application/xml",
         "xhtml" to "application/xhtml+xml",
         "mhtml" to "message/rfc822",
     )

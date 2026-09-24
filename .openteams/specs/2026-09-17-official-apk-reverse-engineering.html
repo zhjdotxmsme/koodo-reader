@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>官方 Koodo Reader 安卓 APK 逆向报告 (v2.4.4 arm64)</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1b1f28;--border:#2a2f3a;--text:#d7dce4;--dim:#8b93a1;
+        --accent:#4f8cff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--code:#10131a;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 16px 72px;background:var(--bg);color:var(--text);
+       font:15px/1.68 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1020px;margin:0 auto}
+  h1{font-size:27px;margin:0 0 6px}
+  h2{font-size:20px;margin:44px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  h3{font-size:16px;margin:26px 0 8px;color:#e8ecf2}
+  .meta{color:var(--dim);font-size:13px;margin-bottom:10px}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;
+         background:#1d2838;color:var(--accent);border:1px solid var(--accent);margin:0 6px 6px 0}
+  .badge.ok{color:var(--ok);border-color:var(--ok);background:#12261a}
+  .badge.bad{color:var(--bad);border-color:var(--bad);background:#2a1517}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:14px 0}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:#e8ecf2;white-space:nowrap}
+  code{background:var(--code);border:1px solid var(--border);border-radius:4px;padding:1px 6px;
+       font:12.5px Consolas,monospace;color:#9ecbff}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:12px 16px;
+      overflow-x:auto;font:12.5px/1.55 Consolas,monospace}
+  ul{padding-left:22px}li{margin:3px 0}
+  .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+  .flow{font:13px/1.75 Consolas,monospace}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .kpi{font-size:24px;font-weight:600;color:#fff}
+  .toc a{color:var(--accent);text-decoration:none;margin-right:16px;white-space:nowrap}
+  .tag{font-size:11.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--border);margin-right:4px}
+  .tag.both{color:var(--ok);border-color:var(--ok)}
+  .tag.ours{color:var(--warn);border-color:var(--warn)}
+  .tag.theirs{color:var(--accent);border-color:var(--accent)}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>官方 Koodo Reader 安卓 APK 逆向报告</h1>
+<div class="meta">
+  目标：<code>Koodo-Reader-2.4.4-arm64.apk</code> ·
+  SHA-256 <code>9C656FF1…C639</code> · 60.99 MB ·
+  日期 2026-09-17 · 用途：互操作性参考（对齐我们自建安卓壳）
+</div>
+<div>
+  <span class="badge ok">Hermes 字节码反编译成功</span>
+  <span class="badge ok">Manifest 已解码</span>
+  <span class="badge ok">33 事件分派器全文</span>
+  <span class="badge ok">~42 注入调用点</span>
+  <span class="badge ok">jadx dex 层已解</span>
+  <span class="badge">native C++ 不可恢复</span>
+</div>
+
+<div class="card" style="border-color:var(--warn)">
+<b class="warn">审计修订（2026-09-17，对初版报告的自查）</b>——初版有 3 处实质性错误与几处过度推断，已就地修正，本文以修正后口径为准：
+<ul>
+  <li><b>「17 段注入脚本」错误</b>：那是按字符串片段去重的不可靠计数（含插值参数的脚本会被 Hermes 拆成 2–3 个片段）。可靠口径：<b>~42 个注入调用点</b>（prologue 计数）/ 33 个 rendition 调用点 / 19 个被 postMessage 的事件。§8 已改。</li>
+  <li><b>「33 事件」是"被处理的"集合，非全集</b>：另有 6 个事件被注入脚本发出但分派器不处理（<code>next-page / prev-page / next-chapter / select / slide-to-page / event-loaded</code>），完整事件词汇 <b>39</b>。§5 已补。</li>
+  <li><b>「web 页面来源未解」已坐实</b>：经 jadx 反编译 dex 层确认 <code>com.lighttpd.Server</code>（react-native-static-server 包装，<code>start(id, configPath, errlogPath)</code>，config 写磁盘）+ JS 侧 <code>getOpenPort</code> 取空闲端口 + <code>DocumentDirectoryPath / copyFile / writeFile / downloadAsync</code> 痕迹 → <b>loopback 服务以 app 私有目录为 document-root，kookit 引擎 JS 在启动时写入该目录，WebView 加载 <code>http://127.0.0.1:&lt;port&gt;/…</code></b>。具体子目录名是运行时变量，静态不可提取。§4/§11 已改。</li>
+  <li><b>措辞收紧</b>：「RN bundles kookit JS」→「RN 经 react-native-kookit 模块直接访问 ConfigService 等引擎 API（JSI 还是 bundle JS 未定）」；「书库/设置是原生 UI」→「阅读器壳为原生（有 ResizeObserver/注入脚本支撑），书库页未证明」。§4 已改。</li>
+  <li><b>caveat</b>：hermes-dec 反编译时输出 7 条 <code>pass4: LoadFromEnvironment references unknown register</code> 警告 → 部分函数存在未解析寄存器，产物为 best-effort；分派器函数实长 690 万字符，初版抽取曾用 40 万字符截断上限（33 个事件恰全在前段，复核时已改跑全量）。</li>
+</ul>
+</div>
+
+<h2>0. 一句话结论</h2>
+<div class="card">
+<b>能逆向，且已拿到"官方壳如何处理引擎事件"的权威答案。</b>
+官方安卓端<b>不是</b>「WebView 套网页」的薄壳，而是
+<b>Expo SDK 54 / React Native 原生 UI + 自带 native 阅读引擎（react-native-kookit）+ 内嵌 lighttpd 本地 HTTP/WebDAV 服务 + WebView 内跑 kookit rendition 做渲染</b>。
+其对引擎事件的完整分派表为 <b>33 个事件</b>，与我们引擎的 22 个事件<b>重合 17 个</b>；
+官方另有 <b>16 个我们未处理</b>的事件，我们另有 5 个官方未消费的事件。
+</div>
+
+<h2>1. 可恢复性总览</h2>
+<table>
+<tr><th>层</th><th>可恢复性</th><th>说明</th></tr>
+<tr><td>Hermes 字节码 (assets/index.android.bundle, 9.47 MB)</td><td class="ok">✅ 已完成</td><td>bytecode v96，<code>hbc-decompiler</code> 输出 59 MB 寄存器级伪 JS（逻辑+全部字符串常量可读）</td></tr>
+<tr><td>字符串表</td><td class="ok">✅ 已完成</td><td>26,536 条唯一字符串（含注入脚本原文、配置模板、SQL schema、40+ 语言文案）</td></tr>
+<tr><td>AndroidManifest.xml（二进制）</td><td class="ok">✅ 已完成</td><td>pyaxmlparser 解码：包名/版本/SDK/权限/组件/intent 全部可读</td></tr>
+<tr><td>Expo 构建配置 assets/app.config</td><td class="ok">✅ 明文</td><td>插件清单、权限、intent filters、R8 规则、OTA 地址、IAP 配置一览无余</td></tr>
+<tr><td>Java/Kotlin（classes*.dex）</td><td class="ok">✅ 可（未做）</td><td>jadx 可还原近似原始 Java（MainActivity 及自定义 native 模块）</td></tr>
+<tr><td>资源（res/、resources.arsc）</td><td class="ok">✅ 可（未做）</td><td>apktool/jadx 可还原 strings.xml/布局/图标</td></tr>
+<tr><td><b>native C++</b>（libappmodules.so、pdfium、ffmpeg、hermes）</td><td class="bad">❌ 不可</td><td>只能拿到导出符号 + 反汇编，<b>拿不到源码</b>；阅读引擎的真正核心在此</td></tr>
+<tr><td>原始 TypeScript 工程</td><td class="bad">❌ 不可</td><td>反编译得到的是等价逻辑，不是原始源码结构/注释/类型</td></tr>
+</table>
+
+<h2>2. 方法论（可复现）</h2>
+<pre># 0) 下载（本机需走系统代理 127.0.0.1:19890，curl 默认不走）
+curl.exe -L --proxy http://127.0.0.1:19890 -o koodo-2.4.4-arm64.apk \
+  https://github.com/koodo-reader/koodo-reader/releases/download/v2.4.4/Koodo-Reader-2.4.4-arm64.apk
+
+# 1) 解包（APK 即 ZIP）
+#    .NET ZipFile / tar -xf 均可；提取 assets/index.android.bundle、app.config、app.manifest、AndroidManifest.xml
+
+# 2) 判断 bundle 类型：前 8 字节 = C6 1F BC 03 C1 03 19 1F → Hermes 字节码，版本 0x60 = 96
+
+# 3) Hermes 反编译
+pip install hermes-dec
+hbc-decompiler.exe x/index.android.bundle decompiled      # → 单个 59 MB 伪 JS
+
+# 4) Manifest 解码
+pip install pyaxmlparser    # Python 侧读包名/权限/组件
+
+# 5) 字符串表提取（26k 条）+ 注入脚本抽取（正则扫 window.rendition / ReactNativeWebView）
+
+# 6) dex 层反编译（复核阶段补做，坐实 lighttpd / WebView 接线）
+#    jadx 1.5.1（GitHub release，--no-res 跳资源提速；8052 类 / 19 错误属正常）
+#    jadx.bat -d jadx-out --no-res --show-bad-code koodo-2.4.4-arm64.apk
+#    关键产物：com/lighttpd/Server.java、expo/modules/kookit/ReactNativeKookitView.java、
+#             com/drpogodin/reactnativestaticserver/ReactNativeStaticServerModule.java
+</pre>
+<div class="card dim">
+产出物（均在本机临时目录，<b>未进仓库</b>）：<code>…\Temp\koodo-apk\decompiled</code>（59 MB）、
+<code>strings.txt</code>、<code>injected_scripts.txt</code>、<code>x\</code>（bundle/app.config/Manifest）。
+</div>
+
+<h2>3. 官方壳技术画像</h2>
+<div class="grid">
+<div class="card">
+<h3 style="margin-top:0">身份</h3>
+<ul>
+  <li>包名 <code>com.koodoreader.expo</code>，versionName <b>2.4.4</b>，versionCode 23</li>
+  <li>minSdk <b>24</b> / targetSdk <b>36</b>，仅 arm64-v8a</li>
+  <li>框架 <b>Expo SDK 54 + React Native</b>（expo-router、metro、typedRoutes）</li>
+  <li>入口 <code>com.koodoreader.expo.MainActivity</code></li>
+</ul>
+</div>
+<div class="card">
+<h3 style="margin-top:0">关键权限 / 组件</h3>
+<ul>
+  <li><b>MANAGE_EXTERNAL_STORAGE</b>（所有文件访问）</li>
+  <li><b>REQUEST_INSTALL_PACKAGES</b>（应用内自更新）</li>
+  <li>FOREGROUND_SERVICE（媒体播放）、USE_BIOMETRIC、BILLING</li>
+  <li>Intent filters：<b>VIEW / SEND</b> 覆盖 epub·pdf·txt·html·xml·md·docx·mobi·azw3·azw·mhtml·fb2·cbz·cbr·cbt·cb7</li>
+  <li>服务：trackplayer MusicService、expo-audio 服务</li>
+</ul>
+</div>
+</div>
+
+<h3>自带 native 库（阅读引擎在此）</h3>
+<table>
+<tr><th>库</th><th>体积</th><th>推断作用</th></tr>
+<tr><td><code>libappmodules.so</code></td><td>1.91 MB</td><td>自定义 native 模块（<code>react-native-kookit</code> 主体）</td></tr>
+<tr><td><code>libhermes.so</code> / <code>libjsi.so</code></td><td>2.09 / 0.38 MB</td><td>JS 引擎（Hermes）与 JSI 桥</td></tr>
+<tr><td><code>libpdfium.so</code> + <code>libpdfiumandroid.so</code></td><td>4.66 / 0.42 MB</td><td>原生 PDF 渲染</td></tr>
+<tr><td><code>libffmpegJNI.so</code></td><td>1.43 MB</td><td>音频/TTS 解码</td></tr>
+<tr><td><b><code>liblighttpd.so</code></b></td><td>0.63 MB</td><td><b>内嵌 HTTP 服务器（见 §6）</b></td></tr>
+<tr><td><code>libexpo-sqlite.so</code></td><td>1.78 MB</td><td>书库数据库</td></tr>
+<tr><td><code>libreanimated</code> / <code>worklets</code> / <code>rnscreens</code> / <code>rnsvg</code></td><td>—</td><td>原生 UI 动画与导航</td></tr>
+<tr><td><code>libsentry.so</code></td><td>0.69 MB</td><td>崩溃上报（sentry.io / project koodo-reader-expo）</td></tr>
+</table>
+
+<h3>私有 Expo 配置插件（app.config 明文）</h3>
+<pre>./plugins/enableLargeHeap.js          // 大堆内存（超大书）
+./plugins/withAndroidSigning.js       // 签名
+./plugins/enableWebDav.js             // WebDAV 服务（见 §6）
+./plugins/enableIOSWebDav.js
+./plugins/enableIOSSMBClient.js
+./plugins/withBouncyCastleFix.js
+./plugins/androidWebviewDebug.js      // WebView 调试开关
+./plugins/withExcludeSSHForSim.js
+./plugins/withR8MemoryOptimization.js // R8 内存优化
+./plugins/withExcludeDevClientAutolinking.js
+
+// 其他模块：expo-sqlite, expo-updates(OTA), expo-iap, expo-audio, expo-media-library,
+//          react-native-cloud-store(WebDAV/SMB/iCloud), expo-share-intent,
+//          react-native-blob-util, react-native-pdf, react-native-enriched-markdown,
+//          react-native-kookit, @sentry/react-native, expo-alternate-app-icons(9 套图标)
+// Android：enableProguardInReleaseBuilds + enableMinifyInReleaseBuilds = true
+// OTA：https://u.expo.dev/8c668b07-b07b-4c93-a373-e05e41f6e792</pre>
+
+<h2>4. 架构（逆向还原）</h2>
+<div class="card flow">
+Expo/RN 原生 UI（阅读控制原生可证；书库 / 设置页为原生<b class="warn">系推断，未证明</b>）  ← 由 <code>index.android.bundle</code> 驱动<br>
+&nbsp;&nbsp;├─ 经 <code>react-native-kookit</code> 模块直接访问引擎 API（反编译出现 <code>ConfigService.getReaderConfig('cacheChapterCount')</code> 等；经 JSI 还是 bundle JS <b class="warn">未定</b>）<br>
+&nbsp;&nbsp;└─ <b>WebView</b> 加载由 <code>liblighttpd.so</code> 提供的 <b>本地 HTTP 页面</b>（不是 file://）<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ <span class="ok">[jadx 已坐实]</span> 服务链：<code>getOpenPort</code> 取空闲端口 → JS 构造 lighttpd config 写入磁盘（<code>configPath</code>）→ <code>com.lighttpd.Server.start(id, configPath, errlogPath)</code>（react-native-static-server 包装，<code>System.loadLibrary("lighttpd")</code>）→ WebView 加载 <code>http://127.0.0.1:&lt;port&gt;/…</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ <span class="ok">[jadx 已坐实]</span> document-root = <b>app 私有目录</b>（<code>DocumentDirectoryPath</code> + 子目录，配合 copyFile/writeFile/downloadAsync 在启动期把 kookit 引擎 JS 等写入）；具体子目录名为运行时变量，静态不可提取<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ 注入 <code>loadKookit()</code>：动态插入 <code>&lt;script src='http://127.0.0.1:…/&gt;'</code> 加载 kookit → 回传 <code>script-loaded</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ 注入 ~42 处驱动脚本（调用点计），全部形如：<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;<code>window.rendition.&lt;api&gt;(...)</code> → <code>window.ReactNativeWebView.postMessage({event:...})</code><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ 引擎反向事件（<code>select-text</code>/<code>left</code>/<code>right</code>/<code>swipe</code>…）→ RN 侧 33 路 dispatcher<br>
+lighttpd 同时暴露 <b>WebDAV 端点</b>（书库可被其他设备挂载同步）
+</div>
+<div class="card">
+<b>与我们的壳的根本差异：</b>官方 = <b>原生 UI + WebView 只当渲染器</b>（引擎 API 由注入脚本驱动）；
+我们 = <b>WebView 直接跑完整 web 应用</b>（复用全部 UI 与功能，工程量小得多）。
+两条路都能用；官方路线性能/手感更好，但需要重写 UI 层。
+</div>
+
+<h2>5. 权威事件协议表（33 vs 我们 22）</h2>
+<div class="card dim">
+来源：反编译 <code>_fun42630</code>（RN 侧巨型函数，实长 ~690 万字符：前段逐项比较 <code>payload.event</code> 做事件分派，其余为 reader 配置与选择动作分支；33 个事件全部在其前 40 万字符内）。
+图例：<span class="tag both">双方都有</span><span class="tag ours">仅我们</span><span class="tag theirs">仅官方</span>
+</div>
+<table>
+<tr><th>事件</th><th>归属</th><th>官方是否处理</th><th>我们的现状</th></tr>
+<tr><td><code>book-inited</code></td><td><span class="tag both">both</span></td><td>是</td><td>logcat 观察</td></tr>
+<tr><td><code>content-loaded</code></td><td><span class="tag both">both</span></td><td>是</td><td>logcat 观察</td></tr>
+<tr><td><code>left</code> / <code>right</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>翻页回注</b>（prev/next）</td></tr>
+<tr><td><code>swipe</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>翻页回注</b>（默认前进）</td></tr>
+<tr><td><code>select-text</code> / <code>select-text-after-touch</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>原生选择菜单</b></td></tr>
+<tr><td><code>selection-change</code></td><td><span class="tag both">both</span></td><td>是</td><td>关闭菜单</td></tr>
+<tr><td><code>page-changed</code> / <code>scroll-text</code></td><td><span class="tag both">both</span></td><td>是</td><td>logcat 观察</td></tr>
+<tr><td><code>scroll-top</code> / <code>scroll-bottom</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>翻页回注</b></td></tr>
+<tr><td><code>link-clicked</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>浏览器/脚注分流</b></td></tr>
+<tr><td><code>view-image</code></td><td><span class="tag both">both</span></td><td>是</td><td><b>原生全屏查看</b></td></tr>
+<tr><td><code>get-ocr-result</code></td><td><span class="tag both">both</span></td><td>是</td><td>logcat 观察</td></tr>
+<tr><td><code>user-agent</code></td><td><span class="tag both">both</span></td><td>是</td><td>logcat 观察</td></tr>
+<tr><td><code>error</code></td><td><span class="tag both">both</span></td><td>是</td><td>Toast</td></tr>
+<tr><td><code>pinch-zoom</code></td><td><span class="tag ours">ours</span></td><td class="bad">否（0 命中）</td><td>logcat 观察</td></tr>
+<tr><td><code>cache</code></td><td><span class="tag ours">ours</span></td><td class="bad">否</td><td>logcat 观察</td></tr>
+<tr><td><code>metadata</code></td><td><span class="tag ours">ours</span></td><td class="bad">否</td><td>logcat 观察</td></tr>
+<tr><td><code>chapter-pages</code></td><td><span class="tag ours">ours</span></td><td class="bad">否</td><td>logcat 观察</td></tr>
+<tr><td><code>finish-download</code></td><td><span class="tag ours">ours</span></td><td class="bad">否</td><td>logcat 观察</td></tr>
+<tr><td><code>swipe-start</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>center</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理（语义待确认，疑为中间点击/居中事件）</td></tr>
+<tr><td><code>click-note</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理</td></tr>
+<tr><td><code>get-progress</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>chapter-text</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>pdf-js-ready</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>style-loaded</code> / <code>font-loaded</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>script-loaded</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理</td></tr>
+<tr><td><code>refresh-content</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理</td></tr>
+<tr><td><code>visible-text</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理（TTS/朗读要用）</td></tr>
+<tr><td><code>audio-text</code> / <code>rest-audio-text</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理（TTS 分段）</td></tr>
+<tr><td><code>search-result</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理</td></tr>
+<tr><td><code>image-list</code></td><td><span class="tag theirs">official</span></td><td>是</td><td class="warn">未处理</td></tr>
+<tr><td><code>batch-trans-texts</code></td><td><span class="tag theirs">official</span></td><td>是（注入脚本发）</td><td class="warn">未处理（批量翻译）</td></tr>
+<tr><td colspan="4" class="warn">另有 6 个事件被注入脚本 postMessage 发出、但 dispatcher 不处理（fire-and-forget 通知）：<code>next-page / prev-page / next-chapter / select / slide-to-page / event-loaded</code>。完整事件词汇 = 33 处理 + 6 发出不处理 = <b>39</b>（复核口径：全 690 万字符函数上重跑 <code>.event</code> 比较正则 = 33 处理；全文 <code>event:'X'</code> 发出 = 19；并集 39）。</td></tr>
+</table>
+<div class="card">
+<b>重要推论：</b>官方的 16 个"额外"事件里，至少 8 个是由<b>它自己的注入脚本</b>发出的（<code>visible-text</code>、<code>audio-text</code>、<code>rest-audio-text</code>、<code>search-result</code>、<code>image-list</code>、<code>batch-trans-texts</code>、<code>refresh-content</code>、<code>script-loaded</code>）——它们是 RN 与 WebView 之间的<b>私有 RPC</b>，不是引擎事件。
+另一部分（<code>swipe-start</code>、<code>center</code>、<code>get-progress</code>、<code>chapter-text</code>、<code>pdf-js-ready</code>、<code>style-loaded</code>、<code>font-loaded</code>）更像<b>Android 专用引擎构建</b>的生命周期事件，与我们仓库里的 web/desktop 引擎事件集不同。
+</div>
+
+<h2>6. lighttpd + WebDAV 本地服务（官方特有）</h2>
+<pre>// 反编译自 _fun30357「_newStandardConfigFile」，字符串拼接顺序还原：
+server.modules += ("mod_webdav")
+$HTTP["url"] =~ "&lt;webdav-path&gt;" { webdav.activate = "enable" }
+server.document-root = "&lt;dir&gt;"
+  server.bind = "&lt;host&gt;"
+  server.upload-dirs = ( "&lt;dir&gt;" )
+  server.port = &lt;port&gt;
+  index-file.names += ("index.xhtml", "index.html", "index.htm", "default.htm", "index.php")
+</pre>
+<div class="card">
+<b>两点价值：</b>
+<ul>
+  <li><b>本地 HTTP 而非 file://</b>：WebView 拿到的是 <code>http://127.0.0.1:port/…</code>，Origin 是一个正常源 →
+      规避 file:// 下 localStorage/IndexedDB/ServiceWorker/CORS/跨文件访问的一堆限制（我们目前正踩这个坑）。</li>
+  <li><b>WebDAV 端点</b>：手机书库目录可直接被别的设备（含桌面版 Koodo）当网络盘挂载同步——这解释了 <code>enableWebDav</code> 插件与 MANAGE_EXTERNAL_STORAGE。</li>
+</ul>
+</div>
+
+<h2>7. 引擎 API 面（官方驱动的 33 个 rendition 方法）</h2>
+<pre>addPageAnimation  addTouchEvent    audioText        autoScrollPDF    chapterText
+clearSelection    createOneNote    displayFontBase64 displayFontUrl  doSearch
+getBatchTransTexts getImageList    getProgress      getRestAudioText goToChapter
+goToChapterDocIndex goToPercentage goToPosition     goToXpath        handleBatchTransResult
+handleWordDefinitionResult highlightAudioNode highlightSearchNode next       nextChapter
+prev              refreshContent   removeOneNote    renderHighlighters scrollToText
+setStyle          slideTo          visibleText</pre>
+<div class="card dim">
+这份清单是官方壳与引擎的<b>实际契约面</b>：说明引擎暴露了「进度/章节文本/图片列表/搜索/高亮渲染/单词释义/批量翻译/字体注入/PDF 自动滚动」等能力。
+我们的壳目前只用到 <code>next</code>/<code>prev</code>，以及把整个 web UI 跑在 WebView 里（间接使用其余能力）。
+</div>
+
+<h2>8. 注入脚本清单（~42 调用点 / 官方 RPC）</h2>
+<div class="card dim">
+<b>计数口径修正</b>：初版"17 段"是按字符串片段去重的不可靠计数——含插值参数的脚本会被 Hermes 拆成 2–3 个字符串片段。
+可靠口径：<b>~42 个注入调用点</b>（prologue <code>(async) function(){…true;}</code> 计数）对应 33 个 rendition API 调用点 + 19 个 postMessage 事件。
+下表按"API → 事件"配对归纳 RPC 语义；脚本正文因插值拆段<b>非完整原文恢复</b>（方向可靠，逻辑细节以 API 名 + 事件名为准）。
+</div>
+<table>
+<tr><th>#</th><th>调用的引擎 API</th><th>回传事件</th><th>作用</th></tr>
+<tr><td>1</td><td><code>loadKookit()</code>（动态 &lt;script&gt;）</td><td><code>script-loaded</code></td><td>把 kookit 引擎注入页面，onload/onerror 回传（中文提示「脚本加载成功/失败」）</td></tr>
+<tr><td>2</td><td><code>doSearch(kw)</code></td><td><code>search-result</code></td><td>全文搜索</td></tr>
+<tr><td>3</td><td><code>refreshContent()</code></td><td><code>refresh-content</code> + chapterList</td><td>重排/刷新章节</td></tr>
+<tr><td>4</td><td><code>getBatchTransTexts()</code></td><td><code>batch-trans-texts</code></td><td>批量翻译取文本</td></tr>
+<tr><td>5</td><td><code>addPageAnimation(...)</code></td><td>—</td><td>翻页动画配置</td></tr>
+<tr><td>6</td><td><code>addTouchEvent('yes', {...})</code></td><td><code>event-loaded</code></td><td>注册触摸事件（引擎开始上报手势）</td></tr>
+<tr><td>7</td><td><code>goToXpath(...)</code></td><td>—</td><td>按 XPath 跳转（笔记/搜索定位）</td></tr>
+<tr><td>8</td><td><code>highlightSearchNode(...)</code></td><td>—</td><td>搜索结果高亮</td></tr>
+<tr><td>9</td><td><code>goToChapterDocIndex(...)</code> / <code>nextChapter()</code></td><td>—</td><td>章节跳转</td></tr>
+<tr><td>10</td><td><code>getRestAudioText(count)</code></td><td><code>rest-audio-text</code></td><td>TTS 续读文本（读取 <code>ConfigService.getReaderConfig('cacheChapterCount')</code>，默认 15）</td></tr>
+<tr><td>11</td><td><code>visibleText()</code></td><td><code>visible-text</code></td><td>当前可视文本（朗读/划词）</td></tr>
+<tr><td>12</td><td><code>prev('android')</code></td><td><code>prev-page</code></td><td>上一页（注意传入平台串 <code>'android'</code>）</td></tr>
+<tr><td>13</td><td><code>renderHighlighters(...)</code> + 笔记点击监听</td><td><code>click-note</code> (noteKey)</td><td>渲染批注并接收笔记点击</td></tr>
+<tr><td>14</td><td>—</td><td><code>select</code></td><td>选区变化上报</td></tr>
+<tr><td>15</td><td><code>clearSelection()</code> / <code>getImageList()</code> / <code>getProgress()</code> / <code>setStyle()</code> / <code>slideTo()</code> 等</td><td>—</td><td>其余驱动脚本</td></tr>
+<tr><td>16</td><td><code>ResizeObserver</code> on document.body</td><td><code>{type,…width,height}</code></td><td>把页面尺寸变化报给原生（原生 UI 自适应）</td></tr>
+<tr><td>17</td><td>错误兜底</td><td><code>{error: message}</code></td><td>所有注入脚本统一 try/catch 回传错误</td></tr>
+</table>
+<div class="card">
+<h3 style="margin-top:0">原文示例（第 11 段）</h3>
+<pre>(async function() {
+  try {
+    var nodeList = await window.rendition.visibleText();
+    window.ReactNativeWebView.postMessage(JSON.stringify({event: 'visible-text', nodeList: nodeList}));
+  } catch (error) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({error: error.message}));
+  }
+})();
+true;</pre>
+<div class="dim">注意结尾的 <code>true;</code>：<code>injectJavaScript</code> 必须以非字符串值收尾（react-native-webview 要求），我们自己的注入也应遵循。</div>
+</div>
+
+<h2>9. 数据库 schema（引擎侧，反编译可见）</h2>
+<pre>CREATE TABLE IF NOT EXISTS "books" (...)   / "notes" (...) / "words" (...) / "plugins" (...)</pre>
+<div class="card dim">与我们 web 端一致的库表结构（expo-sqlite 落盘），说明官方安卓端复用同一套 kookit 数据模型。</div>
+
+<h2>10. 对我们的行动建议（按性价比排序）</h2>
+<table>
+<tr><th>优先级</th><th>项</th><th>理由 / 依据</th><th>成本</th></tr>
+<tr><td class="ok">P0</td><td><b>把壳从 file:// 换成本地 HTTP 服务</b></td>
+<td>官方用 lighttpd；file:// 下 Origin 为 null，IndexedDB/localStorage/ServiceWorker/CORS 行为受限，长期是隐患。可用 NanoHTTPD / 自写 Kotlin ServerSocket / 复用 lighttpd 静态库</td><td>中（半天级）</td></tr>
+<tr><td class="ok">P0</td><td><b>补 intent filters（VIEW/SEND）</b></td>
+<td>官方覆盖 16 种电子书 MIME，文件管理器可「用 Koodo 打开」；我们的壳目前无此能力</td><td>低（Manifest + onNewIntent 处理）</td></tr>
+<tr><td class="warn">P1</td><td>补 <code>swipe-start</code> / <code>center</code> / <code>get-progress</code> / <code>chapter-text</code> / <code>pdf-js-ready</code> / <code>style-loaded</code> / <code>font-loaded</code></td>
+<td>官方生命周期事件；注意这些可能来自其 Android 专用引擎构建，我们的 web 引擎未必会发——<b>先验证再实现</b></td><td>低（先加观察，再决定）</td></tr>
+<tr><td class="warn">P1</td><td>TTS 走近路：注入脚本用 <code>visibleText</code>/<code>getRestAudioText</code></td>
+<td>官方朗读是"原生 TTS + 引擎分段文本"；比在 web UI 里做更稳</td><td>中</td></tr>
+<tr><td class="warn">P1</td><td>超大书内存：<code>android:largeHeap="true"</code></td>
+<td>官方专门写了 <code>enableLargeHeap</code> 插件</td><td>极低</td></tr>
+<tr><td>P2</td><td>WebDAV 端点（<code>mod_webdav</code> 等价物）</td>
+<td>把手机书库变网络盘；属于差异化功能，工程量大</td><td>高</td></tr>
+<tr><td>P2</td><td>Release 打开 R8/minify + 自定义 proguard 规则</td>
+<td>官方 release 开启 R8（我们 debug 不受影响，release 可减体积）</td><td>中（需回归验证）</td></tr>
+<tr><td>P2</td><td>开源应用内更新 / 生物识别锁</td>
+<td>官方有 REQUEST_INSTALL_PACKAGES + USE_BIOMETRIC（我们此前评估过生物识别）</td><td>中</td></tr>
+</table>
+
+<h2>11. 边界与不可得</h2>
+<div class="card">
+<ul>
+  <li><b>授权边界</b>：该壳不在 AGPL 仓库内（仓库只含 web/桌面端）。本报告用于<b>互操作性参考</b>；把其代码/资源直接搬进我们的分发包会有授权问题，应"照协议重实现"而非复制。</li>
+  <li><b>不可得</b>：native C++ 源码（阅读引擎核心）、原始 TS 工程结构、其签名私钥/OTA/IAP 凭据（本来也不在 APK 内）。</li>
+  <li><b>整体复用不现实</b>：官方壳强依赖闭源 native 模块、Expo 生态（expo-updates/IAP/Sentry/cloud-store）+ 一堆私有插件，搬迁成本高于自建。</li>
+  <li><b>已部分解决（2026-09-17 复核，jadx dex 层）</b>：web 页面机制已坐实——loopback lighttpd（<code>com.lighttpd.Server</code>，config 写磁盘）以 <b>app 私有目录为 document-root</b>，kookit 引擎 JS 启动期写入（copyFile/writeFile/downloadAsync 痕迹），WebView 加载 <code>http://127.0.0.1:&lt;port&gt;/…</code>。<b>仍不可得</b>：document-root 的具体子目录名（运行时闭包变量，静态不可提取；要拿精确路径需真机 logcat/抓文件系统）。</li>
+<li><b>caveat</b>：hermes-dec 反编译输出 7 条 <code>pass4: LoadFromEnvironment references unknown register</code> 警告 → 产物为 best-effort，个别函数有未解析寄存器；初版事件抽取曾用 40 万字符截断上限（分派器实长 690 万字符），复核已改跑全量，33 处理集合不变。</li>
+</ul>
+</div>
+
+<h2>12. 产物清单</h2>
+<table>
+<tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>…\Temp\koodo-apk\koodo-2.4.4-arm64.apk</code></td><td>原始 APK（60.99 MB，SHA-256 9C656FF1…C639）</td></tr>
+<tr><td><code>…\Temp\koodo-apk\decompiled</code></td><td>Hermes 反编译产物（59 MB 伪 JS，全文可 grep）</td></tr>
+<tr><td><code>…\Temp\koodo-apk\strings.txt</code></td><td>26,536 条字符串</td></tr>
+<tr><td><code>…\Temp\koodo-apk\injected_scripts.txt</code></td><td>注入脚本片段（按"API→事件"配对归纳为 §8 表；片段非整段原文）</td></tr>
+<tr><td><code>…\Temp\koodo-apk\jadx-out\</code></td><td>jadx 反编译的 dex 层 Java（8052 类，含 <code>com.lighttpd.Server</code>、<code>ReactNativeKookitView</code>、static-server 模块）</td></tr>
+<tr><td><code>…\Temp\koodo-apk\injected.txt</code></td><td>33 个 rendition API + RN 回传事件 + 配置模板命中</td></tr>
+<tr><td><code>…\Temp\koodo-apk\x\</code></td><td>bundle / app.config / app.manifest / AndroidManifest.xml</td></tr>
+</table>
+
+</div></body></html>

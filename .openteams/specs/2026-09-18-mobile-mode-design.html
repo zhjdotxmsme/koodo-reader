@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>设计规格：Koodo Reader 安卓壳移动模式（mobile-mode）</title>
+<style>
+  :root {
+    --accent: #0078d4;
+    --bg: #f6f8fa;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --text: #24292f;
+    --muted: #57606a;
+    --code-bg: #f0f3f6;
+    --warn-bg: #fff8e6;
+    --ok-bg: #eaf6ec;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+  header.doc {
+    background: linear-gradient(135deg, #1b3a5c, #0078d4);
+    color: #fff;
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 28px;
+  }
+  header.doc h1 { margin: 0 0 8px; font-size: 24px; }
+  header.doc .meta { font-size: 13px; opacity: .85; }
+  header.doc .meta span { margin-right: 18px; }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin-bottom: 20px;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 0 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent);
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2 .no {
+    background: var(--accent); color: #fff;
+    border-radius: 6px; font-size: 13px;
+    padding: 1px 8px; flex: none;
+  }
+  h3 { font-size: 15px; margin: 18px 0 6px; }
+  p, li { font-size: 14px; }
+  code {
+    font-family: Consolas, "JetBrains Mono", monospace;
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 13px;
+  }
+  pre {
+    background: #0d1117; color: #c9d1d9;
+    border-radius: 8px; padding: 14px 16px;
+    overflow-x: auto; font-size: 13px; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); }
+  .tag { display: inline-block; border-radius: 10px; font-size: 12px; padding: 0 10px; margin-right: 6px; }
+  .tag.decision { background: var(--ok-bg); color: #1a7f37; border: 1px solid #b7dfc0; }
+  .tag.risk { background: var(--warn-bg); color: #9a6700; border: 1px solid #ead49c; }
+  .note { background: var(--warn-bg); border-left: 4px solid #d4a72c; padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 13.5px; margin: 12px 0; }
+  .evidence { background: var(--code-bg); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 10px 0; }
+  .evidence b { color: var(--accent); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>设计规格：安卓壳移动模式（mobile-mode）</h1>
+  <div class="meta">
+    <span>日期：2026-09-18</span>
+    <span>状态：待用户审阅</span>
+    <span>路线：壳 + WebView（路线 2）</span>
+    <span>方案：A（壳感知移动模式）</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="no">1</span>背景与根因</h2>
+  <p>用户在安卓真机反馈：APP 打开后呈现<strong>宽屏桌面式排版，没有走移动端样式</strong>。排查结论：</p>
+  <div class="evidence">
+    <b>证据链（均已核实）</b>
+    <ul style="margin:6px 0 0; padding-left:18px;">
+      <li>打包进 APK 的 <code>webapp/index.html</code> 含正确 viewport：<code>width=device-width,initial-scale=1</code>；MainActivity 设 <code>useWideViewPort=true</code> + <code>loadWithOverviewMode=true</code> —— 视口配置正常。</li>
+      <li>用户确认书库页「从本地导入 / 从云端导入」按钮出现在<strong>屏幕左下角</strong> —— 即 <code>header.css</code> 的 <code>@media (max-width: 950px)</code> 断点已生效，WebView 确实在按手机宽度排版。</li>
+      <li>全项目移动端响应式 CSS 仅有 <strong>4 处</strong>：<code>header.css</code>（≤950px 导入按钮移至左下）、<code>sidebar.css</code>（≤950px 侧栏高度微调）、<code>popupMenu.css</code>（≤576px）、<code>stats.css</code>（≤900px）。没有底栏、移动菜单、抽屉等移动导航模式。</li>
+    </ul>
+  </div>
+  <p><strong>根因定性：</strong>web 应用是桌面优先设计，移动适配层近乎空白。官方 APK 的"手机应用观感"来自 React Native 原生重写的书库/菜单 UI，与其 WebView 渲染层无关；本项目走路线 2（壳 + 完整 web 应用），必须靠 web 层自身的移动布局改造解决。</p>
+</section>
+
+<section>
+  <h2><span class="no">2</span>目标与非目标</h2>
+  <h3>目标</h3>
+  <ul>
+    <li>窄屏（&lt;700px）下书库页呈现真正的移动布局：紧凑顶栏、抽屉侧栏、大封面网格、触控友好。</li>
+    <li>对话框在窄屏近全屏呈现，触屏可正常操作。</li>
+    <li>桌面端（≥700px）渲染<strong>零变化</strong>（结构性保证，见 §3）。</li>
+    <li>屏蔽 Android 系统字体缩放对 WebView 布局的破坏。</li>
+  </ul>
+  <h3>非目标（范围控制）</h3>
+  <ul>
+    <li>阅读页面板（目录/设置）全屏化 → <strong>二期</strong>；一期只保证窄屏不出血（面板本就按 <code>100%</code> 弹性布局）。</li>
+    <li>底部 tab 栏、手势导航、safe-area 避让 → 二期按真机反馈再定。</li>
+    <li>不引入 React Native 式独立移动组件树（方案 C 已否决）；不新增 Redux 状态、不加持久化；不触碰阅读引擎与 IPC。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="no">3</span>核心决策：单一门控根类</h2>
+  <p><span class="tag decision">决策</span>移动样式<strong>不使用媒体查询</strong>，统一挂在根类 <code>body.mobile-mode</code> 下；该类由 JS 挂载：</p>
+  <pre><code>// 纯函数，可单测
+export function isMobileViewport(width: number): boolean {
+  return width &lt; 700;
+}
+
+// App.tsx 挂载 + resize 重算（rAF 节流）
+useEffect(() =&gt; {
+  const apply = () =&gt;
+    document.body.classList.toggle("mobile-mode", isMobileViewport(window.innerWidth));
+  apply();
+  let raf = 0;
+  const onResize = () =&gt; { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); };
+  window.addEventListener("resize", onResize);
+  return () =&gt; { window.removeEventListener("resize", onResize); cancelAnimationFrame(raf); };
+}, []);</code></pre>
+  <p><strong>理由：</strong></p>
+  <ul>
+    <li>单一判定源，杜绝"CSS 媒体查询说移动、JS 行为说桌面"的分裂状态。</li>
+    <li>桌面用户把浏览器窗口拉窄同样切换移动布局——响应式网站的常规预期行为。</li>
+    <li>所有移动选择器带 <code>.mobile-mode</code> 前缀，桌面样式在结构上不可能被误伤（≥700px 时类不存在）。</li>
+    <li>与 <code>isNativeMobile()</code> 解耦：后者继续专用于引擎 isMobile 标志与原生桥行为，不承担布局职责。</li>
+  </ul>
+  <div class="note"><b>阈值 700px</b>：主流手机竖屏 CSS 宽度 360–480px，横屏 640–430px 不等；700 在"手机全量覆盖"与"平板/小窗保持桌面"之间取平衡，且避开现有 950px 断点的作用域（950px 断点行为保留不动）。</div>
+</section>
+
+<section>
+  <h2><span class="no">4</span>书库页改造（一期主体）</h2>
+  <table>
+    <tr><th style="width:14%">区域</th><th style="width:36%">桌面现状</th><th>mobile-mode 行为</th></tr>
+    <tr>
+      <td>Header</td>
+      <td>顶部一排小图标：搜索、排序、设置、反馈报告、演示书下载、导入按钮（950px 断点已移左下）</td>
+      <td>仅保留搜索 + 排序 + 设置；触控目标 ≥44px（含 padding）；"反馈报告""演示书下载"等桌面专属入口隐藏；导入按钮维持左下固定定位（沿用现断点行为）</td>
+    </tr>
+    <tr>
+      <td>Sidebar</td>
+      <td>左侧常驻书架/笔记导航</td>
+      <td>默认收起（复用现有 <code>isCollapsed</code> 机制）；顶栏汉堡按钮滑出，滑出时全屏半透明遮罩，点遮罩或选中项后收回</td>
+    </tr>
+    <tr>
+      <td>书籍网格</td>
+      <td>固定 169px 宽卡片</td>
+      <td><code>repeat(auto-fill, minmax(150px, 1fr))</code>，手机自然 2 列大封面；卡片内间距按触屏放大</td>
+    </tr>
+    <tr>
+      <td>hover 交互</td><td>悬停显按钮、react-tooltip 悬浮提示</td>
+      <td>改为 active 按压态；mobile-mode 下禁用 Tooltip 渲染（包一层条件判断）</td>
+    </tr>
+    <tr>
+      <td>Footer</td><td>底部信息栏</td><td>隐藏</td>
+    </tr>
+  </table>
+  <p><strong>样式落点：</strong>新增 <code>src/assets/styles/mobile.css</code> 集中承载全部 <code>.mobile-mode</code> 规则（便于整体审查与后续演进），在 <code>App.tsx</code> 顶部 import（与挂类逻辑同文件，便于整体回溯）；既有组件 CSS 不散改（header.css 现有 950px 断点保持原样）。</p>
+</section>
+
+<section>
+  <h2><span class="no">5</span>对话框改造（一期）</h2>
+  <ul>
+    <li>项目对话框全部走 vex（<code>vex.dialog.open</code> / <code>vex.open</code> 共 26 处调用）——因此只需一份覆盖规则：<code>.mobile-mode .vex-content { width: calc(100vw - 24px); max-height: 90vh; overflow-y: auto; }</code> 加圆角/内边距微调，即可覆盖全部现有与未来对话框。</li>
+    <li><strong>DetailDialog（书籍详情）</strong>移动全屏化：触屏路径上最核心的对话框（点封面即弹），独立规则做到近全屏 + 底部操作区。</li>
+    <li>vex 遮罩行为保持现状不动：<code>index.html</code> 已全局设置 <code>overlayClosesOnClick = false</code>，关闭靠对话框自身按钮，移动端同样成立，不定制。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="no">6</span>WebView 侧配合（Kotlin，1 处）</h2>
+  <p><code>MainActivity</code> WebView 设置区（现 154–164 行）追加：</p>
+  <pre><code>settings.textZoom = 100  // 屏蔽系统字体缩放，防止布局比例被打碎</code></pre>
+  <p>Android 系统字体缩放会同步放大 WebView 的 <code>textZoom</code>，窄屏下直接挤碎分栏与网格；阅读字号由应用内设置（fontSize）控制，锁定 <code>textZoom</code> 是阅读类 App 的常规做法。</p>
+</section>
+
+<section>
+  <h2><span class="no">7</span>验证策略</h2>
+  <table>
+    <tr><th style="width:22%">层</th><th>内容</th></tr>
+    <tr><td>单元测试</td><td><code>isMobileViewport</code> 边界用例：699 → true，700 → false，0/负数 → true；随现有 Jest 套件运行</td></tr>
+    <tr><td>桌面回归</td><td>1250px 桌面渲染零 diff——所有移动选择器带 <code>.mobile-mode</code> 前缀，≥700px 时类不存在，结构性排除误伤；三门禁照跑（Jest / tsc / CRA build）</td></tr>
+    <tr><td>模拟器视觉</td><td>Chrome 设备模拟 390×844 走查清单：书库页（顶栏/侧栏抽屉/网格/点击书籍详情/各对话框），截图交付</td></tr>
+    <tr><td>真机验收</td><td>用户装机后按验收清单执行（结合 chrome://inspect 远程调试，debug 包已支持）</td></tr>
+    <tr><td>Kotlin</td><td><code>textZoom = 100</code> 走现有编译门禁（CI）+ 本地 6 规则 lint</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="no">8</span>交付物与分期</h2>
+  <h3>一期（本规格范围）</h3>
+  <ul>
+    <li>新增 <code>src/assets/styles/mobile.css</code> —— 移动样式主体</li>
+    <li>新增/修改门控 util（<code>isMobileViewport</code>）+ <code>App.tsx</code> 挂类 useEffect</li>
+    <li><code>MainActivity.kt</code>：+1 行 <code>textZoom = 100</code></li>
+    <li>header / sidebar / bookList 既有 CSS 少量配合（如触控目标内边距，如必要）</li>
+    <li>i18n：仅汉堡按钮 <code>aria-label</code> 一处新 key（en.json + zh.json）</li>
+    <li>Jest：isMobileViewport 用例</li>
+  </ul>
+  <h3>二期（另行设计，不在本规格内）</h3>
+  <ul>
+    <li>阅读页面板（目录/设置/TTS 面板）窄屏全屏滑入</li>
+    <li>safe-area 避让（<code>viewport-fit=cover</code> + <code>env(safe-area-inset-*)</code>）</li>
+    <li>真机反馈驱动的迭代（底栏导航、手势细节等）</li>
+  </ul>
+  <h3>风险与缓解</h3>
+  <table>
+    <tr><th style="width:34%">风险</th><th>缓解</th></tr>
+    <tr><td>vex 全局覆盖影响个别特殊对话框布局</td><td>走查清单逐个对话框过一遍；个别例外用更具体选择器单独修正</td></tr>
+    <tr><td><code>isCollapsed</code> 复用与现有逻辑（如 <code>importLocal</code> 中 <code>clientWidth &lt; 950</code> 判断）相互干扰</td><td>一期不动 950px 判定逻辑，抽屉仅加遮罩与动画；干扰点在实施时单测确认</td></tr>
+    <tr><td>锁定 textZoom 使依赖系统大字号的用户字号变小</td><td>应用内 fontSize/阅读设置不受影响；书库 UI 字号固定是移动 App 惯例，真机验收确认</td></tr>
+  </table>
+</section>
+
+<footer>Koodo Reader · 安卓壳移动模式设计规格 · 2026-09-18 · 方案 A（壳感知移动模式）</footer>
+</div>
+</body>
+</html>

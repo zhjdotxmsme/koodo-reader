@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Koodo Reader Android — 原生手势桥接设计 (Spec)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a;
+    --text: #d7dce4; --dim: #8b93a1; --accent: #4f8cff; --ok: #3fb950; --warn: #d29922;
+    --code-bg: #10131a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px 64px; background: var(--bg); color: var(--text);
+         font: 15px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: #e8ecf2; }
+  .meta { color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+           background: #1d2838; color: var(--accent); border: 1px solid var(--accent); margin-right: 6px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #1a1e27; color: #e8ecf2; white-space: nowrap; }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px;
+         padding: 1px 6px; font: 13px Consolas, monospace; color: #9ecbff; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 16px; overflow-x: auto; font: 13px/1.55 Consolas, monospace; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .dim { color: var(--dim); }
+  .flow { font: 13px/1.7 Consolas, monospace; }
+  ul { padding-left: 22px; } li { margin: 4px 0; }
+  .toc a { color: var(--accent); text-decoration: none; margin-right: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Android 原生手势桥接（路线 2 + 原生选择菜单）</h1>
+<div class="meta">Spec · 2026-09-17 · 项目 koodo-reader · 状态：<span class="ok">设计已批准</span>，待实现</div>
+<div>
+  <span class="badge">看板任务: 本 spec 批准后创建</span>
+  <span class="badge">上游事实: 官方 APK 闭源 RN 壳, 主仓库无 Android 构建</span>
+</div>
+
+<div class="card">
+<b>一句话目标：</b>把 APK 从"能用的网页壳"升级为"官方级原生壳体验"——引擎 22 种桥事件全部消费，
+选择菜单/图片/链接/翻页走原生路径，引擎移动端模式（<code>isMobile:"yes"</code>）启用，
+所有协议常量收敛到一个可单测的纯 CJS 模块。
+</div>
+
+<h2>目录</h2>
+<div class="toc">
+  <a href="#bg">1. 背景与事实依据</a>
+  <a href="#arch">2. 架构</a>
+  <a href="#proto">3. 协议</a>
+  <a href="#react">4. React 侧</a>
+  <a href="#kotlin">5. Kotlin 侧</a>
+  <a href="#test">6. 测试</a>
+  <a href="#risk">7. 风险与回退</a>
+  <a href="#accept">8. 验收标准</a>
+</div>
+
+<h2 id="bg">1. 背景与事实依据</h2>
+<ul>
+  <li>主仓库<b>无任何 Android 构建</b>：<code>release-appx.yml</code> = Windows 商店包，<code>release.yml</code> = 桌面端；org 无 Android 仓库；<code>package.json</code> 无 Capacitor。</li>
+  <li>引擎 <code>kookit.min.js</code> 含 38 处 <b>无防护</b>的 <code>window.ReactNativeWebView.postMessage(...)</code> 调用，发出 20 种事件 —— 官方安卓壳即此消费者（React Native WebView），壳内跑的仍是同一 web 构建。</li>
+  <li>当前 APK 的 <code>AndroidBridge.postMessage</code> 只处理 <code>error</code>（Toast），其余事件<b>全部丢弃</b>；<code>isMobile</code> 在 3 处硬编码 <code>"no"</code>。</li>
+  <li>App 侧已有可复用钩子（本次调查发现）：
+    <ul>
+      <li><code>viewer/component.tsx</code> → live <code>htmlBook.rendition</code> 上的 <code>next()</code>/<code>prev()</code>（TTS 在用的真实翻页 API，<code>textToSpeech/component.tsx:552</code>）；<code>handleLeaveReader</code> 是面板开关<b>不是</b>翻页（已勘误）</li>
+      <li><code>PopupMenu</code>（app shell 层，持有 live <code>rendition</code>，负责高亮/笔记/复制/搜索）</li>
+      <li><code>ImageViewer</code>（app shell 图片查看器）</li>
+    </ul>
+  </li>
+  <li>用户已确认：走<b>路线 2（原生为主）</b>，选择菜单<b>替换为原生菜单</b>，设计已批准。</li>
+</ul>
+
+<h2 id="arch">2. 架构</h2>
+<div class="card flow">
+书内 iframe (引擎 kookit)<br>
+&nbsp;&nbsp;→ window.ReactNativeWebView.postMessage(事件) &nbsp;<span class="dim">[shim 注入, 现状已有]</span><br>
+&nbsp;&nbsp;→ AndroidBridge.postMessage(json) &nbsp;<span class="dim">[Kotlin]</span><br>
+&nbsp;&nbsp;→ NativeEventDispatcher &nbsp;<b>[新增]</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;├─ a) 纯原生: 选择菜单/剪贴板/分享/ACTION_WEB_SEARCH/系统浏览器/脚注弹窗/图片查看<br>
+&nbsp;&nbsp;&nbsp;&nbsp;└─ b) 回注 JS: webView.evaluateJavascript("window.__koodoNative.&lt;fn&gt;(args)")<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· nextPage()/prevPage() → live rendition.next()/prev()<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· showSelectionMenu(payload) → app PopupMenu 的高亮/笔记动作（复用引擎调用）<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;· menuLabels(labels) → JS 下发 i18n 文案到原生菜单
+</div>
+<div class="card">
+<b>为什么回注 JS 不算违背"原生为主"：</b>引擎的高亮/笔记能力只能经由 live <code>rendition</code> 对象调用，
+该对象只存在于 app 内（<code>viewer/component.tsx:283</code>）。原生侧重写 = 重实现引擎 API，风险不可控。
+官方 RN 壳必然采用等价手段（JS 回注或私有 API）。<code>__koodoNative</code> 是显式契约，函数名与参数在本 spec 定死。
+</div>
+
+<h2 id="proto">3. 协议（唯一事实源：<code>src/utils/android/nativeBridge.js</code></h2>
+<div class="card">纯 CJS，<code>.d.ts</code>，Jest 覆盖。延续 <code>folderBridge.js</code> 模式（react-scripts roots=src 可导入）。
+Kotlin 侧手写同形常量（Kotlin 无法 import JS），用注释互相标注，CI 编译为唯一 Kotlin 门。</div>
+
+<h3>事件名常量（引擎 → 壳，来自 kookit.min.js 实测）</h3>
+<table>
+<tr><th>事件</th><th>关键字段</th><th>处置（Kotlin）</th></tr>
+<tr><td><code>swipe</code> <span class="dim">（非 sliding 模式的翻页请求，方向含在事件语义）</span></td>
+<td>无</td><td>按事件上下文回注 <code>nextPage()</code>/<code>prevPage()</code>；事件无方向字段时默认下一页（引擎对左右滑分别发 <code>left</code>/<code>right</code>）</td></tr>
+<tr><td><code>scroll-top</code> / <code>scroll-bottom</code></td><td>无</td><td><code>prevPage()</code> / <code>nextPage()</code></td></tr>
+<tr><td><code>left</code> / <code>right</code></td><td>无</td><td><code>prevPage()</code>（right tap = 下一页? 以引擎语义为准：right=prev? 实现时以引擎源码 <code>Ti("left"|"right")</code> 分支语义对齐）</td></tr>
+<tr><td><code>select-text</code></td><td><code>selectedText</code>, <code>sentence</code>, <code>position</code>, <code>range</code></td><td>存 payload → 原生浮动菜单（见 5.1）</td></tr>
+<tr><td><code>select-text-after-touch</code></td><td>同 select-text</td><td>同上</td></tr>
+<tr><td><code>selection-change</code></td><td>—</td><td>关闭已开的原生菜单</td></tr>
+<tr><td><code>view-image</code></td><td><code>imgSrc</code>（data: URI）</td><td>原生全屏 Dialog（内嵌 WebView 渲染，免费 pinch zoom）；&gt;15MB 回退 Toast 提示用网页版查看</td></tr>
+<tr><td><code>link-clicked</code></td><td><code>href</code>, <code>footnote</code></td><td>external → <code>ACTION_VIEW</code>；有 <code>footnote</code> 内容 → 原生脚注 Dialog；两者皆无 → Toast</td></tr>
+<tr><td><code>pinch-zoom</code></td><td><code>chapterDocIndex</code>, <code>scale</code></td><td>引擎自行重渲染（<code>handleRenderPDFChapter</code>），壳仅记录（logcat），不处理</td></tr>
+<tr><td><code>user-agent</code></td><td>—</td><td>固定处置：logcat 记录并忽略（引擎仅请求壳 UA 用于环境判断，无反馈通道；若后续实测发现引擎依赖回传，再经 <code>__koodoNative</code> 扩展）</td></tr>
+<tr><td><code>book-inited</code> / <code>content-loaded</code> / <code>metadata</code> / <code>page-changed</code> / <code>chapter-pages</code> / <code>scroll-text</code> / <code>cache</code> / <code>finish-download</code> / <code>get-ocr-result</code> / <code>error</code></td>
+<td>—</td><td>仅 <code>error</code> 保留现有 Toast；其余 logcat 记录（观测点，为后续扩展留口）</td></tr>
+</table>
+
+<h3>回注函数（壳 → app，宿主=PopupMenu 组件，<code>window.__koodoNative</code>）</h3>
+<table>
+<tr><th>函数</th><th>参数</th><th>行为（React 侧）</th></tr>
+<tr><td><code>prevPage()</code> / <code>nextPage()</code></td><td>—</td><td>调用 live <code>rendition.prev()</code>/<code>next()</code>（TTS 在用的真实翻页 API；<b>勘误</b>：最初误写 handleLeaveReader=面板开关）</td></tr>
+<tr><td><code>openSelectionMenu()</code></td><td>—</td><td>调用 PopupMenu 的 <code>openMenu()</code>（app 自己的选择菜单：高亮/笔记/翻译/朗读全可用，选区由引擎保持）。原生菜单的"高亮"与"笔记"两项都委托它——不重写高亮逻辑（刻意取舍）</td></tr>
+<tr><td>（下发）<code>AndroidBridge.setMenuLabels(json)</code></td><td><code>{copy,highlight,note,share,search}</code> 的 i18n 文案</td><td>PopupMenu 挂载时推送；Kotlin 端缓存用于原生菜单，缺失回退英文硬编码</td></tr>
+</table>
+
+<p class="dim">注意：引擎在 <code>view-image</code> 中已把 blob: 转 data: URI（<code>Li(t).then(...)</code>），Kotlin 无需碰 blob。</p>
+
+<h2 id="react">4. React 侧改动（5 个明确切口）</h2>
+<table>
+<tr><th>#</th><th>文件</th><th>改动</th></tr>
+<tr><td>R1</td><td><code>src/utils/common.ts</code></td><td>新增 <code>isNativeMobile(): boolean</code>（<code>typeof window !== "undefined" && (!!window.ReactNativeWebView || !!window.AndroidBridge)</code>）；<code>getIsMobile(): "yes"|"no"</code></td></tr>
+<tr><td>R2</td><td><code>viewer:311</code>、<code>importLocal:534</code>、<code>moreAction:334</code>、<code>common.ts:717</code></td><td><code>isMobile: "no"</code> → <code>isMobile: getIsMobile()</code>（实际 4 处，比初版 spec 多 2 处）</td></tr>
+<tr><td>R3</td><td><code>components/popups/popupMenu/component.tsx</code></td><td>componentDidMount 注册 <code>window.__koodoNative = createHostApi({prevPage, nextPage, openSelectionMenu})</code> + 推送 <code>setMenuLabels(buildMenuLabels(t))</code>；unmount 清理。宿主选 PopupMenu 因它同时持有 live rendition 与 openMenu()。全部 try/catch 不抛入引擎</td></tr>
+<tr><td>R4</td><td><code>src/utils/android/nativeBridge.js</code> + <code>.d.ts</code> + <code>.test.js</code></td><td>事件名/action id/payload 校验（<code>validateSelectText</code> 等）/菜单 labels 形状常量 + Jest</td></tr>
+<tr><td>R5</td><td>viewer 选择事件（<code>handleBindGesture</code> 的 pointerup/contextmenu）</td><td><code>isNativeMobile()</code> 时不再自动弹 web PopupMenu（防止双弹）；高亮/笔记经原生菜单项 → <code>openSelectionMenu()</code> 回注</td></tr>
+</table>
+
+<h2 id="kotlin">5. Kotlin 侧改动</h2>
+<h3>5.1 新增类 <code>NativeEventDispatcher.kt</code></h3>
+<ul>
+<li><code>dispatch(json: String)</code>：解析 <code>event</code> 字段分派（协议名与 nativeBridge.js 对齐，注释互引）。</li>
+<li><b>选择菜单</b>：<code>PopupWindow</code>（不用 ActionMode——不需要 ActionBar 语义）锚定在 <code>position</code> 屏幕坐标附近，自动 clamp 到屏内；项序固定：<b>复制 / 高亮 / 笔记 / 分享 / 搜索</b>；文案取 JS 下发的 labels（缺省回退英文硬编码）。点击后关闭。</li>
+<li>原生能力：ClipboardManager、<code>ACTION_SEND</code>(text/plain)、<code>ACTION_WEB_SEARCH</code>、<code>ACTION_VIEW</code>(https)。</li>
+<li>回注：<code>webView.evaluateJavascript("window.__koodoNative && window.__koodoNative.${fn}(${quoted})")</code>，payload 经 <code>org.json</code> 序列化（延续 folderBridge 的"JSON 字符串"交付风格）。</li>
+</ul>
+<h3>5.2 <code>ImageViewerDialog</code>（新文件）</h3>
+<ul>
+<li>全屏透明 Dialog，内部一个只读 WebView 加载 <code>imgSrc</code>（<code>data:</code> URI，pinch zoom 由 WebView 免费提供）。</li>
+<li>尺寸阈值：payload &gt;15MB 不渲染，Toast 提示；解码失败同样回退。</li>
+<li><code>link-clicked</code>：<code>footnote</code> 非空 → 文本 Dialog（等宽滚动、复制按钮）；external → 系统浏览器。</li>
+</ul>
+<h3>5.3 <code>MainActivity.kt</code> 改动</h3>
+<table>
+<tr><td><code>postMessage</code></td><td>现有 <code>error</code> Toast 保留；其余事件全部转发 <code>dispatcher.dispatch(rawJson)</code>（原"仅 error"分支删除）</td></tr>
+<tr><td>shim</td><td>postMessage 转发不变（已验证）；<b>新增</b> <code>setMenuLabels(json)</code> 注入方法供 app 下发文案</td></tr>
+<tr><td>WebView 配置</td><td>追加 <code>settings.useWideViewPort = true</code>、<code>loadWithOverviewMode = true</code>（消除任何"桌面宽屏"渲染风险）；其余不动</td></tr>
+</table>
+
+<h2 id="test">6. 测试</h2>
+<ul>
+<li><b>Jest</b>：<code>nativeBridge.test.js</code>（事件名全集、payload 校验、labels 形状）；<code>isNativeMobile</code>/<code>getIsMobile</code> 的桌面/注入两态。现有 59 用例不回归。</li>
+<li><b>Node harness</b>（<code>Temp/host-js-verify.js</code> 扩展）：iframe→shim→bridge 全链路，逐事件断言 Kotlin 侧应触发的函数（用桩替换 Kotlin 行为映射表）。</li>
+<li><b>tsc --noEmit</b> 绿。</li>
+<li><b>CI</b>：Kotlin 编译门（本地无 SDK，不变）。</li>
+<li><b>真机抽查清单</b>（用户侧）：翻页手势、长按选词→菜单五件套、图片点开、外部链接、脚注、PDF 双指缩放。</li>
+</ul>
+
+<h2 id="risk">7. 风险与回退</h2>
+<table>
+<tr><th>风险</th><th>缓解</th></tr>
+<tr><td><code>left</code>/<code>right</code> 翻页方向语义与引擎实际相反</td><td>实现时以 kookit.min.js 中 <code>Ti("left"/"right")</code> 调用上下文核对；方向错误=单行翻转，代价低</td></tr>
+<tr><td>原生菜单与 app 残留弹窗双弹</td><td>R5 抑制 + <code>selection-change</code> 关菜单双保险；真机抽查列入验收</td></tr>
+<tr><td>大图 data URI 撑爆内存</td><td>15MB 阈值 + 异常捕获回退</td></tr>
+<tr><td>PopupWindow 在沉浸态下定位偏移</td><td>clamp + 真机抽查；不行则退化为屏幕顶部 ActionMode</td></tr>
+<tr><td>Kotlin 改动面扩大 → CI 编译风险</td><td>新增代码集中在 2 个新文件；MainActivity 为小改；编译错误仍走既有 CI 诊断流</td></tr>
+</table>
+
+<h2 id="accept">8. 验收标准（DoD）</h2>
+<ul>
+<li>✓ <code>isMobile</code> 在原生壳内为 <code>"yes"</code>（3 处注入点，harness 断言）</li>
+<li>✓ 20 种事件全部有显式处置或显式记录（无"静默丢弃"分支残留）</li>
+<li>✓ 长按选词出现<b>原生</b>菜单，五件套可用，文案跟随 app 语言</li>
+<li>✓ 翻页手势（swipe/scroll-top/bottom）驱动 <code>handleLeaveReader</code></li>
+<li>✓ view-image 原生查看；link-clicked 浏览器/脚注分流</li>
+<li>✓ Jest 全绿（59 既有 + 新增）、tsc 绿、CI 编译绿、APK 重打包产出</li>
+</ul>
+
+<div class="card dim">
+协议常量表与 folderBridge.js 同风格：名字、形状、默认值都在一处定义；Kotlin 侧以注释引用行号保持同步。
+</div>
+
+</div>
+</body>
+</html>

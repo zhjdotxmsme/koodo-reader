@@ -68,6 +68,15 @@ class BookRulesTest {
     }
 
     @Test
+    fun `xml is part of the desktop import list`() {
+        assertTrue(BookRules.isBookName("page.xml"))
+        assertEquals("application/xml", BookRules.mimeForExt("x.XML"))
+        assertTrue("xhtml" in BookRules.BOOK_EXTENSIONS)
+        // folderBridge (WebView track) is the 17-format subset without xml.
+        assertEquals(18, BookRules.BOOK_EXTENSIONS.size)
+    }
+
+    @Test
     fun `isBookName rejects non-book names`() {
         val names = listOf(
             "IMG_0001.jpg", "readme", ".hidden", "trailing.",
