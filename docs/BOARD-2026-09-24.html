@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>补强规划看板 · 2026-09-24 · P5/P6/P8 八张卡集成后补强</title>
+<style>
+:root {
+  --fg: #1a1a1a;
+  --bg: #fafafa;
+  --accent: #1f6feb;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --code-bg: #f3f4f6;
+  --p1-bg: #fef2f2;
+  --p2-bg: #fffbeb;
+  --p3-bg: #f0fdf4;
+  --p4-bg: #eff6ff;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--fg);
+  background: var(--bg);
+  max-width: 1180px;
+  margin: 24px auto;
+  padding: 0 24px 64px;
+}
+header {
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+h1 {
+  font-size: 26px;
+  margin: 0 0 6px;
+  color: var(--accent);
+}
+h2 {
+  font-size: 19px;
+  margin: 32px 0 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+h3 {
+  font-size: 16px;
+  margin: 24px 0 6px;
+  color: var(--accent);
+}
+h4 {
+  font-size: 14px;
+  margin: 16px 0 4px;
+  color: var(--muted);
+}
+p, li { margin: 6px 0; }
+code {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12.5px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+pre code { background: transparent; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 24px;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+  vertical-align: top;
+}
+th { background: #f3f4f6; font-weight: 600; }
+.warn { color: var(--warn); font-weight: 600; }
+.danger { color: var(--danger); font-weight: 600; }
+.ok { color: var(--ok); font-weight: 600; }
+.priority-p1 { background: var(--p1-bg); }
+.priority-p2 { background: var(--p2-bg); }
+.priority-p3 { background: var(--p3-bg); }
+.priority-p4 { background: var(--p4-bg); }
+.callout {
+  border-left: 4px solid var(--accent);
+  background: #eff6ff;
+  padding: 12px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 16px 0;
+}
+.callout.warn { border-left-color: var(--warn); background: #fffbeb; }
+.callout.danger { border-left-color: var(--danger); background: #fef2f2; }
+.callout.ok { border-left-color: var(--ok); background: #f0fdf4; }
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0 24px;
+}
+.summary-grid .card {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 14px;
+}
+.summary-grid .card .v {
+  font-size: 22px;
+  font-weight: 700;
+}
+.summary-grid .card .l { font-size: 12px; color: var(--muted); }
+.summary-grid .p1 .v { color: var(--danger); }
+.summary-grid .p2 .v { color: var(--warn); }
+.summary-grid .p3 .v { color: var(--ok); }
+.summary-grid .p4 .v { color: var(--accent); }
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.kanban .col {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.kanban .col h4 {
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid;
+  color: var(--fg);
+  font-size: 13px;
+}
+.kanban .col.p1 h4 { color: var(--danger); border-color: var(--danger); }
+.kanban .col.p2 h4 { color: var(--warn); border-color: var(--warn); }
+.kanban .col.p3 h4 { color: var(--ok); border-color: var(--ok); }
+.kanban .col.p4 h4 { color: var(--accent); border-color: var(--accent); }
+.kanban .card-item {
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-left: 3px solid;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+}
+.kanban .col.p1 .card-item { border-left-color: var(--danger); }
+.kanban .col.p2 .card-item { border-left-color: var(--warn); }
+.kanban .col.p3 .card-item { border-left-color: var(--ok); }
+.kanban .col.p4 .card-item { border-left-color: var(--accent); }
+.kanban .card-item .id {
+  font-family: "SF Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kanban .card-item .effort {
+  display: inline-block;
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  margin-left: 4px;
+  color: var(--muted);
+}
+.dep-graph {
+  font-family: "SF Mono", monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  white-space: pre;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>补强规划看板 · P5/P6/P8 八张卡集成后补强</h1>
+  <p>生成时间：2026-09-24 · 当前 dev HEAD：<code>9abe7904</code> · 本看板共 <strong>14</strong> 条补强项</p>
+  <p>来源：8 张 sub 报告（c-muf9vbsm-ce8lx3 / c-mufa7jg7-0mfjkb / c-mufa9beh-tzl218 / c-mufaqskf-d0588l / c-mufa8g80-1eo5m2 / c-mufaix7m-4jfnci / c-mufa8hkc-qmctio / c-mufa47kq-q2m96o）+ 验收证据 + P8 体积实测</p>
+</header>
+
+<div class="callout">
+  <strong>看板说明</strong>：本看板按"优先级 × 类别"组织补强项。优先级：<span class="danger">P1 阻塞</span> / <span class="warn">P2 必补</span> / <span class="ok">P3 推荐</span> / <span style="color:var(--accent);font-weight:600">P4 优化</span>。<br>
+  类别：[I] 集成 · [P] PARTIAL 补强 · [D] 硬前置 · [E] 工程化 · [T] 真机/设备 · [G] 合规 · [M] 主线分卡。<br>
+  <strong>创建 DSH 看板卡前需你逐条授权</strong>（sub 不破坏授权流）。
+</div>
+
+<h2>0 · 总览</h2>
+
+<div class="summary-grid">
+  <div class="card p1"><div class="v">2</div><div class="l">P1 阻塞</div></div>
+  <div class="card p2"><div class="v">5</div><div class="l">P2 必补</div></div>
+  <div class="card p3"><div class="v">4</div><div class="l">P3 推荐</div></div>
+  <div class="card p4"><div class="v">3</div><div class="l">P4 优化</div></div>
+</div>
+
+<table>
+  <tr><th>优先级</th><th>类别</th><th>数量</th><th>阻塞 / 必补项</th></tr>
+  <tr class="priority-p1"><td rowspan="1">P1</td><td>[I]</td><td>2</td><td>B1 settings.gradle/app/build.gradle 注册 · B2 locale 红状态修复</td></tr>
+  <tr class="priority-p2"><td rowspan="3">P2</td><td>[D]</td><td>2</td><td>D0 P2 XHTML→TextBlock 扁平化器 · R1 core/archive 抽象</td></tr>
+  <tr class="priority-p2"><td>[P]</td><td>2</td><td>P5-CBZ [1] PARTIAL 补强 (CB7 接线) · P5-CBZ [5] PARTIAL 补强 (路由切换)</td></tr>
+  <tr class="priority-p2"><td>[M]</td><td>1</td><td>P8-F1 intent 路由迁移（挡 stripIsland）</td></tr>
+  <tr class="priority-p3"><td rowspan="2">P3</td><td>[E]</td><td>3</td><td>P6-TTS 接线项 · P6-OCR 16KB .so · P6-翻译 history Room 合并</td></tr>
+  <tr class="priority-p3"><td>[G]</td><td>1</td><td>AGPL 3 缺口（APK 文本 + 关于页 + lib 许可）</td></tr>
+  <tr class="priority-p4"><td rowspan="2">P4</td><td>[T]</td><td>2</td><td>真机指标 4 项 · 1000 本导入复测</td></tr>
+  <tr class="priority-p4"><td>[E]</td><td>1</td><td>P5-CBZ R10 NaturalOrder 重复清理</td></tr>
+</table>
+
+<h2>1 · 看板视图</h2>
+
+<div class="kanban">
+
+<div class="col p1">
+  <h4>P1 · 阻塞（必须先做）</h4>
+
+  <div class="card-item">
+    <span class="id">B1</span>
+    <span class="effort">0.5 人/天</span><br>
+    <strong>[I] settings.gradle / app/build.gradle 注册 9 个 module</strong><br>
+    8 sub 没改 forbidden files；集成阶段必须手动改这两个文件（CLAUDE.md 边界破例）。<br>
+    <em>证据：见 docs/MERGE-PLAN-2026-09-24.html §3.9</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">B2</span>
+    <span class="effort">0.5 人/天</span><br>
+    <strong>[I] sync-locales-android.js 红状态修复</strong><br>
+    HEAD en.json 1387 vs 1386、zh-CN 1406 vs 1396、manifest 1377 过期。<br>
+    <em>证据：P6-简繁 sub 报告 c-mufa8hkc-qmctio §1.6</em>
+  </div>
+</div>
+
+<div class="col p2">
+  <h4>P2 · 必补</h4>
+
+  <div class="card-item">
+    <span class="id">D0</span>
+    <span class="effort">5–8 人/天</span><br>
+    <strong>[D] P2 XHTML→TextBlock 扁平化器</strong><br>
+    P5.5 硬前置；BlockModel.kt:14-16 自述"P2 后续卡"未落地。未落地则 HTML/MHTML 追加 5–8 人/天。<br>
+    <em>证据：P5-FB2 评估 c-muf9vbsm-ce8lx3 D0</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">R1</span>
+    <span class="effort">2 人/天</span><br>
+    <strong>[D] core/archive 抽象</strong><br>
+    收 4 处裸 java.util.zip（EpubBook:56 / ComicCover:33 / BackupBundle:134 / ZipExtractor:46）。DOCX 是第 5 份。<br>
+    <em>证据：P5-FB2 评估 R1 + P5-CBZ ADR §10</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P5-CBZ-1</span>
+    <span class="effort">3 人/天</span><br>
+    <strong>[P] SevenZExtractor 真实实现（CB7 接线）</strong><br>
+    计划依赖已定：commons-compress:1.27.1（纯 Java 无 .so）。当前为骨架。<br>
+    <em>证据：P5-CBZ ADR §10 · SevenZExtractor.kt:26</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P5-CBZ-5</span>
+    <span class="effort">2 人/天</span><br>
+    <strong>[P] P5-CBZ 兜底岛路由切换</strong><br>
+    <code>ArchiveKind.support</code> + <code>ArchiveExtractors.isNativelyReadable</code> 数据驱动单行回滚；当前 MainActivity 未切。<br>
+    <em>证据：P5-CBZ ADR §7 · patch §1-3 未 apply</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P8-F1</span>
+    <span class="effort">1 人/天</span><br>
+    <strong>[M] MainActivity intent 路由迁移（VIEW/SEND → CBZ/CBT 原生）</strong><br>
+    不补 → <code>-PstripIsland</code> 无法启用，[1][2] 仅"可验证减法"。<br>
+    <em>证据：P8 sub 报告 c-mufa47kq-q2m96o · ADR-005 §1.4</em>
+  </div>
+</div>
+
+<div class="col p3">
+  <h4>P3 · 推荐</h4>
+
+  <div class="card-item">
+    <span class="id">P6-TTS-WIRE</span>
+    <span class="effort">2 人/天</span><br>
+    <strong>[E] TTS 接线：manifest &lt;queries&gt;/service/receiver + Android 13 POST_NOTIFICATIONS + 通知图标 + 4 个 i18n key</strong><br>
+    <em>证据：P6-TTS sub 报告 · docs/p6-tts-semantics-mapping.md</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P6-OCR-16K</span>
+    <span class="effort">2 人/天</span><br>
+    <strong>[E] OCR 16KB .so 守卫（AGP 升级 8.5.1+ + camera-core ≥1.4.2 + scripts/check-elf-16kb.js）</strong><br>
+    <em>证据：P6-OCR sub 报告 · docs/p6-stats-ocr-design.md §5.3</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P6-TRANS-DB</span>
+    <span class="effort">1 人/天</span><br>
+    <strong>[E] HistoryRepository Room 合并入 KoodoDatabase（v1→v2 + Migration + check-room-schema.js 白名单）</strong><br>
+    <em>证据：P6-翻译 sub 报告 · docs/p6-translate-architecture.md §4.2</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">AGPL-GAP</span>
+    <span class="effort">1 人/天</span><br>
+    <strong>[G] AGPL §5(d) 缺口：①APK 内 AGPL 文本 ②应用内"关于/开源许可"页 ③webapp/lib 随包许可文件</strong><br>
+    <em>证据：P8 sub 报告 c-mufa47kq-q2m96o · docs/appendix-c-agpl-compliance.md</em>
+  </div>
+</div>
+
+<div class="col p4">
+  <h4>P4 · 优化（设备依赖）</h4>
+
+  <div class="card-item">
+    <span class="id">P1-DEVICE</span>
+    <span class="effort">1 人/天 + 真机</span><br>
+    <strong>[T] 真机 4 项指标回填 docs/android-baseline.json（冷启动 P90 / 打开 EPUB / 翻页延迟 / 内存峰值）</strong><br>
+    <em>证据：P1 收口卡 t-muexlqdo-q73hlo · scripts/measure-cold-start.js</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P1-IMPORT</span>
+    <span class="effort">0.5 人/天 + 真机</span><br>
+    <strong>[T] 真机 1000 本导入复测</strong><br>
+    <em>证据：P1 收口卡 · §11 遗留清单</em>
+  </div>
+
+  <div class="card-item">
+    <span class="id">P5-NATORD</span>
+    <span class="effort">0.5 人/天</span><br>
+    <strong>[E] P5-CBZ NaturalOrder 重复清理（待 P1 提升 public）</strong><br>
+    <em>证据：P5-CBZ ADR §10 · 自然顺序比较器重复</em>
+  </div>
+</div>
+
+</div>
+
+<h2>2 · 依赖图（哪些必须先做）</h2>
+
+<div class="dep-graph">
+  ┌─ B1 settings.gradle 注册 ──────────┐
+  │                                     │
+  ├─ B2 locale 红状态修复 ──────────────┤
+  │                                     ▼
+  ├─ D0 P2 XHTML→TextBlock 扁平化器 ──┐
+  │                                  │
+  ├─ R1 core/archive 抽象 ──────────┤
+  │                                  │
+  ├─ P5-CBZ-1 SevenZExtractor 实现 ──┤
+  │                                  │
+  └─ P5-CBZ-5 兜底岛路由切换 ────────┤
+                                     │
+                                     ▼
+                              P5.5 FB2/DOCX/HTML/MHTML
+                              (P5-FB2 评估 ADR-006)
+                                     │
+                                     ▼
+                              P6-TTS-WIRE / P6-OCR-16K / P6-TRANS-DB
+                              (子模块工程化补强)
+                                     │
+                                     ▼
+                              P8-F1 intent 路由迁移
+                                     │
+                                     ▼
+                              AGPL-GAP 合规闭环
+                                     │
+                                     ▼
+                              P1-DEVICE / P1-IMPORT (设备依赖)
+</div>
+
+<h2>3 · 推荐执行序列（按周推）</h2>
+
+<table>
+  <tr><th>周</th><th>任务</th><th>说明</th></tr>
+  <tr>
+    <td>S1</td>
+    <td>B1 + B2 + D0 + R1</td>
+    <td>阻塞 + 硬前置。D0 与 R1 互不依赖，可并行。</td>
+  </tr>
+  <tr>
+    <td>S2</td>
+    <td>P5-CBZ-1 + P5-CBZ-5 + P6-TTS-WIRE</td>
+    <td>补 PARTIAL + 工程化。sub patch 已在手。</td>
+  </tr>
+  <tr>
+    <td>S3</td>
+    <td>P6-OCR-16K + P6-TRANS-DB + P5-NATORD</td>
+    <td>合规 + 合并 + 优化。</td>
+  </tr>
+  <tr>
+    <td>S4</td>
+    <td>P8-F1 + AGPL-GAP</td>
+    <td>收尾 + 合规闭环。</td>
+  </tr>
+  <tr>
+    <td>S5+</td>
+    <td>P1-DEVICE + P1-IMPORT</td>
+    <td>设备依赖，P5.5 开工前不强求。</td>
+  </tr>
+</table>
+
+<h2>4 · 建议创建 DSH 卡的子集（按你授权）</h2>
+
+<p>14 条补强项中，下列 6 条建议优先创建 DSH 卡（其余可由团队本地跟踪）：</p>
+
+<table>
+  <tr><th>建议序</th><th>ID</th><th>主题</th><th>紧急度建议</th><th>执行模式</th></tr>
+  <tr><td>1</td><td>B1</td><td>settings.gradle / app/build.gradle 注册</td><td>urgent</td><td>claim</td></tr>
+  <tr><td>2</td><td>B2</td><td>locale 红状态修复</td><td>urgent</td><td>claim</td></tr>
+  <tr><td>3</td><td>D0</td><td>P2 XHTML→TextBlock 扁平化器</td><td>urgent</td><td>claim</td></tr>
+  <tr><td>4</td><td>R1</td><td>core/archive 抽象</td><td>urgent</td><td>claim</td></tr>
+  <tr><td>5</td><td>P5-CBZ-1</td><td>SevenZExtractor 真实实现（CB7）</td><td>normal</td><td>claim</td></tr>
+  <tr><td>6</td><td>P8-F1</td><td>MainActivity intent 路由迁移</td><td>normal</td><td>claim</td></tr>
+</table>
+
+<p>其余 8 条（P5-CBZ-5、P6-TTS-WIRE、P6-OCR-16K、P6-TRANS-DB、AGPL-GAP、P5-NATORD、P1-DEVICE、P1-IMPORT）建议由各自会话主或 PR 阶段补。</p>
+
+<h2>5 · DSH 卡创建确认（待你逐条授权）</h2>
+
+<div class="callout warn">
+  <strong>DSH 卡创建是修改任务系统</strong>，按工作纪律需要你逐条授权。我已选定 6 条建议优先项；你可选：<br>
+  • 全 6 条创建（推荐）<br>
+  • 仅 P1 阻塞类（2 条：B1 + B2）<br>
+  • 全部 14 条创建<br>
+  • 暂不创建，只读这份看板文档<br>
+</div>
+
+<hr>
+<p><small>本看板由 DSH 主线程根据 8 张 in_review 卡的 sub 报告 + 验收证据生成。未执行任何 DSH 卡创建 / git commit / git push。<br>
+可执行路径：<code>docs/BOARD-2026-09-24.html</code></small></p>
+
+</body>
+</html>

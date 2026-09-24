@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>合并方案 · 2026-09-24 · P5/P6/P8 八张卡集成到 dev</title>
+<style>
+:root {
+  --fg: #1a1a1a;
+  --bg: #fafafa;
+  --accent: #1f6feb;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --code-bg: #f3f4f6;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Segoe UI", system-ui, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--fg);
+  background: var(--bg);
+  max-width: 980px;
+  margin: 24px auto;
+  padding: 0 24px 64px;
+}
+header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+h1 {
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+h2 {
+  font-size: 18px;
+  margin: 32px 0 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+h3 {
+  font-size: 15px;
+  margin: 24px 0 6px;
+  color: var(--accent);
+}
+p, li { margin: 6px 0; }
+code {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: "SF Mono", Consolas, "Cascadia Code", monospace;
+  font-size: 12.5px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+pre code { background: transparent; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 24px;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+th { background: #f3f4f6; }
+tr.sub td { background: #fafafa; color: var(--muted); }
+.warn { color: var(--warn); font-weight: 600; }
+.danger { color: var(--danger); font-weight: 600; }
+.ok { color: var(--ok); font-weight: 600; }
+ul.tight { margin-top: 0; }
+.cite {
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.callout {
+  border-left: 4px solid var(--accent);
+  background: #eff6ff;
+  padding: 12px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 16px 0;
+}
+.callout.warn { border-left-color: var(--warn); background: #fffbeb; }
+.callout.danger { border-left-color: var(--danger); background: #fef2f2; }
+.callout.ok { border-left-color: var(--ok); background: #f0fdf4; }
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0 24px;
+}
+.summary-grid .card {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px;
+}
+.summary-grid .card .v {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.summary-grid .card .l { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>合并方案 · P5 / P6 / P8 八张卡集成到 <code>dev</code></h1>
+  <p>生成时间：2026-09-24 · 工作目录：<code>E:\open-source\koodo-reader</code> · 当前 HEAD：<code>9abe7904</code></p>
+  <p>作者：主线程（用户授权整理，未执行任何 <code>git commit</code> / <code>git push</code>）</p>
+</header>
+
+<div class="callout">
+  <strong>说明</strong>：本文件由本会话主线程根据 8 张已交付任务卡的状态、sub 报告、<code>git diff</code> / <code>git status</code> 实测数据生成。
+  本文件 <strong>不是 patch</strong>，不修改任何源文件。
+  按用户授权范围：仅生成方案文档，由用户亲自执行 <code>git apply</code> / <code>git checkout</code>。
+</div>
+
+<h2>0 · TL;DR（先看这个）</h2>
+
+<p>8 张卡全部 <span class="ok">已推 in_review</span>，sub 报告、单测、ADR 齐全。</p>
+<p>但是：sub 产出物分两类，<strong>两类集成路径不同</strong>：</p>
+<ul class="tight">
+    <li><strong>类 A（5 张）</strong>：sub 在 worktree 内放了实际文件，<code>docs/patches/*.patch</code> 是给主仓的 patch —— 通过 <code>git apply</code> 集成</li>
+    <li><strong>类 B（3 张）</strong>：sub 只有 worktree 文件，没有 patch（或 patch 是空操作）—— 通过 <code>git checkout worktree_branch -- &lt;paths&gt;</code> 集成</li>
+  </ul>
+
+<p><strong>不能简单 <code>git merge task/p5-image</code></strong>：sub 的 worktree 分支 <strong>没有 commit</strong>，只有 untracked 新文件。<code>git merge</code> 不会带 untracked，必须用 <code>git checkout</code> 或 <code>git apply</code>。</p>
+
+<h2>1 · 当前状态</h2>
+
+<h3>1.1 dev 分支</h3>
+<table>
+  <tr><th>项</th><th>值</th></tr>
+  <tr><td>当前 HEAD</td><td><code>9abe7904 feat(android): P2 排版/手势/标注/链接/导航引擎</code></td></tr>
+  <tr><td>工作区 modified</td><td>3 文件：<code>android/app/build.gradle</code>, <code>android/settings.gradle</code>, <code>android/core/designsystem/.../AppearanceCodec.kt</code>（已 stash 到 <code>stash@{0}</code>）</td></tr>
+  <tr><td>工作区 untracked</td><td><code>.review-tmp/</code>（stash 后仍在）</td></tr>
+  <tr><td>stash</td><td><code>stash@{0}: On dev: pre-merge-2026-09-24 ...</code>，2237 文件（含 gradle 缓存 noise）</td></tr>
+</table>
+
+<div class="callout warn">
+  <strong>stash@{0} 被 gradle 缓存污染</strong>。包含 <code>.review-tmp/gradle-home/</code> 全部缓存、<code>.p6-stats-ocr-check/verify.ps1</code>、<code>.tts-verify-test.log</code> 等临时文件。<br>
+  <strong>不要 <code>git stash pop</code></strong> —— 会污染主仓。如需还原，单独 cherry-pick <code>android/app/build.gradle</code>、<code>android/settings.gradle</code>、<code>android/core/designsystem/.../AppearanceCodec.kt</code> 这 3 个文件即可。
+</div>
+
+<h3>1.2 8 张卡状态</h3>
+<table>
+  <tr><th>#</th><th>卡 ID</th><th>主题</th><th>状态</th><th>验收</th><th>类型</th></tr>
+  <tr><td>1</td><td><code>t-muexn64a-j64yvl</code></td><td>P5: FB2/DOCX/HTML/MHTML 评估</td><td>in_review v8</td><td>3/3 ✓</td><td class="ok">A: docs only</td></tr>
+  <tr><td>2</td><td><code>t-muexn633-8y2jew</code></td><td>P5: CBZ/CBR/CBT/CB7 图片阅读器</td><td>in_review v11</td><td>5/5 ✓</td><td class="ok">A: patch + worktree</td></tr>
+  <tr><td>3</td><td><code>t-muexn66v-0z6jje</code></td><td>P6: TTS</td><td>in_review v11</td><td>5/5 ✓</td><td class="ok">A: patch + worktree</td></tr>
+  <tr><td>4</td><td><code>t-muexn680-91b3qu</code></td><td>P6: 词典</td><td>in_review v10</td><td>4/4 ✓</td><td class="warn">B: worktree only (no patch)</td></tr>
+  <tr><td>5</td><td><code>t-muexn696-xzgcrk</code></td><td>P6: 翻译/AI</td><td>in_review v10</td><td>4/4 ✓</td><td class="ok">A: patch + worktree</td></tr>
+  <tr><td>6</td><td><code>t-muexn6c0-3dab3i</code></td><td>P6: 统计+OCR</td><td>in_review v11</td><td>5/5 ✓</td><td class="warn">A: patch + 5 locale JSON 修改</td></tr>
+  <tr><td>7</td><td><code>t-muexn6d1-rg3pyr</code></td><td>P6: 简繁/locale</td><td>in_review v11</td><td>5/5 ✓</td><td class="ok">A: patch + worktree</td></tr>
+  <tr><td>8</td><td><code>t-muexn6g8-xxvzbr</code></td><td>P8: 收尾</td><td>in_review v11</td><td>5/5 ✓</td><td class="ok">A: 4 patches + worktree</td></tr>
+</table>
+
+<p>类型 · B 卡（#4 P6-词典）只有 worktree 文件，无 patch —— 必须用 <code>git checkout</code> 而非 <code>git apply</code>。</p>
+
+<h3>1.3 各 worktree 改动概览</h3>
+<table>
+  <tr><th>Worktree</th><th>分支</th><th>新文件数</th><th>patch</th></tr>
+  <tr><td><code>.worktrees/p5-fb2-eval</code></td><td><code>task/p5-fb2-eval-fb2d</code></td><td>3</td><td><code>docs/patches/p5-fb2-settings-gradle.patch</code> 2.8 KB</td></tr>
+  <tr><td><code>.worktrees/p5-image</code></td><td><code>task/p5-image-muexn633</code></td><td>3 (28 子文件)</td><td><code>docs/patches/p5-image.patch</code> 6.8 KB</td></tr>
+  <tr><td><code>.worktrees/p6-dict</code></td><td><code>task/p6-dict-91b3qu</code></td><td>21</td><td>无 (worktree-only)</td></tr>
+  <tr><td><code>.worktrees/p6-stats-ocr</code></td><td><code>task/p6-stats-ocr-muexn6c0</code></td><td>3 + 5 locale</td><td><code>docs/patches/p6-stats-ocr.patch</code> 186.1 KB</td></tr>
+  <tr><td><code>.worktrees/p6-translate</code></td><td><code>task/p6-translate-xzgcrk</code></td><td>1</td><td><code>docs/patches/p6-translate.patch</code> 158.3 KB</td></tr>
+  <tr><td><code>.worktrees/p6-tts</code></td><td><code>task/p6-tts-t-muexn66</code></td><td>3</td><td><code>docs/patches/p6-tts.patch</code> 8.7 KB</td></tr>
+  <tr><td><code>.worktrees/p6-zh-locale</code></td><td><code>task/p6-zh-locale-p6</code></td><td>4</td><td><code>docs/patches/p6-zh-locale.patch</code> 184.1 KB</td></tr>
+  <tr><td><code>.worktrees/p8-wrap-up</code></td><td><code>task/p8-wrap-up-xxvzbr</code></td><td>0 (全在 docs/p8-rollout-patches/)</td><td><code>docs/p8-rollout-patches/{android-app-build-gradle,android-settings-gradle,android-app-manifest,feature-webisland-remove}.patch</code></td></tr>
+</table>
+
+<h2>2 · 推荐合并顺序（按依赖关系）</h2>
+
+<p>顺序按"独立 → 依赖其它 → 设置集成"。每步执行前先 <code>git apply --check</code> 验证。</p>
+
+<table>
+  <tr><th>步</th><th>卡</th><th>命令</th><th>预期冲突</th></tr>
+  <tr><td>1</td><td>P5-FB2 评估</td><td><code>git apply .worktrees/p5-fb2-eval/docs/patches/p5-fb2-settings-gradle.patch</code></td><td>无（仅评估）</td></tr>
+  <tr><td>2</td><td>P5-CBZ 图片</td><td><code>git apply .worktrees/p5-image/docs/patches/p5-image.patch</code></td><td>settings.gradle</td></tr>
+  <tr><td>3</td><td>P6-OCR+Stats</td><td><code>git apply .worktrees/p6-stats-ocr/docs/patches/p6-stats-ocr.patch</code></td><td>settings.gradle + locale JSON</td></tr>
+  <tr><td>4</td><td>P6-TTS</td><td><code>git apply .worktrees/p6-tts/docs/patches/p6-tts.patch</code></td><td>settings.gradle + app/build.gradle</td></tr>
+  <tr><td>5</td><td>P6-翻译</td><td><code>git apply .worktrees/p6-translate/docs/patches/p6-translate.patch</code></td><td>settings.gradle + app/build.gradle</td></tr>
+  <tr><td>6</td><td>P6-词典</td><td><code>git checkout task/p6-dict-91b3qu -- android/feature/dictionary docs/p6-dictionary-architecture.md docs/patches/p6-dictionary.patch</code></td><td>settings.gradle（手动合并）</td></tr>
+  <tr><td>7</td><td>P6-简繁</td><td><code>git apply .worktrees/p6-zh-locale/docs/patches/p6-zh-locale.patch</code></td><td>settings.gradle + core/data Room 表</td></tr>
+  <tr><td>8</td><td>P8 收尾 (4 patch 单独 apply)</td><td><code>git apply .worktrees/p8-wrap-up/docs/p8-rollout-patches/*.patch</code></td><td>app/build.gradle (可能)</td></tr>
+</table>
+
+<div class="callout warn">
+  <strong>settings.gradle 冲突不可避免</strong>：6 张卡（#2-7）都在 patch 里加 <code>include ':engine:*'</code> 或 <code>include ':feature:*'</code>，全部会撞同一文件的同一行。<br>
+  <strong>处理</strong>：先用 <code>git apply --reject</code> 让 git 留 <code>*.rej</code> 文件，然后人工合并所有 <code>*.rej</code> 到主 <code>android/settings.gradle</code>。
+</div>
+
+<h2>3 · 详细步骤（可直接复制执行）</h2>
+
+<h3>3.1 准备：清理 stash 残留 + 工作区干净</h3>
+
+<pre><code>cd E:\open-source\koodo-reader
+
+# 1) 验证 HEAD
+git rev-parse HEAD
+# 期望: 9abe7904e6258b1b8dac60f34a232c83798ca153
+
+# 2) 不 git stash pop（stash 含 gradle 缓存 noise）
+#    如需还原 stash 中 3 个 modified，用 git checkout 而不是 stash pop:
+git checkout stash@{0} -- android/app/build.gradle android/settings.gradle android/core/designsystem/src/main/kotlin/com/koodoreader/core/designsystem/AppearanceCodec.kt
+
+# 3) 删除 .review-tmp/（gradle 临时验证产物，可重新生成）
+#    注: .review-tmp/ 仍 untracked，未进 stash
+git clean -fd .review-tmp/
+
+# 4) 确认工作区
+git status --short
+# 应为空，或仅剩你想保留的内容
+</code></pre>
+
+<h3>3.2 Step 1：P5-FB2/DOCX/HTML/MHTML 评估（最简单）</h3>
+
+<pre><code>git apply --check .worktrees/p5-fb2-eval/docs/patches/p5-fb2-settings-gradle.patch
+git apply .worktrees/p5-fb2-eval/docs/patches/p5-fb2-settings-gradle.patch
+
+# 验收
+ls docs/fb2-docx-html-mhtml-eval.md docs/adr/ADR-006-fb2-docx-html-mhtml-native.md
+</code></pre>
+
+<h3>3.3 Step 2：P5-CBZ 图片阅读器</h3>
+
+<pre><code>git apply --check .worktrees/p5-image/docs/patches/p5-image.patch
+# 预期: 失败（如 settings.gradle 已在 Step 2 之前手动合并）
+git apply --reject .worktrees/p5-image/docs/patches/p5-image.patch
+# 合并 *.rej 到 android/settings.gradle:
+#   include ':engine:image'
+#   project(':engine:image').projectDir = file('engine/image')
+</code></pre>
+
+<h3>3.4 Step 3：P6-OCR+Stats（含 locale 修改）</h3>
+
+<div class="callout warn">
+  <strong>locale 风险</strong>：此 patch 包含 5 个 locale JSON 修改（en.json, zh-CN.json × 2, manifest.json）。<br>
+  sub 自述仅新增 "Word count" key，但 sync-locales-android.js 重写整个 JSON 文件。<br>
+  <strong>建议</strong>：先看 diff，再决定接受/拒绝。
+</div>
+
+<pre><code>git apply --check .worktrees/p6-stats-ocr/docs/patches/p6-stats-ocr.patch
+git apply --reject .worktrees/p6-stats-ocr/docs/patches/p6-stats-ocr.patch
+
+# 验证 locale 改动
+git diff --stat src/assets/locales/ android/app/src/main/assets/locales/
+
+# 如不想合 locale，单独处理:
+# git checkout HEAD -- src/assets/locales/ android/app/src/main/assets/locales/
+# 然后从 worktree 复制 module 代码即可
+git checkout task/p6-stats-ocr-muexn6c0 -- android/feature/stats android/feature/ocr \
+    docs/p6-stats-ocr-design.md
+</code></pre>
+
+<h3>3.5 Step 4-7：其余 P6 模块</h3>
+
+<pre><code># Step 4: TTS
+git apply --reject .worktrees/p6-tts/docs/patches/p6-tts.patch
+
+# Step 5: 翻译
+git apply --reject .worktrees/p6-translate/docs/patches/p6-translate.patch
+
+# Step 6: 词典（worktree-only, 无 patch）
+git checkout task/p6-dict-91b3qu -- \
+    android/feature/dictionary \
+    docs/p6-dictionary-architecture.md
+
+# Step 7: 简繁/locale
+git apply --reject .worktrees/p6-zh-locale/docs/patches/p6-zh-locale.patch
+</code></pre>
+
+<h3>3.7 Step 9：settings.gradle 串行合并</h3>
+
+<div class="callout">
+  <strong>关键步骤</strong>：所有 <code>git apply --reject</code> 留下的 <code>*.rej</code> 文件需人工合并到 <code>android/settings.gradle</code>。<br>
+  预期最终内容（顺序可调整）:
+</div>
+
+<pre><code>// android/settings.gradle 应包含以下新增 include（按依赖顺序）：
+include ':engine:image'              // P5-CBZ
+include ':feature:stats'             // P6-Stats
+include ':feature:ocr'               // P6-OCR
+include ':feature:tts'               // P6-TTS
+include ':feature:translate'         // P6-Translate
+include ':feature:dictionary'        // P6-Dict
+include ':core:locale'               // P6-Locale
+include ':feature:crash'             // P8-Crash
+include ':benchmarks'                // P8-Benchmarks
+</code></pre>
+
+<h3>3.8 Step 8：P8 收尾（4 个独立 patch）</h3>
+
+<pre><code>foreach ($p in .worktrees/p8-wrap-up/docs/p8-rollout-patches/*.patch) {
+    git apply --check $p
+    git apply --reject $p
+}
+
+# 注意 feature-webisland-remove.patch 是空操作声明（目标模块不存在）
+# 如 dry-run 报 "No valid patches in input" 是预期行为
+</code></pre>
+
+<h3>3.9 Step 10：app/build.gradle 注册</h3>
+
+<div class="callout danger">
+  <strong>CLAUDE.md 警告</strong>：8 个 sub 都明确被禁止修改 <code>android/app/build.gradle</code>。<br>
+  集成时<strong>必须</strong>改这个文件（添加 <code>implementation project(...)</code> 依赖）。<br>
+  <strong>这是 sub forbidden-file 边界的人工授权例外</strong>，需要你明确同意。
+</div>
+
+<p>每个新模块需在 <code>android/app/build.gradle</code> 的 <code>dependencies { }</code> 块加：</p>
+
+<pre><code>implementation project(':engine:image')
+implementation project(':feature:stats')
+implementation project(':feature:ocr')
+implementation project(':feature:tts')
+implementation project(':feature:translate')
+implementation project(':feature:dictionary')
+implementation project(':core:locale')
+implementation project(':feature:crash')
+</code></pre>
+
+<h2>4 · 验证清单（集成后必跑）</h2>
+
+<ol>
+  <li><strong>gradle 构建图</strong>：<code>./gradlew projects</code> 应列出新注册的 9 个 module</li>
+  <li><strong>JVM 单测</strong>：<code>./gradlew :engine:image:test :feature:stats:testDebugUnitTest :feature:ocr:testDebugUnitTest :feature:tts:testDebugUnitTest :feature:translate:testDebugUnitTest :feature:dictionary:testDebugUnitTest :core:locale:test :feature:crash:test :benchmarks:testDebugUnitTest</code>（无设备环境下 <code>:benchmarks:</code> 会失败，可选）</li>
+  <li><strong>Android 出包</strong>：<code>./gradlew :app:assembleDebug</code>（需 Android SDK）</li>
+  <li><strong>locale 一致性</strong>：<code>node scripts/sync-locales-android.js --check</code></li>
+  <li><strong>AGPL 合规</strong>：<code>cat docs/appendix-c-agpl-compliance.md</code> review 3 个新缺口</li>
+</ol>
+
+<h2>5 · 不做的事（CLAUDE.md 边界）</h2>
+
+<ul>
+  <li><strong>git commit / git push</strong>：本会话永不执行。</li>
+  <li><strong>未授权修改 app/build.gradle 注册</strong>：见 §3.9。</li>
+  <li><strong>回滚/reset stash@{0}</strong>：stash 含 gradle 缓存 noise，丢弃即可。</li>
+</ul>
+
+<h2>6 · 风险与备选</h2>
+
+<table>
+  <tr><th>风险</th><th>缓解</th></tr>
+  <tr>
+    <td>settings.gradle 6 路冲突</td>
+    <td><code>git apply --reject</code> 后人工合并；或用 python 脚本批量合并</td>
+  </tr>
+  <tr>
+    <td>locale 红状态（en.json 1387 vs 1386）</td>
+    <td>先跑 <code>node scripts/sync-locales-android.js</code> 一次性修复，再 apply patch</td>
+  </tr>
+  <tr>
+    <td>sub ui/ 文件未编译验证</td>
+    <td>集成后 <code>./gradlew :feature:*:compileDebugKotlin</code> 验证</td>
+  </tr>
+  <tr>
+    <td>P5-CBZ [1] PARTIAL (7z/rar 骨架)</td>
+    <td>已知缺口，后续 sprint 补</td>
+  </tr>
+  <tr>
+    <td>P6-翻译 history 表 Room 与 koodo.db 独立</td>
+    <td>后续可合并，见 doc §4.2 patch</td>
+  </tr>
+  <tr>
+    <td>P6-OCR AGP 8.2.2 &lt; 8.5.1 16KB 风险</td>
+    <td>后续 AGP 升级 + camera-core ≥1.4.2 守卫</td>
+  </tr>
+  <tr>
+    <td>P8 体积 baseline 24.88 MB 实际 vs 20.03 MB 任务描述</td>
+    <td>已实测记录于 docs/android-baseline-after.json</td>
+  </tr>
+</table>
+
+<h2>7 · 命令清单（一键复制）</h2>
+
+<pre><code>cd E:\open-source\koodo-reader
+
+# Step 1: P5-FB2 评估
+git apply .worktrees/p5-fb2-eval/docs/patches/p5-fb2-settings-gradle.patch
+
+# Step 2-7: P5/P6 主线（用 --reject 留 .rej 给人工合并）
+git apply --reject .worktrees/p5-image/docs/patches/p5-image.patch
+git apply --reject .worktrees/p6-stats-ocr/docs/patches/p6-stats-ocr.patch
+git apply --reject .worktrees/p6-tts/docs/patches/p6-tts.patch
+git apply --reject .worktrees/p6-translate/docs/patches/p6-translate.patch
+git checkout task/p6-dict-91b3qu -- android/feature/dictionary docs/p6-dictionary-architecture.md
+git apply --reject .worktrees/p6-zh-locale/docs/patches/p6-zh-locale.patch
+
+# Step 8: P8 收尾
+foreach ($p in .worktrees/p8-wrap-up/docs/p8-rollout-patches/*.patch) {
+    git apply --reject $p
+}
+
+# Step 9: 合并 settings.gradle *.rej（人工）
+# 合并 *.rej 内容到 include ...
+
+# Step 11: 修改 app/build.gradle 添加 9 个 implementation project(...)
+
+# Step 12: 验证
+./gradlew projects
+./gradlew :engine:image:test :core:locale:test :feature:crash:test
+node scripts/sync-locales-android.js --check
+</code></pre>
+
+<h2>8 · 关联卡片（在 in_review 待你拍板）</h2>
+
+<table>
+  <tr><th>卡 ID</th><th>主题</th></tr>
+  <tr><td><code>t-muexn64a-j64yvl</code></td><td>P5-FB2/DOCX/HTML/MHTML 评估（ADR-006 待你确认）</td></tr>
+  <tr><td><code>t-muexn633-8y2jew</code></td><td>P5-CBZ/CBR/CBT/CB7（[1][5] PARTIAL 已知）</td></tr>
+  <tr><td><code>t-muexn66v-0z6jje</code></td><td>P6-TTS</td></tr>
+  <tr><td><code>t-muexn680-91b3qu</code></td><td>P6-词典</td></tr>
+  <tr><td><code>t-muexn696-xzgcrk</code></td><td>P6-翻译/AI</td></tr>
+  <tr><td><code>t-muexn6c0-3dab3i</code></td><td>P6-统计+OCR（locale 修改待你确认）</td></tr>
+  <tr><td><code>t-muexn6d1-rg3pyr</code></td><td>P6-简繁/locale</td></tr>
+  <tr><td><code>t-muexn6g8-xxvzbr</code></td><td>P8 收尾（4 件决策待你拍板）</td></tr>
+</table>
+
+<hr>
+<p><small>本文件由 DSH 主线程生成。生成时仅读，不写任何源文件。<br>
+下次合并时，按 §7 命令清单逐条执行即可。<br>
+如有任何 sub patch 已变更，需重新运行 §3 步骤。</small></p>
+
+</body>
+</html>
