@@ -1,0 +1,71 @@
+// feature/stats — native reading statistics (P6), aligned with the desktop
+// /stats page (src/pages/stats/*).
+//
+// Layout of the module:
+//   src/main/kotlin/.../stats/*.kt           pure Kotlin: models, aggregation,
+//                                            reading-time accounting, Room
+//                                            entity/DAO. NO Android imports, so
+//                                            the JVM unit tests below cover the
+//                                            desktop metric parity completely.
+//   src/main/kotlin/.../stats/ui/*.kt         Compose screen + ViewModel
+//   src/main/kotlin/.../stats/platform/*.kt   Room database + provider
+//
+// Wiring (main thread): add `include ':feature:stats'` to android/settings.gradle
+// (the P6 sub-agent must not touch that file) and
+// `implementation project(':feature:stats')` to :app. The module is
+// self-contained: it owns its `reading_sessions` table in a private database,
+// see docs/p6-stats-ocr-design.md §4 for the optional merge into koodo.db.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp'
+}
+
+android {
+    namespace 'com.koodoreader.feature.stats'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        // Compose compiler compatible with Kotlin 1.9.24 (same as :app).
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+}
+
+dependencies {
+    def roomVersion = '2.6.1'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    ksp "androidx.room:room-compiler:$roomVersion"
+
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    // Local JVM unit tests: the pure core (stats/*.kt) is exercised on the
+    // JVM; no Android SDK needed for these.
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+}

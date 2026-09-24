@@ -1,0 +1,125 @@
+// feature/ocr — native OCR (P6): ML Kit on-device text recognition with
+// ON-DEMAND model packs + a searchable index of scanned pages.
+//
+// Layout of the module (same convention as :feature:stats):
+//   src/main/kotlin/.../ocr/*.kt           pure Kotlin: script→model mapping,
+//                                          text normaliser, the on-demand
+//                                          download contract, the OCR index +
+//                                          search loop, Room entity/DAO.
+//   src/main/kotlin/.../ocr/platform/*.kt  ML Kit engine, Play services module
+//                                          downloader, Room database.
+//
+// Dependency choice — ON-DEMAND (Play services) instead of BUNDLED:
+//   unbundled : com.google.android.gms:play-services-mlkit-text-recognition*
+//               model downloaded via Google Play services, ≈260 KB per script
+//               per ABI, ZERO ML Kit .so in our APK.
+//   bundled   : com.google.mlkit:text-recognition*  (≈4 MB per script per ABI,
+//               model + native libs inside the APK → 16 KB page-size risk).
+// Switch by replacing the five `play-services-mlkit-*` lines below with their
+// `com.google.mlkit:*` counterparts — the Kotlin API is identical. See
+// docs/p6-stats-ocr-design.md §5 (16 KB / .so analysis) before switching.
+//
+// Wiring (main thread): `include ':feature:ocr'` in android/settings.gradle +
+// `implementation project(':feature:ocr')` in :app, and the manifest meta-data
+//
+//   <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
+//              android:value="ocr,ocr_chinese" />
+//
+// (value built by `OcrScript.manifestValue(listOf(...))`) to pre-download the
+// models at install time.
+//
+// ---------------------------------------------------------------------------
+// BLOCKED (integration, 2026-09-24): `platform/MlKitModelDownloader.kt` does NOT
+// compile against the declared dependencies and is therefore excluded from the
+// build below (same quarantine pattern as :engine:image's Compose host).
+//
+// Evidence — the Play-services module-install API needs an `OptionalModuleApi`,
+// but ML Kit's text-recognition options classes never implement it:
+//   $ javap -classpath play-services-mlkit-text-recognition-19.0.1/classes.jar \
+//       com.google.mlkit.vision.text.latin.TextRecognizerOptions
+//   public class ...TextRecognizerOptions
+//       implements com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+//   $ javap ... com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+//   public interface ...TextRecognizerOptionsInterface {   // no OptionalModuleApi
+//     ... getModuleId(); getOptionalFeatures() is NOT declared
+//   }
+// 19.0.1 is the newest published version (19.0.0 and 19.0.1 are identical here),
+// and the bundled `com.google.mlkit:text-recognition*` artifacts do not put this
+// class on the classpath at all. So the three call sites cannot be made
+// type-correct by an import change, a version bump or an adapter: ML Kit exposes
+// no `Feature[]` to bridge with.
+//
+// Consequence: `OnDemandModelDownloader` (the pure-JVM contract + its in-memory
+// test double) is still compiled and tested; only the Android adapter that
+// drives Play-services model downloads is missing. The OCR host screen is not
+// wired into :app yet, so nothing regresses at runtime today.
+//
+// Unblocking is a design decision (see docs/p6-stats-ocr-design.md §5):
+//   a) drive downloads through ML Kit's own recognizer creation +
+//      `TextRecognizer.close()`, and express `DownloadState` from that, or
+//   b) switch to the bundled `com.google.mlkit:text-recognition*` artifacts
+//      (no download API needed — at the cost of ~4 MB/script and the 16 KB
+//      .so risk the card deliberately avoided), or
+//   c) keep the manifest `DEPENDENCIES` meta-data as the only pre-download
+//      mechanism and drop the ModuleInstall layer.
+// ---------------------------------------------------------------------------
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp'
+}
+
+android {
+    namespace 'com.koodoreader.feature.ocr'
+    compileSdk 34
+
+    // BLOCKED: see the file header — the Play-services module-install adapter
+    // cannot compile against these artifacts (ML Kit options are not
+    // OptionalModuleApi). OcrIndexDatabase is quarantined with it because it is
+    // the only thing that consumes the downloader. Remove this block once
+    // (a)/(b)/(c) in the header is decided.
+    // The exclusion is applied on the Kotlin compile tasks because an Android
+    // library module's Kotlin sources are not filtered by `sourceSets` the way a
+    // pure-JVM module's are (:engine:image uses that form).
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        exclude '**/platform/MlKitModelDownloader.kt'
+        exclude '**/platform/OcrIndexDatabase.kt'
+    }
+
+    defaultConfig {
+        minSdk 24 // ML Kit text recognition v2 requires API 23+
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // ML Kit text recognition v2, Play-services (unbundled) artifacts.
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1'
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-devanagari:16.0.1'
+    // ModuleInstallClient (areModulesAvailable / installModules / listener);
+    // version per https://developers.google.cn/android/guides/module-install-apis
+    implementation 'com.google.android.gms:play-services-base:18.11.0'
+    // Optional: only needed if the OCR feature is later split into an on-demand
+    // dynamic feature module (then add this to the BASE module instead):
+    // implementation 'com.google.mlkit:playstore-dynamic-feature-support:16.0.0-beta2'
+
+    def roomVersion = '2.6.1'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    ksp "androidx.room:room-compiler:$roomVersion"
+
+    // Local JVM unit tests for the pure core (ocr/*.kt).
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+}

@@ -1,0 +1,4073 @@
+diff --git a/android/app/src/main/assets/locales/en.json b/android/app/src/main/assets/locales/en.json
+index 69249582..accc7048 100644
+--- a/android/app/src/main/assets/locales/en.json
++++ b/android/app/src/main/assets/locales/en.json
+@@ -575,6 +575,15 @@
+   "Email": "Email",
+   "Binding failed": "Binding failed",
+   "PDF files in double page mode does not support note taking yet": "PDF files in double page mode does not support note taking yet",
++  "PDF Password": "PDF password",
++  "Wrong password": "Wrong password",
++  "PDF unlock failed": "PDF unlock failed",
++  "PDF search": "PDF search",
++  "PDF outline": "PDF outline",
++  "PDF share page": "Share current page",
++  "PDF zoom in": "Zoom in",
++  "PDF zoom out": "Zoom out",
++  "PDF empty outline": "This PDF has no outline",
+   "Your trial period has expired": "Your trial period has expired",
+   "Exit Pro": "Exit Pro",
+   "I've paid": "I've paid",
+@@ -783,6 +792,7 @@
+   "Automatic": "Automatic",
+   "Inflection": "Inflection",
+   "Word comparison": "Word comparison",
++  "Word count": "Word count",
+   "Language auto-detection may not be accurate. Please try selecting the source language manually": "Language auto-detection may not be accurate. Please try selecting the source language manually",
+   "Action": "Action",
+   "Copy to": "Copy to",
+@@ -1374,18 +1384,6 @@
+   "Select book files": "Select book files",
+   "Import books from folder": "Import books from folder",
+   "Backup / restore": "Backup / restore",
+-  "Local backup only — no cloud sync.": "Local backup only — no cloud sync.",
+-  "Full desktop backup (zip)": "Full desktop backup (zip)",
+-  "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.": "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.",
+-  "Import zip": "Import zip",
+-  "Export zip": "Export zip",
+-  "Data export / import (CSV / JSON)": "Data export / import (CSV / JSON)",
+-  "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.": "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.",
+-  "Notes": "Notes",
+-  "Highlights": "Highlights",
+-  "Dictionary → CSV": "Dictionary → CSV",
+-  "Dictionary → JSON": "Dictionary → JSON",
+-  "Import CSV / JSON": "Import CSV / JSON",
+   "Library is empty": "Library is empty",
+   "Duplicate": "Duplicate"
+ }
+diff --git a/android/app/src/main/assets/locales/manifest.json b/android/app/src/main/assets/locales/manifest.json
+index 33db5d74..887d5809 100644
+--- a/android/app/src/main/assets/locales/manifest.json
++++ b/android/app/src/main/assets/locales/manifest.json
+@@ -5,13 +5,13 @@
+   ],
+   "source": {
+     "en": {
+-      "keys": 1377,
+-      "sha256": "0440878538ba53614b30a40f9940ce4aff783da30d668d51f19f42919e4f5485"
++      "keys": 1387,
++      "sha256": "ae9b1064fdef87c27740bc9435059c7da6c679182af8c4458e90c1508547eddc"
+     },
+     "zh-CN": {
+-      "keys": 1396,
+-      "sha256": "d9ba066ea873784ed6558b40f5f3a1cc91c6e0d9b6654091de8131ab1f88e92e"
++      "keys": 1397,
++      "sha256": "8b08ad432b2e5d8ff42d49c8ad35998dc4d484d4c78dd8d326c873ed83ee2481"
+     }
+   },
+-  "syncedAt": "2026-09-24T01:21:33.690Z"
++  "syncedAt": "2026-09-24T08:45:56.436Z"
+ }
+\ No newline at end of file
+diff --git a/android/app/src/main/assets/locales/zh-CN.json b/android/app/src/main/assets/locales/zh-CN.json
+index f5951f86..6e05db6b 100644
+--- a/android/app/src/main/assets/locales/zh-CN.json
++++ b/android/app/src/main/assets/locales/zh-CN.json
+@@ -430,6 +430,7 @@
+   "Unknown chapter": "未知章节",
+   "Inflection": "变形",
+   "Word comparison": "单词对比",
++  "Word count": "字数",
+   "Language auto-detection may not be accurate. Please try selecting the source language manually": "语言自动检测可能不够准确，请尝试手动选择源语言",
+   "Minute": "分钟",
+   "Empty": "这里什么都没有",
+@@ -1393,18 +1394,6 @@
+   "Select book files": "选择书籍文件",
+   "Import books from folder": "从文件夹导入书籍",
+   "Backup / restore": "备份 / 恢复",
+-  "Local backup only — no cloud sync.": "仅本地备份——不支持云同步。",
+-  "Full desktop backup (zip)": "完整桌面备份 (zip)",
+-  "Bundles books, notes, highlights, bookmarks, dictionary history, covers and book files; restore on desktop via the backup dialog.": "打包图书、笔记、高亮、书签、生词、封面和图书文件；可在桌面端通过备份对话框恢复。",
+-  "Import zip": "导入 zip",
+-  "Export zip": "导出 zip",
+-  "Data export / import (CSV / JSON)": "数据导出 / 导入 (CSV / JSON)",
+-  "Mirrors the desktop `exportNotes` / `exportHighlights` / `exportDictionaryHistory` flows; round-trips through any CSV or JSON file the desktop produces.": "对应桌面端的 `exportNotes` / `exportHighlights` / `exportDictionaryHistory` 流程；可与桌面端生成的任意 CSV 或 JSON 文件往返。",
+-  "Notes": "笔记",
+-  "Highlights": "高亮",
+-  "Dictionary → CSV": "生词 → CSV",
+-  "Dictionary → JSON": "生词 → JSON",
+-  "Import CSV / JSON": "导入 CSV / JSON",
+   "Library is empty": "书库为空",
+   "Duplicate": "重复"
+ }
+diff --git a/android/feature/ocr/build.gradle b/android/feature/ocr/build.gradle
+new file mode 100644
+index 00000000..9bdfda21
+--- /dev/null
++++ b/android/feature/ocr/build.gradle
+@@ -0,0 +1,76 @@
++// feature/ocr — native OCR (P6): ML Kit on-device text recognition with
++// ON-DEMAND model packs + a searchable index of scanned pages.
++//
++// Layout of the module (same convention as :feature:stats):
++//   src/main/kotlin/.../ocr/*.kt           pure Kotlin: script→model mapping,
++//                                          text normaliser, the on-demand
++//                                          download contract, the OCR index +
++//                                          search loop, Room entity/DAO.
++//   src/main/kotlin/.../ocr/platform/*.kt  ML Kit engine, Play services module
++//                                          downloader, Room database.
++//
++// Dependency choice — ON-DEMAND (Play services) instead of BUNDLED:
++//   unbundled : com.google.android.gms:play-services-mlkit-text-recognition*
++//               model downloaded via Google Play services, ≈260 KB per script
++//               per ABI, ZERO ML Kit .so in our APK.
++//   bundled   : com.google.mlkit:text-recognition*  (≈4 MB per script per ABI,
++//               model + native libs inside the APK → 16 KB page-size risk).
++// Switch by replacing the five `play-services-mlkit-*` lines below with their
++// `com.google.mlkit:*` counterparts — the Kotlin API is identical. See
++// docs/p6-stats-ocr-design.md §5 (16 KB / .so analysis) before switching.
++//
++// Wiring (main thread): `include ':feature:ocr'` in android/settings.gradle +
++// `implementation project(':feature:ocr')` in :app, and the manifest meta-data
++//
++//   <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
++//              android:value="ocr,ocr_chinese" />
++//
++// (value built by `OcrScript.manifestValue(listOf(...))`) to pre-download the
++// models at install time.
++plugins {
++    id 'com.android.library'
++    id 'org.jetbrains.kotlin.android'
++    id 'com.google.devtools.ksp'
++}
++
++android {
++    namespace 'com.koodoreader.feature.ocr'
++    compileSdk 34
++
++    defaultConfig {
++        minSdk 24 // ML Kit text recognition v2 requires API 23+
++    }
++
++    compileOptions {
++        sourceCompatibility JavaVersion.VERSION_17
++        targetCompatibility JavaVersion.VERSION_17
++    }
++
++    kotlinOptions {
++        jvmTarget = '17'
++    }
++}
++
++dependencies {
++    // ML Kit text recognition v2, Play-services (unbundled) artifacts.
++    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
++    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1'
++    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1'
++    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1'
++    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-devanagari:16.0.1'
++    // ModuleInstallClient (areModulesAvailable / installModules / listener);
++    // version per https://developers.google.cn/android/guides/module-install-apis
++    implementation 'com.google.android.gms:play-services-base:18.11.0'
++    // Optional: only needed if the OCR feature is later split into an on-demand
++    // dynamic feature module (then add this to the BASE module instead):
++    // implementation 'com.google.mlkit:playstore-dynamic-feature-support:16.0.0-beta2'
++
++    def roomVersion = '2.6.1'
++    implementation "androidx.room:room-runtime:$roomVersion"
++    implementation "androidx.room:room-ktx:$roomVersion"
++    ksp "androidx.room:room-compiler:$roomVersion"
++
++    // Local JVM unit tests for the pure core (ocr/*.kt).
++    testImplementation 'junit:junit:4.13.2'
++    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
++}
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrEngine.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrEngine.kt
+new file mode 100644
+index 00000000..8e23fa10
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrEngine.kt
+@@ -0,0 +1,218 @@
++// feature/ocr — pure-Kotlin OCR core (P6).
++//
++// Desktop reference: `public/lib/esearch-ocr` + `onnxruntime-web` (web) and the
++// native Windows/macOS OCR paths in `src/utils/main/ocr-util.js`, wired through
++// `getOcrResult` / `parseWithSystemOCR` in `src/utils/request/*`. The native
++// Android port uses ML Kit's on-device Text Recognition v2 (`text-recognition`
++// API surface, see platform/MlKitOcrProvider.kt) with the ON-DEMAND model pack
++// instead of shipping the 4 MB-per-script-per-ABI bundled model + .so files
++// (16 KB page-size risk, see docs/p6-stats-ocr-design.md §5).
++//
++// This file has zero Android imports: script→model mapping, the OCR text
++// normaliser (desktop `cleanWindowsOcrText` parity for CJK) and the engine
++// seam are all unit-testable on the JVM.
++package com.koodoreader.feature.ocr
++
++/**
++ * ML Kit text recognition scripts. `manifestValue` is the manifest meta-data
++ * token (`com.google.mlkit.vision.DEPENDENCIES`) that requests the install-time
++ * download; the artifact coordinates are the ones from the ML Kit text
++ * recognition v2 guide (unbundled = model downloaded through Google Play
++ * services, bundled = model linked into the APK).
++ */
++enum class OcrScript(
++    val manifestValue: String,
++    val unbundledArtifact: String,
++    val bundledArtifact: String,
++    /** ML Kit guide: ~260 KB per script per architecture, unbundled. */
++    val unbundledBytes: Long = 260L * 1024L,
++    /** ML Kit guide: ~4 MB per script per architecture, bundled. */
++    val bundledBytes: Long = 4L * 1024L * 1024L,
++) {
++    LATIN(
++        manifestValue = "ocr",
++        unbundledArtifact = "com.google.android.gms:play-services-mlkit-text-recognition:19.0.1",
++        bundledArtifact = "com.google.mlkit:text-recognition:16.0.1",
++    ),
++    CHINESE(
++        manifestValue = "ocr_chinese",
++        unbundledArtifact = "com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1",
++        bundledArtifact = "com.google.mlkit:text-recognition-chinese:16.0.1",
++    ),
++    DEVANAGARI(
++        manifestValue = "ocr_devanagari",
++        unbundledArtifact = "com.google.android.gms:play-services-mlkit-text-recognition-devanagari:16.0.1",
++        bundledArtifact = "com.google.mlkit:text-recognition-devanagari:16.0.1",
++    ),
++    JAPANESE(
++        manifestValue = "ocr_japanese",
++        unbundledArtifact = "com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1",
++        bundledArtifact = "com.google.mlkit:text-recognition-japanese:16.0.1",
++    ),
++    KOREAN(
++        manifestValue = "ocr_korean",
++        unbundledArtifact = "com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1",
++        bundledArtifact = "com.google.mlkit:text-recognition-korean:16.0.1",
++    ),
++    ;
++
++    companion object {
++        /**
++         * Best script for an ISO language tag, mirroring the desktop engine's
++         * language lists (`getOcrLangList` → tesseract/paddle codes): Chinese,
++         * Japanese, Korean and Devanagari get their dedicated model, everything
++         * else the Latin one.
++         */
++        fun forLanguageTag(tag: String?): OcrScript {
++            val language = tag?.lowercase()?.replace('_', '-')?.substringBefore('-').orEmpty()
++            return when (language) {
++                "zh", "zh-cn", "zh-tw", "zh-hk", "zh-mo", "zh-hans", "zh-hant" -> CHINESE
++                "ja" -> JAPANESE
++                "ko" -> KOREAN
++                "hi", "mr", "ne", "sa" -> DEVANAGARI
++                else -> LATIN
++            }
++        }
++
++        /** `android:value="ocr,ocr_chinese"` for the manifest meta-data. */
++        fun manifestValue(scripts: Collection<OcrScript>): String =
++            scripts.distinct().joinToString(",") { it.manifestValue }
++    }
++}
++
++/** Opaque page image; the Android layer wraps a `Bitmap` (+ rotation). */
++interface OcrImage
++
++/** Bounding box in page pixels, `null` when the engine reports geometry only per block. */
++data class OcrBox(val left: Int, val top: Int, val right: Int, val bottom: Int) {
++    val width: Int get() = right - left
++    val height: Int get() = bottom - top
++}
++
++/** One recognised line (ML Kit `Text.Line`). */
++data class OcrLine(
++    val text: String,
++    val box: OcrBox? = null,
++    val confidence: Float? = null,
++    val languageTag: String? = null,
++)
++
++/**
++ * A recognised scanned page. `lines` keeps the reading order reported by the
++ * engine, so the normaliser can rebuild paragraphs without re-sorting.
++ */
++data class OcrPageResult(
++    val bookKey: String,
++    val pageIndex: Int,
++    val script: OcrScript,
++    val lines: List<OcrLine>,
++    val durationMillis: Long = 0L,
++) {
++    val rawText: String get() = lines.joinToString("\n") { it.text }
++}
++
++/** One page to recognise. */
++data class OcrRequest(
++    val bookKey: String,
++    val pageIndex: Int,
++    val script: OcrScript,
++)
++
++/** Engine seam: `MlKitOcrProvider` is the only production implementation. */
++interface OcrEngine {
++    suspend fun recognize(request: OcrRequest, image: OcrImage): OcrPageResult
++    fun close() {}
++}
++
++/**
++ * Deshapes OCR output into indexable text.
++ *
++ * Desktop parity: `cleanWindowsOcrText` (src/utils/main/ocr-util.js) exists
++ * because Windows.Media.Ocr joins CJK runs with spaces — the same fix is needed
++ * for ML Kit output, which also breaks lines. Rules:
++ *  1. a hyphen at a line end between two latin words is removed
++ *     (`inter-` + `national` → `international`);
++ *  2. a line break between two CJK characters becomes NOTHING, anywhere else it
++ *     becomes a single space;
++ *  3. runs of whitespace collapse to one space and the result is trimmed.
++ */
++object OcrTextNormalizer {
++
++    private val hyphenBreak = Regex("([A-Za-z])-\\s*\\n\\s*([a-z])")
++    private val whitespace = Regex("[ \\t\\u00A0]+")
++
++    fun normalize(lines: List<String>): String = normalize(lines.joinToString("\n"))
++
++    fun normalize(raw: String): String {
++        if (raw.isEmpty()) return ""
++        val dehyphenated = hyphenBreak.replace(raw) { match -> "${match.groupValues[1]}${match.groupValues[2]}" }
++        val builder = StringBuilder(dehyphenated.length)
++        var index = 0
++        while (index < dehyphenated.length) {
++            val current = dehyphenated[index]
++            if (current == '\n' || current == '\r') {
++                val previous = builder.lastOrNull()
++                // Look ahead to the next non-newline character.
++                var next = index + 1
++                while (next < dehyphenated.length && (dehyphenated[next] == '\n' || dehyphenated[next] == '\r')) next++
++                val following = dehyphenated.getOrNull(next)
++                val joiner = if (previous != null && following != null &&
++                    isCjk(previous) && isCjk(following)
++                ) {
++                    ""
++                } else {
++                    " "
++                }
++                if (builder.isNotEmpty() && builder.last() != ' ') builder.append(joiner)
++                index = next
++                continue
++            }
++            builder.append(current)
++            index++
++        }
++        return whitespace.replace(builder.toString(), " ").trim()
++    }
++
++    /**
++     * Index tokens: lowercased latin words plus CJK unigrams AND bigrams (the
++     * classic n-gram trick that makes 1-2 character queries searchable without a
++     * Chinese word segmenter).
++     */
++    fun tokens(normalizedText: String): List<String> {
++        val tokens = ArrayList<String>()
++        val latin = StringBuilder()
++        fun flushLatin() {
++            if (latin.isNotEmpty()) {
++                tokens.add(latin.toString().lowercase())
++                latin.setLength(0)
++            }
++        }
++        var index = 0
++        while (index < normalizedText.length) {
++            val ch = normalizedText[index]
++            when {
++                isCjk(ch) -> {
++                    flushLatin()
++                    tokens.add(ch.toString())
++                    val next = normalizedText.getOrNull(index + 1)
++                    if (next != null && isCjk(next)) tokens.add("$ch$next")
++                }
++                ch.isLetterOrDigit() || ch == '\'' || ch == '\u2019' -> latin.append(ch)
++                else -> flushLatin()
++            }
++            index++
++        }
++        flushLatin()
++        return tokens
++    }
++
++    /** CJK ideographs (BMP), kana and hangul — same ranges as the stats module. */
++    fun isCjk(ch: Char): Boolean {
++        val code = ch.code
++        return code in 0x3040..0x30FF ||
++            code in 0x3400..0x4DBF ||
++            code in 0x4E00..0x9FFF ||
++            code in 0xAC00..0xD7AF ||
++            code in 0xF900..0xFAFF
++    }
++}
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrSearchRepository.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrSearchRepository.kt
+new file mode 100644
+index 00000000..2d214a58
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OcrSearchRepository.kt
+@@ -0,0 +1,334 @@
++// feature/ocr — scanned-page OCR index + search loop (P6).
++//
++// The closed loop this file implements:
++//
++//   scanned page ──▶ ML Kit model available?  ──▶ recognise ──▶ normalise
++//        ▲                    │ on demand                    │
++//        │                    ▼                              ▼
++//        │            OnDemandDownloader            ocr_pages (Room)
++//        │                                                   │
++//        └──────── reader jumps to the hit ◀── search() ◀─────┘
++//
++// Desktop context: the web build recognises a *selection* through
++// `getOcrResult`/`getOcrResultV2` (public/lib/esearch-ocr + onnxruntime-web,
++// PNG-in/text-out, no client-side index) and the desktop app shells out to the
++// Windows/macOS OCR engines per image. Native Android does the same per page but
++// additionally indexes the recognised text, because a scanned PDF has no text
++// layer to search — this is where the "扫描页 OCR 检索" requirement lands.
++//
++// Persistence lives in `ocr_pages`. The entity/DAO are declared here so the
++// module stays self-contained; docs/p6-stats-ocr-design.md §4.2 has the exact
++// main-thread patch that moves the table into :core:data's koodo.db.
++package com.koodoreader.feature.ocr
++
++import androidx.room.ColumnInfo
++import androidx.room.Dao
++import androidx.room.Entity
++import androidx.room.Insert
++import androidx.room.OnConflictStrategy
++import androidx.room.PrimaryKey
++import androidx.room.Query
++
++/**
++ * OCR text of one scanned page. `key` is `bookKey#pageIndex#script`, so
++ * re-scanning a page (or scanning it with another script) replaces its row
++ * instead of duplicating hits.
++ */
++@Entity(tableName = "ocr_pages")
++data class OcrPageEntity(
++    @PrimaryKey @ColumnInfo(name = "key") val key: String,
++    @ColumnInfo(name = "bookKey") val bookKey: String,
++    @ColumnInfo(name = "pageIndex") val pageIndex: Int,
++    @ColumnInfo(name = "script") val script: String,
++    /** Raw engine output (line-joined) — kept for the "copy page text" action. */
++    @ColumnInfo(name = "text") val text: String,
++    /** Normalised text used for matching (`OcrTextNormalizer.normalize`). */
++    @ColumnInfo(name = "normalizedText") val normalizedText: String,
++    @ColumnInfo(name = "tokenCount") val tokenCount: Int,
++    @ColumnInfo(name = "recognizedAt") val recognizedAt: Long,
++    @ColumnInfo(name = "durationMillis") val durationMillis: Long = 0L,
++    @ColumnInfo(name = "engine") val engine: String = ENGINE_MLKIT,
++) {
++    companion object {
++        const val ENGINE_MLKIT = "mlkit-text-recognition-v2"
++    }
++}
++
++@Dao
++interface OcrPageDao {
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsert(row: OcrPageEntity)
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertAll(rows: List<OcrPageEntity>)
++
++    @Query("SELECT * FROM ocr_pages ORDER BY bookKey ASC, pageIndex ASC")
++    suspend fun loadAll(): List<OcrPageEntity>
++
++    @Query("SELECT * FROM ocr_pages WHERE `key` = :key LIMIT 1")
++    suspend fun loadByKey(key: String): OcrPageEntity?
++
++    @Query("SELECT * FROM ocr_pages WHERE bookKey = :bookKey ORDER BY pageIndex ASC")
++    suspend fun loadForBook(bookKey: String): List<OcrPageEntity>
++
++    /**
++     * Coarse prefilter; the repository ranks the candidates in Kotlin so the
++     * ranking stays testable. A LIKE scan is fine for one book; a library-wide
++     * FTS4/FTS5 `ocr_pages_fts` table is the documented follow-up (design doc §6).
++     */
++    @Query("SELECT * FROM ocr_pages WHERE normalizedText LIKE '%' || :needle || '%'")
++    suspend fun prefilter(needle: String): List<OcrPageEntity>
++
++    @Query("SELECT COUNT(*) FROM ocr_pages WHERE bookKey = :bookKey")
++    suspend fun countForBook(bookKey: String): Int
++
++    @Query("SELECT COUNT(*) FROM ocr_pages")
++    suspend fun count(): Int
++
++    @Query("DELETE FROM ocr_pages WHERE bookKey = :bookKey")
++    suspend fun deleteForBook(bookKey: String)
++
++    @Query("DELETE FROM ocr_pages")
++    suspend fun clear()
++}
++
++/** Storage seam of [OcrSearchRepository]. */
++interface OcrIndexStore {
++    suspend fun upsertAll(rows: List<OcrPageEntity>)
++    suspend fun all(): List<OcrPageEntity>
++    suspend fun forBook(bookKey: String): List<OcrPageEntity>
++    suspend fun prefilter(needle: String): List<OcrPageEntity>
++    suspend fun deleteForBook(bookKey: String)
++    suspend fun size(): Int
++}
++
++class RoomOcrIndexStore(private val dao: OcrPageDao) : OcrIndexStore {
++    override suspend fun upsertAll(rows: List<OcrPageEntity>) {
++        if (rows.isNotEmpty()) dao.upsertAll(rows)
++    }
++
++    override suspend fun all(): List<OcrPageEntity> = dao.loadAll()
++
++    override suspend fun forBook(bookKey: String): List<OcrPageEntity> = dao.loadForBook(bookKey)
++
++    override suspend fun prefilter(needle: String): List<OcrPageEntity> = dao.prefilter(needle)
++
++    override suspend fun deleteForBook(bookKey: String) = dao.deleteForBook(bookKey)
++
++    override suspend fun size(): Int = dao.count()
++}
++
++/** Deterministic in-memory index: JVM tests, previews, "do not persist" mode. */
++class InMemoryOcrIndexStore : OcrIndexStore {
++    private val rows = LinkedHashMap<String, OcrPageEntity>()
++
++    override suspend fun upsertAll(rows: List<OcrPageEntity>) {
++        rows.forEach { this.rows[it.key] = it }
++    }
++
++    override suspend fun all(): List<OcrPageEntity> =
++        rows.values.sortedWith(compareBy({ it.bookKey }, { it.pageIndex }))
++
++    override suspend fun forBook(bookKey: String): List<OcrPageEntity> =
++        all().filter { it.bookKey == bookKey }
++
++    override suspend fun prefilter(needle: String): List<OcrPageEntity> =
++        all().filter { needle.isEmpty() || it.normalizedText.contains(needle) }
++
++    override suspend fun deleteForBook(bookKey: String) {
++        rows.entries.removeIf { it.value.bookKey == bookKey }
++    }
++
++    override suspend fun size(): Int = rows.size
++}
++
++sealed interface OcrIndexReceipt {
++    /** Stored (or refreshed) an indexed page. */
++    data class Indexed(
++        val key: String,
++        val characters: Int,
++        val tokens: Int,
++        val durationMillis: Long,
++    ) : OcrIndexReceipt
++
++    /** The page produced no text — nothing is stored, the reader can skip it. */
++    data class EmptyPage(val pageIndex: Int) : OcrIndexReceipt
++
++    /** The on-demand model could not be installed. */
++    data class ModelUnavailable(val script: OcrScript, val reason: String) : OcrIndexReceipt
++
++    data class Failed(val reason: String) : OcrIndexReceipt
++}
++
++/** One search result, ready to be shown as "page N of <book>" with context. */
++data class OcrHit(
++    val bookKey: String,
++    val pageIndex: Int,
++    val script: OcrScript,
++    val score: Double,
++    val snippet: String,
++    val matchedTokens: Int,
++)
++
++/**
++ * Scanned-page OCR indexing + search.
++ *
++ * `engine` and `downloader` are seams: the JVM tests drive the loop with a fake
++ * engine and [InMemoryOnDemandDownloader]; the app passes
++ * platform/MlKitOcrProvider.kt and platform/MlKitModelDownloader.kt.
++ */
++class OcrSearchRepository(
++    private val engine: OcrEngine,
++    private val store: OcrIndexStore = InMemoryOcrIndexStore(),
++    private val downloader: OnDemandDownloader? = null,
++    private val nowMillis: () -> Long = { System.currentTimeMillis() },
++) {
++
++    /**
++     * Recognises one scanned page and indexes the result. Never throws: the
++     * reader loop calls this per page and must be able to continue with the
++     * next one (a failed page only loses its own text).
++     */
++    suspend fun indexPage(request: OcrRequest, image: OcrImage): OcrIndexReceipt {
++        downloader?.let { downloader ->
++            val pack = OcrModelCatalog.packFor(request.script)
++            if (downloader.state(pack) != DownloadState.Installed) {
++                when (val result = downloader.ensureInstalled(pack)) {
++                    is DownloadResult.Failed ->
++                        return OcrIndexReceipt.ModelUnavailable(request.script, result.reason)
++                    DownloadResult.Unsupported ->
++                        return OcrIndexReceipt.ModelUnavailable(request.script, "downloader unsupported")
++                    else -> Unit
++                }
++            }
++        }
++
++        val result = try {
++            engine.recognize(request, image)
++        } catch (failure: Exception) {
++            return OcrIndexReceipt.Failed(failure.message ?: failure::class.java.simpleName)
++        }
++
++        val rawText = result.rawText
++        val normalized = OcrTextNormalizer.normalize(rawText)
++        if (normalized.isBlank()) return OcrIndexReceipt.EmptyPage(request.pageIndex)
++
++        val tokens = OcrTextNormalizer.tokens(normalized)
++        val entity = OcrPageEntity(
++            key = pageKey(request.bookKey, request.pageIndex, request.script),
++            bookKey = request.bookKey,
++            pageIndex = request.pageIndex,
++            script = request.script.name,
++            text = rawText,
++            normalizedText = normalized,
++            tokenCount = tokens.size,
++            recognizedAt = nowMillis(),
++            durationMillis = result.durationMillis,
++        )
++        store.upsertAll(listOf(entity))
++        return OcrIndexReceipt.Indexed(
++            key = entity.key,
++            characters = normalized.length,
++            tokens = tokens.size,
++            durationMillis = result.durationMillis,
++        )
++    }
++
++    /**
++     * Ranked search over the indexed pages.
++     *
++     * Scoring (deterministic, no fuzzy matching):
++     *   * fraction of the query tokens present in the page — weight 0.75;
++     *   * +0.25 when the whole normalised query appears verbatim.
++     * Hits below [minScore] are dropped, which keeps a 5-token query from
++     * returning pages that merely repeat one common word.
++     */
++    suspend fun search(
++        query: String,
++        bookKey: String? = null,
++        limit: Int = 20,
++        minScore: Double = DEFAULT_MIN_SCORE,
++        snippetRadius: Int = DEFAULT_SNIPPET_RADIUS,
++    ): List<OcrHit> {
++        val normalizedQuery = OcrTextNormalizer.normalize(query)
++        val queryTokens = OcrTextNormalizer.tokens(normalizedQuery).distinct()
++        if (queryTokens.isEmpty()) return emptyList()
++
++        val candidates = if (bookKey != null) {
++            store.forBook(bookKey)
++        } else {
++            store.prefilter(queryTokens.maxByOrNull { it.length } ?: normalizedQuery)
++        }
++
++        return candidates.mapNotNull { row ->
++            val score = score(row, normalizedQuery, queryTokens)
++            if (score < minScore) return@mapNotNull null
++            OcrHit(
++                bookKey = row.bookKey,
++                pageIndex = row.pageIndex,
++                script = runCatching { OcrScript.valueOf(row.script) }.getOrDefault(OcrScript.LATIN),
++                score = score,
++                snippet = snippet(row.normalizedText, normalizedQuery, queryTokens, snippetRadius),
++                matchedTokens = queryTokens.count { row.normalizedText.contains(it, ignoreCase = true) },
++            )
++        }
++            .sortedWith(
++                compareByDescending<OcrHit> { it.score }
++                    .thenBy { it.bookKey }
++                    .thenBy { it.pageIndex },
++            )
++            .take(limit.coerceAtLeast(1))
++    }
++
++    /** Number of indexed pages of a book (progress of the scan-to-index pass). */
++    suspend fun indexedPages(bookKey: String): Int = store.forBook(bookKey).size
++
++    suspend fun size(): Int = store.size()
++
++    /** Drops the OCR index of a book (called when the book is deleted). */
++    suspend fun forgetBook(bookKey: String) = store.deleteForBook(bookKey)
++
++    private fun score(row: OcrPageEntity, normalizedQuery: String, queryTokens: List<String>): Double {
++        val matched = queryTokens.count { row.normalizedText.contains(it, ignoreCase = true) }
++        val fraction = matched.toDouble() / queryTokens.size
++        val verbatim = if (normalizedQuery.isNotEmpty() &&
++            row.normalizedText.contains(normalizedQuery, ignoreCase = true)
++        ) {
++            1.0
++        } else {
++            0.0
++        }
++        return (fraction * 0.75) + (verbatim * 0.25)
++    }
++
++    private fun snippet(
++        text: String,
++        normalizedQuery: String,
++        queryTokens: List<String>,
++        radius: Int,
++    ): String {
++        val index = when {
++            normalizedQuery.isNotEmpty() -> text.indexOf(normalizedQuery, ignoreCase = true)
++            else -> -1
++        }.takeIf { it >= 0 }
++            ?: queryTokens.asSequence()
++                .map { text.indexOf(it, ignoreCase = true) }
++                .filter { it >= 0 }
++                .minOrNull()
++            ?: 0
++        val start = (index - radius).coerceAtLeast(0)
++        val end = (index + normalizedQuery.length.coerceAtMost(text.length) + radius)
++            .coerceAtMost(text.length)
++        val prefix = if (start > 0) "…" else ""
++        val suffix = if (end < text.length) "…" else ""
++        return prefix + text.substring(start, end).trim() + suffix
++    }
++
++    companion object {
++        const val DEFAULT_MIN_SCORE: Double = 0.34
++        const val DEFAULT_SNIPPET_RADIUS: Int = 40
++
++        fun pageKey(bookKey: String, pageIndex: Int, script: OcrScript): String =
++            "$bookKey#$pageIndex#${script.name}"
++    }
++}
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloader.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloader.kt
+new file mode 100644
+index 00000000..f188e33e
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloader.kt
+@@ -0,0 +1,145 @@
++// feature/ocr — on-demand model download contract (P6).
++//
++// SHARED CONTRACT WITH THE P6 DICTIONARY MODULE
++// ---------------------------------------------
++// `feature:ocr` and `feature:dictionary` (P6 词典, native MDX/MDD) both need
++// "download a model pack on first use, remember it, expose progress". Both
++// sub-agents define an interface with the name [OnDemandDownloader] and the
++// behaviour below; when both modules are registered in android/settings.gradle
++// the MAIN THREAD decides where the single shared declaration lives
++// (`:core:common`, or `:feature:dictionary` owning it with `:feature:ocr`
++// depending on it). Until then each module stays self-contained — no module
++// depends on a file that only exists in the other one.
++//
++// Contract (verified by OnDemandModelDownloaderTest for the in-memory double,
++// and by platform/MlKitModelDownloader.kt for ML Kit):
++//   1. `state` is cheap and non-blocking — safe to call from the main thread /
++//      on every recomposition; it never performs IO.
++//   2. `ensureInstalled` is idempotent: an already installed pack resolves to
++//      [DownloadResult.AlreadyInstalled] without touching the network.
++//   3. Progress callbacks are monotonically non-decreasing and inside 0f..1f;
++//      an instant install may skip the callback entirely.
++//   4. There is no partially installed state: the result is either
++//      [DownloadResult.Downloaded]/[DownloadResult.AlreadyInstalled] or
++//      [DownloadResult.Failed].
++//   5. Concurrent calls for the same pack are coalesced by the implementation
++//      (one in-flight download, late callers observe [DownloadState.Downloading]).
++//   6. `release` may be unsupported: ML Kit downloads live in Google Play
++//      services and CANNOT be removed by the app, so it returns `false` there
++//      and the UI must not promise a "free up space" action for those packs.
++package com.koodoreader.feature.ocr
++
++/** One downloadable pack. OCR packs are ML Kit script models. */
++data class ModelPack(
++    val id: String,
++    val displayName: String,
++    val approxBytes: Long,
++    val script: OcrScript? = null,
++    /** `android:value` token used by the ML Kit manifest meta-data. */
++    val manifestValue: String = script?.manifestValue ?: id,
++)
++
++/** Observable-ish state of a pack, cheap to query. */
++sealed interface DownloadState {
++    data object NotInstalled : DownloadState
++    data class Downloading(val progress: Float?) : DownloadState
++    data object Installed : DownloadState
++    data class Failed(val reason: String, val retryable: Boolean = true) : DownloadState
++}
++
++sealed interface DownloadResult {
++    data object AlreadyInstalled : DownloadResult
++    data class Downloaded(val bytes: Long) : DownloadResult
++    data class Failed(val reason: String, val retryable: Boolean = true) : DownloadResult
++    data object Unsupported : DownloadResult
++}
++
++/**
++ * The seam both P6 modules implement. See the contract list above.
++ */
++interface OnDemandDownloader {
++    fun state(pack: ModelPack): DownloadState
++    suspend fun ensureInstalled(pack: ModelPack, onProgress: ((Float) -> Unit)? = null): DownloadResult
++
++    /** @return true when the pack was actually removed. */
++    suspend fun release(pack: ModelPack): Boolean
++}
++
++/** OCR side of the pack catalogue (the dictionary module has its own). */
++object OcrModelCatalog {
++
++    val packs: List<ModelPack> = OcrScript.entries.map { script ->
++        ModelPack(
++            id = "mlkit-text-recognition-${script.name.lowercase()}",
++            displayName = "ML Kit OCR (${script.name.lowercase()})",
++            approxBytes = script.unbundledBytes,
++            script = script,
++        )
++    }
++
++    fun packFor(script: OcrScript): ModelPack =
++        packs.first { it.script == script }
++
++    /** Bundled alternative: ~4 MB per script per ABI — see the design doc §5. */
++    fun bundledBytes(scripts: Collection<OcrScript>): Long =
++        scripts.distinct().sumOf { it.bundledBytes }
++}
++
++/**
++ * Deterministic double used by unit tests, Compose previews and the
++ * "no Play services" fallback path. [steps] simulates a multi-step download so
++ * progress reporting can be asserted.
++ */
++class InMemoryOnDemandDownloader(
++    installed: Set<String> = emptySet(),
++    private val steps: Int = 3,
++    private val failWith: String? = null,
++    private val installable: (ModelPack) -> Boolean = { true },
++) : OnDemandDownloader {
++
++    private val installedIds = installed.toMutableSet()
++    private val states = mutableMapOf<String, DownloadState>()
++    private val inFlight = mutableSetOf<String>()
++
++    /** Records the packs whose download was actually attempted. */
++    val downloadAttempts = mutableListOf<String>()
++
++    override fun state(pack: ModelPack): DownloadState =
++        states[pack.id] ?: if (pack.id in installedIds) DownloadState.Installed else DownloadState.NotInstalled
++
++    override suspend fun ensureInstalled(
++        pack: ModelPack,
++        onProgress: ((Float) -> Unit)?,
++    ): DownloadResult {
++        if (pack.id in installedIds) return DownloadResult.AlreadyInstalled
++        if (!installable(pack)) {
++            states[pack.id] = DownloadState.Failed("not supported on this device", retryable = false)
++            return DownloadResult.Failed("not supported on this device", retryable = false)
++        }
++        failWith?.let { reason ->
++            states[pack.id] = DownloadState.Failed(reason)
++            return DownloadResult.Failed(reason)
++        }
++        synchronized(inFlight) {
++            if (!inFlight.add(pack.id)) return DownloadResult.Failed("already downloading", retryable = true)
++        }
++        try {
++            val effectiveSteps = steps.coerceAtLeast(1)
++            for (step in 1..effectiveSteps) {
++                states[pack.id] = DownloadState.Downloading(step.toFloat() / effectiveSteps)
++                onProgress?.invoke(step.toFloat() / effectiveSteps)
++            }
++            installedIds.add(pack.id)
++            states[pack.id] = DownloadState.Installed
++            downloadAttempts.add(pack.id)
++            return DownloadResult.Downloaded(pack.approxBytes)
++        } finally {
++            synchronized(inFlight) { inFlight.remove(pack.id) }
++        }
++    }
++
++    override suspend fun release(pack: ModelPack): Boolean {
++        states.remove(pack.id)
++        return installedIds.remove(pack.id)
++    }
++}
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitModelDownloader.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitModelDownloader.kt
+new file mode 100644
+index 00000000..8419b9c8
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitModelDownloader.kt
+@@ -0,0 +1,196 @@
++// feature/ocr — ML Kit model packs through the Play services module-install API.
++//
++// ML Kit's unbundled models ARE on-demand Google Play services modules, so the
++// download is driven by `ModuleInstallClient`
++// (https://developers.google.cn/android/guides/module-install-apis):
++//   areModulesAvailable → check, installModules → urgent install with progress,
++//   deferredInstall → background install, InstallStatusListener → progress.
++//
++// Two things the app must also do (main-thread wiring, NOT done by this module):
++//   1. request the install-time download in the app manifest:
++//        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
++//                   android:value="ocr,ocr_chinese" />
++//      (`OcrScript.manifestValue(listOf(...))` builds that value);
++//   2. add `com.google.android.gms:play-services-base` (ModuleInstall lives
++//      there) — already implied by the play-services-mlkit-* artifacts.
++//
++// Android-only file (excluded from the JVM harness); the contract it implements
++// is covered by OnDemandModelDownloaderTest against the in-memory double.
++package com.koodoreader.feature.ocr.platform
++
++import android.content.Context
++import com.google.android.gms.common.moduleinstall.InstallStatusListener
++import com.google.android.gms.common.moduleinstall.ModuleInstall
++import com.google.android.gms.common.moduleinstall.ModuleInstallClient
++import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
++import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate
++import com.google.android.gms.common.moduleinstall.OptionalModuleApi
++import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
++import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
++import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
++import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
++import com.google.mlkit.vision.text.latin.TextRecognizerOptions
++import com.koodoreader.feature.ocr.DownloadResult
++import com.koodoreader.feature.ocr.DownloadState
++import com.koodoreader.feature.ocr.ModelPack
++import com.koodoreader.feature.ocr.OcrScript
++import com.koodoreader.feature.ocr.OnDemandDownloader
++import java.util.concurrent.ConcurrentHashMap
++import kotlin.coroutines.resume
++import kotlinx.coroutines.suspendCancellableCoroutine
++
++/**
++ * The `OptionalModuleApi` handle of an ML Kit script model.
++ *
++ * ML Kit's text-recognition options objects are the module handles for the
++ * Play-services artifacts — the very same objects are passed to
++ * `TextRecognition.getClient(...)`. The declared return type is nullable on
++ * purpose: if a future ML Kit version stops exposing them here, this file stops
++ * COMPILING at these five lines instead of silently reporting "not installed".
++ * (Integration-time check, design doc §5.3.)
++ */
++object MlKitOptionalModuleApis {
++    fun of(script: OcrScript): OptionalModuleApi? = when (script) {
++        OcrScript.LATIN -> TextRecognizerOptions.DEFAULT_OPTIONS
++        OcrScript.CHINESE -> ChineseTextRecognizerOptions.Builder().build()
++        OcrScript.DEVANAGARI -> DevanagariTextRecognizerOptions.Builder().build()
++        OcrScript.JAPANESE -> JapaneseTextRecognizerOptions.Builder().build()
++        OcrScript.KOREAN -> KoreanTextRecognizerOptions.Builder().build()
++    }
++}
++
++/**
++ * [OnDemandDownloader] for ML Kit model packs.
++ *
++ * `state` never performs IO (contract rule 1): it returns the last observed
++ * availability, refreshed by [refresh] / [ensureInstalled].
++ * `release` always returns false — models live in Google Play services and
++ * cannot be removed by the app (contract rule 6).
++ */
++class MlKitModelDownloader(
++    private val client: ModuleInstallClient,
++    private val apiFor: (OcrScript) -> OptionalModuleApi? = MlKitOptionalModuleApis::of,
++) : OnDemandDownloader {
++
++    private val observed = ConcurrentHashMap<String, DownloadState>()
++
++    constructor(context: Context) : this(ModuleInstall.getClient(context.applicationContext))
++
++    override fun state(pack: ModelPack): DownloadState =
++        observed[pack.id] ?: DownloadState.NotInstalled
++
++    /** Queries Google Play services once and caches the answer. */
++    suspend fun refresh(pack: ModelPack): DownloadState {
++        val api = pack.script?.let(apiFor) ?: return DownloadState.NotInstalled
++        val available = suspendCancellableCoroutine { continuation ->
++            client.areModulesAvailable(api)
++                .addOnSuccessListener { response ->
++                    if (continuation.isActive) continuation.resume(response.areModulesAvailable())
++                }
++                .addOnFailureListener { error ->
++                    if (continuation.isActive) continuation.resumeWithException(error)
++                }
++        }
++        val state = if (available) DownloadState.Installed else DownloadState.NotInstalled
++        observed[pack.id] = state
++        return state
++    }
++
++    override suspend fun ensureInstalled(
++        pack: ModelPack,
++        onProgress: ((Float) -> Unit)?,
++    ): DownloadResult {
++        val api = pack.script?.let(apiFor)
++            ?: return DownloadResult.Unsupported
++
++        runCatching { refresh(pack) }
++        if (observed[pack.id] == DownloadState.Installed) return DownloadResult.AlreadyInstalled
++
++        observed[pack.id] = DownloadState.Downloading(null)
++        val outcome = runCatching {
++            suspendCancellableCoroutine { continuation ->
++                val listener = object : InstallStatusListener {
++                    override fun onInstallStatusUpdated(update: ModuleInstallStatusUpdate) {
++                        update.progressInfo?.let { info ->
++                            val total = info.totalBytesToDownload
++                            val progress =
++                                if (total > 0L) (info.bytesDownloaded.toFloat() / total.toFloat()) else null
++                            observed[pack.id] = DownloadState.Downloading(progress)
++                            if (progress != null && continuation.isActive) onProgress?.invoke(progress)
++                        }
++                        when (update.installState) {
++                            ModuleInstallStatusUpdate.InstallState.STATE_COMPLETED -> {
++                                client.unregisterListener(this)
++                                if (continuation.isActive) continuation.resume(DownloadResult.Downloaded(pack.approxBytes))
++                            }
++
++                            ModuleInstallStatusUpdate.InstallState.STATE_CANCELED -> {
++                                client.unregisterListener(this)
++                                if (continuation.isActive) {
++                                    continuation.resume(DownloadResult.Failed("download canceled"))
++                                }
++                            }
++
++                            ModuleInstallStatusUpdate.InstallState.STATE_FAILED -> {
++                                client.unregisterListener(this)
++                                if (continuation.isActive) {
++                                    continuation.resume(
++                                        DownloadResult.Failed(
++                                            update.errorCode.takeIf { it != 0 }
++                                                ?.let { "module install failed (error $it)" }
++                                                ?: "module install failed",
++                                        ),
++                                    )
++                                }
++                            }
++                        }
++                    }
++                }
++                val request = ModuleInstallRequest.newBuilder()
++                    .addApi(api)
++                    .setListener(listener)
++                    .build()
++                client.installModules(request)
++                    .addOnSuccessListener { response ->
++                        // "already installed" short-circuits the listener path.
++                        if (response.areModulesAlreadyInstalled() && continuation.isActive) {
++                            client.unregisterListener(listener)
++                            continuation.resume(DownloadResult.AlreadyInstalled)
++                        }
++                    }
++                    .addOnFailureListener { error ->
++                        client.unregisterListener(listener)
++                        if (continuation.isActive) {
++                            continuation.resume(DownloadResult.Failed(error.message ?: "module install request failed"))
++                        }
++                    }
++                continuation.invokeOnCancellation { client.unregisterListener(listener) }
++            }
++        }
++
++        return outcome.fold(
++            onSuccess = { result ->
++                observed[pack.id] = when (result) {
++                    DownloadResult.AlreadyInstalled, is DownloadResult.Downloaded -> DownloadState.Installed
++                    is DownloadResult.Failed -> DownloadState.Failed(result.reason, result.retryable)
++                    DownloadResult.Unsupported -> DownloadState.Failed("unsupported", retryable = false)
++                }
++                result
++            },
++            onFailure = { error ->
++                val reason = error.message ?: error::class.java.simpleName
++                observed[pack.id] = DownloadState.Failed(reason)
++                DownloadResult.Failed(reason)
++            },
++        )
++    }
++
++    /** ML Kit models are owned by Google Play services — the app cannot delete them. */
++    override suspend fun release(pack: ModelPack): Boolean {
++        observed.remove(pack.id)
++        return false
++    }
++
++    /** Convenience for the settings screen: install without progress reporting. */
++    suspend fun install(pack: ModelPack): DownloadResult = ensureInstalled(pack)
++}
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitOcrProvider.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitOcrProvider.kt
+new file mode 100644
+index 00000000..83c94e99
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/MlKitOcrProvider.kt
+@@ -0,0 +1,139 @@
++// feature/ocr — Android implementation of the OCR engine (ML Kit Text Recognition v2).
++//
++// API surface: `com.google.mlkit.vision.text.*` — the SAME classes for the
++// bundled artifact (`com.google.mlkit:text-recognition[-chinese|...]`) and for
++// the Play-services artifact
++// (`com.google.android.gms:play-services-mlkit-text-recognition[-chinese|...]`).
++// This module depends on the Play-services (ON-DEMAND) variant on purpose:
++//
++//   * the model is downloaded on first use / install time instead of adding
++//     ~4 MB per script per ABI to the APK (unbundled ≈ 260 KB per script per
++//     architecture);
++//   * no ML Kit `.so` is packaged into our APK at all, which removes the
++//     16 KB page-size risk at the source (Google maintains the libraries inside
++//     the Play services APK). See docs/p6-stats-ocr-design.md §5.
++//
++// Android-only file: it is excluded from the JVM test harness by the `platform/`
++// package rule (the pure loop it plugs into is covered by
++// OcrSearchRepositoryTest with a fake engine).
++package com.koodoreader.feature.ocr.platform
++
++import android.graphics.Bitmap
++import android.os.SystemClock
++import com.google.mlkit.vision.common.InputImage
++import com.google.mlkit.vision.text.Text
++import com.google.mlkit.vision.text.TextRecognition
++import com.google.mlkit.vision.text.TextRecognizer
++import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
++import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
++import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
++import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
++import com.google.mlkit.vision.text.latin.TextRecognizerOptions
++import com.koodoreader.feature.ocr.OcrBox
++import com.koodoreader.feature.ocr.OcrEngine
++import com.koodoreader.feature.ocr.OcrImage
++import com.koodoreader.feature.ocr.OcrLine
++import com.koodoreader.feature.ocr.OcrPageResult
++import com.koodoreader.feature.ocr.OcrRequest
++import com.koodoreader.feature.ocr.OcrScript
++import kotlin.coroutines.resume
++import kotlin.coroutines.resumeWithException
++import kotlinx.coroutines.suspendCancellableCoroutine
++
++/** [OcrImage] backed by an Android [Bitmap] (a rendered PDF page). */
++class MlKitPageImage(
++    val bitmap: Bitmap,
++    val rotationDegrees: Int = 0,
++) : OcrImage
++
++/**
++ * ML Kit text recognition behind the pure [OcrEngine] seam.
++ *
++ * One recognizer per script, created lazily and reused: ML Kit clients are
++ * expensive to build and are documented as safe to reuse. [close] releases all
++ * of them; the reader calls it when leaving the scanned document.
++ */
++class MlKitOcrProvider(
++    private val recognizerFactory: (OcrScript) -> TextRecognizer = ::defaultRecognizer,
++) : OcrEngine {
++
++    private val recognizers = LinkedHashMap<OcrScript, TextRecognizer>()
++
++    override suspend fun recognize(request: OcrRequest, image: OcrImage): OcrPageResult {
++        val page = image as? MlKitPageImage
++            ?: throw IllegalArgumentException("MlKitOcrProvider needs an MlKitPageImage, got ${image::class.java.name}")
++        require(page.bitmap.width > 0 && page.bitmap.height > 0) { "empty page bitmap" }
++
++        val recognizer = recognizers.getOrPut(request.script) { recognizerFactory(request.script) }
++        val input = InputImage.fromBitmap(page.bitmap, page.rotationDegrees)
++        val started = SystemClock.elapsedRealtime()
++        val text = recognizer.processSuspend(input)
++        return OcrPageResult(
++            bookKey = request.bookKey,
++            pageIndex = request.pageIndex,
++            script = request.script,
++            lines = text.toOcrLines(),
++            durationMillis = SystemClock.elapsedRealtime() - started,
++        )
++    }
++
++    override fun close() {
++        recognizers.values.forEach { runCatching { it.close() } }
++        recognizers.clear()
++    }
++
++    companion object {
++        /**
++         * ML Kit options per script. The class names are identical in the
++         * bundled and the Play-services artifacts; only the artifact in
++         * build.gradle decides where the model comes from.
++         */
++        fun defaultRecognizer(script: OcrScript): TextRecognizer = when (script) {
++            OcrScript.LATIN -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
++            OcrScript.CHINESE ->
++                TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
++            OcrScript.DEVANAGARI ->
++                TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
++            OcrScript.JAPANESE ->
++                TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
++            OcrScript.KOREAN ->
++                TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
++        }
++    }
++}
++
++/**
++ * Maps an ML Kit `Text` result onto the pure model. Blocks are flattened in
++ * reading order, exactly as ML Kit reports them
++ * (`textBlocks` → `lines` → `elements`).
++ */
++internal fun Text.toOcrLines(): List<OcrLine> {
++    val lines = ArrayList<OcrLine>(textBlocks.size * 4)
++    textBlocks.forEach { block ->
++        block.lines.forEach { line ->
++            lines.add(
++                OcrLine(
++                    text = line.text,
++                    box = line.boundingBox?.let { OcrBox(it.left, it.top, it.right, it.bottom) },
++                    confidence = line.confidence?.toFloat(),
++                    languageTag = line.recognizedLanguage,
++                ),
++            )
++        }
++    }
++    return lines
++}
++
++/**
++ * `TextRecognizer.process` returns a `Task`; awaiting it here with
++ * `suspendCancellableCoroutine` avoids pulling in
++ * `kotlinx-coroutines-play-services` just for one call.
++ */
++private suspend fun TextRecognizer.processSuspend(image: InputImage): Text =
++    suspendCancellableCoroutine { continuation ->
++        process(image)
++            .addOnSuccessListener { text -> if (continuation.isActive) continuation.resume(text) }
++            .addOnFailureListener { error ->
++                if (continuation.isActive) continuation.resumeWithException(error)
++            }
++    }
+diff --git a/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/OcrIndexDatabase.kt b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/OcrIndexDatabase.kt
+new file mode 100644
+index 00000000..6edca007
+--- /dev/null
++++ b/android/feature/ocr/src/main/kotlin/com/koodoreader/feature/ocr/platform/OcrIndexDatabase.kt
+@@ -0,0 +1,75 @@
++// feature/ocr — Android-only persistence host for the OCR page index.
++//
++// Own private database today (same reasoning as feature/stats): :core:data owns
++// `koodo.db`, and registering a table from a feature module there would need
++// :core:data → :feature:ocr (a dependency cycle) or a main-thread schema bump.
++// docs/p6-stats-ocr-design.md §4.2 contains the exact patch for the latter.
++package com.koodoreader.feature.ocr.platform
++
++import android.content.Context
++import androidx.room.Database
++import androidx.room.Room
++import androidx.room.RoomDatabase
++import com.koodoreader.feature.ocr.InMemoryOcrIndexStore
++import com.koodoreader.feature.ocr.InMemoryOnDemandDownloader
++import com.koodoreader.feature.ocr.OcrEngine
++import com.koodoreader.feature.ocr.OcrIndexStore
++import com.koodoreader.feature.ocr.OcrPageDao
++import com.koodoreader.feature.ocr.OcrPageEntity
++import com.koodoreader.feature.ocr.OcrSearchRepository
++import com.koodoreader.feature.ocr.OnDemandDownloader
++import com.koodoreader.feature.ocr.RoomOcrIndexStore
++
++@Database(
++    entities = [OcrPageEntity::class],
++    version = 1,
++    exportSchema = false,
++)
++abstract class OcrIndexDatabase : RoomDatabase() {
++    abstract fun ocrPageDao(): OcrPageDao
++
++    companion object {
++        const val NAME = "koodo-ocr-index.db"
++
++        @Volatile
++        private var instance: OcrIndexDatabase? = null
++
++        fun get(context: Context): OcrIndexDatabase =
++            instance ?: synchronized(this) {
++                instance ?: Room.databaseBuilder(
++                    context.applicationContext,
++                    OcrIndexDatabase::class.java,
++                    NAME,
++                ).build().also { instance = it }
++            }
++    }
++}
++
++/**
++ * Wires the pure loop to Android. The repository is the object the reader holds
++ * for the lifetime of a scanned document: index pages while the user reads,
++ * search the index afterwards.
++ */
++object OcrWiring {
++
++    fun store(context: Context): OcrIndexStore =
++        RoomOcrIndexStore(OcrIndexDatabase.get(context).ocrPageDao())
++
++    fun downloader(context: Context): OnDemandDownloader =
++        MlKitModelDownloader(context)
++
++    /**
++     * @param persistentIndex false keeps the index in memory only (used by the
++     *        "do not store OCR text" privacy switch and by tests/previews).
++     */
++    fun repository(
++        context: Context,
++        engine: OcrEngine = MlKitOcrProvider(),
++        persistentIndex: Boolean = true,
++        usePlayServices: Boolean = true,
++    ): OcrSearchRepository = OcrSearchRepository(
++        engine = engine,
++        store = if (persistentIndex) store(context) else InMemoryOcrIndexStore(),
++        downloader = if (usePlayServices) downloader(context) else InMemoryOnDemandDownloader(),
++    )
++}
+diff --git a/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrEngineTest.kt b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrEngineTest.kt
+new file mode 100644
+index 00000000..b369c4cb
+--- /dev/null
++++ b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrEngineTest.kt
+@@ -0,0 +1,96 @@
++package com.koodoreader.feature.ocr
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Script→model mapping and the OCR text normaliser. The normaliser is the
++ * desktop `cleanWindowsOcrText` port (src/utils/main/ocr-util.js): OCR engines
++ * break lines and space out CJK runs, and both must be undone before the text
++ * is indexed or searched.
++ */
++class OcrEngineTest {
++
++    @Test
++    fun `language tags select the ML Kit script`() {
++        assertEquals(OcrScript.CHINESE, OcrScript.forLanguageTag("zh-CN"))
++        assertEquals(OcrScript.CHINESE, OcrScript.forLanguageTag("zh_TW"))
++        assertEquals(OcrScript.JAPANESE, OcrScript.forLanguageTag("ja"))
++        assertEquals(OcrScript.KOREAN, OcrScript.forLanguageTag("ko-KR"))
++        assertEquals(OcrScript.DEVANAGARI, OcrScript.forLanguageTag("hi"))
++        assertEquals(OcrScript.LATIN, OcrScript.forLanguageTag("en"))
++        assertEquals(OcrScript.LATIN, OcrScript.forLanguageTag(null))
++        assertEquals(OcrScript.LATIN, OcrScript.forLanguageTag(""))
++    }
++
++    @Test
++    fun `manifest meta-data value lists the requested models`() {
++        assertEquals("ocr", OcrScript.manifestValue(listOf(OcrScript.LATIN)))
++        assertEquals(
++            "ocr,ocr_chinese,ocr_japanese",
++            OcrScript.manifestValue(listOf(OcrScript.LATIN, OcrScript.CHINESE, OcrScript.JAPANESE)),
++        )
++        // Duplicates are collapsed — the manifest token must stay stable.
++        assertEquals("ocr_chinese", OcrScript.manifestValue(listOf(OcrScript.CHINESE, OcrScript.CHINESE)))
++    }
++
++    @Test
++    fun `every script has both artifact coordinates`() {
++        OcrScript.entries.forEach { script ->
++            assertTrue(script.unbundledArtifact.contains("play-services-mlkit-text-recognition"))
++            assertTrue(script.bundledArtifact.startsWith("com.google.mlkit:text-recognition"))
++            assertTrue(script.bundledBytes > script.unbundledBytes)
++        }
++    }
++
++    @Test
++    fun `normalize joins CJK lines without a space`() {
++        assertEquals("扫描的页面文字", OcrTextNormalizer.normalize(listOf("扫描的", "页面文字")))
++        assertEquals("第一章开始", OcrTextNormalizer.normalize(listOf("第一章", "开始")))
++    }
++
++    @Test
++    fun `normalize dehyphenates latin words broken across lines`() {
++        assertEquals(
++            "international reader",
++            OcrTextNormalizer.normalize("inter-\nnational reader"),
++        )
++        // A hyphen that is not a line break must survive.
++        assertEquals("well-known", OcrTextNormalizer.normalize("well-known"))
++    }
++
++    @Test
++    fun `normalize collapses whitespace and trims`() {
++        assertEquals("hello world", OcrTextNormalizer.normalize("  hello \t world \n"))
++        assertEquals("", OcrTextNormalizer.normalize("   \n\n  "))
++        assertEquals("a b", OcrTextNormalizer.normalize("a\n\n\nb"))
++    }
++
++    @Test
++    fun `normalize keeps the space between latin and CJK`() {
++        assertEquals("阅读 reader", OcrTextNormalizer.normalize("阅读\nreader"))
++        assertEquals("reader 阅读", OcrTextNormalizer.normalize("reader\n阅读"))
++    }
++
++    @Test
++    fun `tokens split latin words and index CJK as uni and bigrams`() {
++        assertEquals(listOf("hello", "world"), OcrTextNormalizer.tokens("Hello, world!"))
++        assertEquals(
++            listOf("阅", "阅读", "读", "读页", "页"),
++            OcrTextNormalizer.tokens("阅读页"),
++        )
++        assertEquals(listOf("三", "三体", "体", "reader"), OcrTextNormalizer.tokens("三体 reader"))
++        assertTrue(OcrTextNormalizer.tokens("").isEmpty())
++    }
++
++    @Test
++    fun `isCjk covers kana hangul and ideographs but not latin`() {
++        assertTrue(OcrTextNormalizer.isCjk('中'))
++        assertTrue(OcrTextNormalizer.isCjk('あ'))
++        assertTrue(OcrTextNormalizer.isCjk('한'))
++        assertTrue(!OcrTextNormalizer.isCjk('a'))
++        assertTrue(!OcrTextNormalizer.isCjk('1'))
++        assertTrue(!OcrTextNormalizer.isCjk('《'))
++    }
++}
+diff --git a/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrSearchRepositoryTest.kt b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrSearchRepositoryTest.kt
+new file mode 100644
+index 00000000..0ebd18c1
+--- /dev/null
++++ b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OcrSearchRepositoryTest.kt
+@@ -0,0 +1,234 @@
++package com.koodoreader.feature.ocr
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * The scanned-page closed loop: recognise → normalise → index → search. Uses a
++ * fake engine plus the in-memory index, so the whole flow is asserted without
++ * ML Kit, Android or a database.
++ */
++class OcrSearchRepositoryTest {
++
++    private object FakeImage : OcrImage
++
++    private class FakeEngine(
++        private val lines: List<String>,
++        private val durationMillis: Long = 12L,
++        private val failure: String? = null,
++    ) : OcrEngine {
++        var calls = 0
++            private set
++
++        override suspend fun recognize(request: OcrRequest, image: OcrImage): OcrPageResult {
++            calls++
++            failure?.let { throw IllegalStateException(it) }
++            return OcrPageResult(
++                bookKey = request.bookKey,
++                pageIndex = request.pageIndex,
++                script = request.script,
++                lines = lines.map { OcrLine(it) },
++                durationMillis = durationMillis,
++            )
++        }
++    }
++
++    private val store = InMemoryOcrIndexStore()
++
++    private fun repository(
++        engine: OcrEngine,
++        downloader: OnDemandDownloader? = InMemoryOnDemandDownloader(),
++    ) = OcrSearchRepository(
++        engine = engine,
++        store = store,
++        downloader = downloader,
++        nowMillis = { 1_700_000_000_000L },
++    )
++
++    private fun request(pageIndex: Int, script: OcrScript = OcrScript.LATIN) =
++        OcrRequest(bookKey = "book-a", pageIndex = pageIndex, script = script)
++
++    @Test
++    fun `indexing a scanned page stores the normalised text`() = runBlocking {
++        val engine = FakeEngine(listOf("Scanning", "the page"))
++        val receipt = repository(engine).indexPage(request(0), FakeImage)
++
++        assertTrue(receipt is OcrIndexReceipt.Indexed)
++        val indexed = receipt as OcrIndexReceipt.Indexed
++        assertEquals("book-a#0#LATIN", indexed.key)
++        assertEquals(17, indexed.characters)
++        assertEquals(3, indexed.tokens)
++        assertEquals(12L, indexed.durationMillis)
++        assertEquals(1, store.size())
++        val row = store.all().single()
++        assertEquals("Scanning the page", row.normalizedText)
++        assertEquals("Scanning\nthe page", row.text)
++        assertEquals(1_700_000_000_000L, row.recognizedAt)
++        assertEquals(OcrPageEntity.ENGINE_MLKIT, row.engine)
++    }
++
++    @Test
++    fun `re-scanning a page replaces its row instead of duplicating it`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("first pass")))
++        repository.indexPage(request(3), FakeImage)
++        repository.indexPage(request(3), FakeImage)
++
++        assertEquals(1, store.size())
++        assertEquals("first pass", store.all().single().normalizedText)
++    }
++
++    @Test
++    fun `an empty page is not indexed`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("", "   ")))
++        val receipt = repository.indexPage(request(1), FakeImage)
++
++        assertEquals(OcrIndexReceipt.EmptyPage(1), receipt)
++        assertEquals(0, store.size())
++    }
++
++    @Test
++    fun `a page is indexed in the language it was scanned with`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("扫描的", "页面文字")))
++        val receipt = repository.indexPage(request(2, OcrScript.CHINESE), FakeImage)
++
++        assertTrue(receipt is OcrIndexReceipt.Indexed)
++        assertEquals("book-a#2#CHINESE", (receipt as OcrIndexReceipt.Indexed).key)
++        assertEquals("扫描的页面文字", store.all().single().normalizedText)
++    }
++
++    @Test
++    fun `a missing model is reported and nothing is indexed`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(failWith = "no play services")
++        val repository = repository(FakeEngine(listOf("text")), downloader)
++        val receipt = repository.indexPage(request(0), FakeImage)
++
++        assertTrue(receipt is OcrIndexReceipt.ModelUnavailable)
++        val unavailable = receipt as OcrIndexReceipt.ModelUnavailable
++        assertEquals(OcrScript.LATIN, unavailable.script)
++        assertEquals("no play services", unavailable.reason)
++        assertEquals(0, store.size())
++    }
++
++    @Test
++    fun `the model is downloaded once for many pages`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader()
++        val repository = repository(FakeEngine(listOf("page text")), downloader)
++        repository.indexPage(request(0), FakeImage)
++        repository.indexPage(request(1), FakeImage)
++        repository.indexPage(request(2), FakeImage)
++
++        assertEquals(1, downloader.downloadAttempts.size)
++        assertEquals(3, store.size())
++    }
++
++    @Test
++    fun `an engine failure is returned instead of thrown`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("x"), failure = "ml kit exploded"))
++        val receipt = repository.indexPage(request(0), FakeImage)
++
++        assertEquals(OcrIndexReceipt.Failed("ml kit exploded"), receipt)
++        assertEquals(0, store.size())
++    }
++
++    @Test
++    fun `search ranks the verbatim page first and filters weak matches`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("placeholder")))
++        repository.indexPage(OcrRequest("book-a", 1, OcrScript.LATIN), FakeImage) // placeholder
++        store.upsertAll(
++            listOf(
++                page("book-a", 5, "the quiet reader sat by the window"),
++                page("book-a", 9, "a quiet morning, the reader left"),
++                page("book-a", 12, "totally unrelated page"),
++            ),
++        )
++
++        val hits = repository.search("quiet reader")
++        assertEquals(listOf(5, 9), hits.map { it.pageIndex })
++        assertTrue(hits[0].score > hits[1].score)
++        assertEquals(2, hits[0].matchedTokens)
++        assertEquals(1.0, hits[0].score, 0.0001)
++        assertTrue(hits.none { it.pageIndex == 12 })
++    }
++
++    @Test
++    fun `search matches CJK through the bigram index`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("x")))
++        store.upsertAll(
++            listOf(
++                page("book-a", 1, "第一章 阅读的方法", OcrScript.CHINESE),
++                page("book-a", 2, "无关的一页", OcrScript.CHINESE),
++            ),
++        )
++
++        val hits = repository.search("阅读", bookKey = "book-a")
++        assertEquals(listOf(1), hits.map { it.pageIndex })
++        assertTrue(hits[0].snippet.contains("阅读"))
++    }
++
++    @Test
++    fun `search can be scoped to one book and limited`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("x")))
++        store.upsertAll(
++            listOf(
++                page("book-a", 1, "shared phrase here"),
++                page("book-b", 1, "shared phrase here too"),
++                page("book-b", 2, "shared phrase here again"),
++            ),
++        )
++
++        assertEquals(1, repository.search("shared phrase", bookKey = "book-a").size)
++        val limited = repository.search("shared phrase", limit = 1)
++        assertEquals(1, limited.size)
++        assertEquals("book-a", limited[0].bookKey)
++    }
++
++    @Test
++    fun `snippets carry ellipses and stay near the match`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("x")))
++        val long = "prefix ".repeat(20) + "needle in the haystack " + "suffix ".repeat(20)
++        store.upsertAll(listOf(page("book-a", 4, long.trim())))
++
++        val hit = repository.search("needle").single()
++        assertTrue(hit.snippet.startsWith("…"))
++        assertTrue(hit.snippet.endsWith("…"))
++        assertTrue(hit.snippet.contains("needle in the haystack"))
++    }
++
++    @Test
++    fun `blank queries and unknown books return nothing`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("some text")))
++        repository.indexPage(request(0), FakeImage)
++
++        assertTrue(repository.search("   ").isEmpty())
++        assertTrue(repository.search("text", bookKey = "missing").isEmpty())
++    }
++
++    @Test
++    fun `index size and book removal are exposed for the reader`() = runBlocking {
++        val repository = repository(FakeEngine(listOf("page text")))
++        repository.indexPage(request(0), FakeImage)
++        repository.indexPage(request(1), FakeImage)
++        assertEquals(2, repository.indexedPages("book-a"))
++
++        repository.forgetBook("book-a")
++        assertEquals(0, repository.size())
++    }
++
++    private fun page(
++        bookKey: String,
++        pageIndex: Int,
++        normalizedText: String,
++        script: OcrScript = OcrScript.LATIN,
++    ): OcrPageEntity = OcrPageEntity(
++        key = OcrSearchRepository.pageKey(bookKey, pageIndex, script),
++        bookKey = bookKey,
++        pageIndex = pageIndex,
++        script = script.name,
++        text = normalizedText,
++        normalizedText = normalizedText,
++        tokenCount = OcrTextNormalizer.tokens(normalizedText).size,
++        recognizedAt = 1L,
++    )
++}
+diff --git a/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloaderTest.kt b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloaderTest.kt
+new file mode 100644
+index 00000000..2ffbd334
+--- /dev/null
++++ b/android/feature/ocr/src/test/kotlin/com/koodoreader/feature/ocr/OnDemandModelDownloaderTest.kt
+@@ -0,0 +1,90 @@
++package com.koodoreader.feature.ocr
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Contract tests for the shared on-demand download interface (the dictionary
++ * module implements the same contract — see the file header of
++ * OnDemandModelDownloader.kt).
++ */
++class OnDemandModelDownloaderTest {
++
++    private val chinese = OcrModelCatalog.packFor(OcrScript.CHINESE)
++
++    @Test
++    fun `catalogue has one unbundled pack per script`() {
++        assertEquals(OcrScript.entries.size, OcrModelCatalog.packs.size)
++        assertEquals("mlkit-text-recognition-chinese", chinese.id)
++        assertEquals("ocr_chinese", chinese.manifestValue)
++        assertEquals(OcrScript.CHINESE.unbundledBytes, chinese.approxBytes)
++        // Bundled models are ~4 MB per script per ABI — the reason for the
++        // on-demand download (design doc §5).
++        assertEquals(4L * 1024L * 1024L * OcrScript.entries.size, OcrModelCatalog.bundledBytes(OcrScript.entries))
++    }
++
++    @Test
++    fun `state is NotInstalled before the first download`() {
++        val downloader = InMemoryOnDemandDownloader()
++        assertEquals(DownloadState.NotInstalled, downloader.state(chinese))
++    }
++
++    @Test
++    fun `ensureInstalled reports progress and ends Installed`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(steps = 4)
++        val progress = mutableListOf<Float>()
++        val result = downloader.ensureInstalled(chinese) { progress.add(it) }
++
++        assertEquals(DownloadResult.Downloaded(chinese.approxBytes), result)
++        assertEquals(listOf(0.25f, 0.5f, 0.75f, 1.0f), progress)
++        assertTrue(progress.zipWithNext().all { (a, b) -> b >= a }) // monotonic
++        assertTrue(progress.all { it in 0f..1f })
++        assertEquals(DownloadState.Installed, downloader.state(chinese))
++        assertEquals(listOf(chinese.id), downloader.downloadAttempts)
++    }
++
++    @Test
++    fun `an installed pack is never downloaded twice`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(installed = setOf(chinese.id))
++        var progressCalls = 0
++        val result = downloader.ensureInstalled(chinese) { progressCalls++ }
++
++        assertEquals(DownloadResult.AlreadyInstalled, result)
++        assertEquals(0, progressCalls)
++        assertTrue(downloader.downloadAttempts.isEmpty())
++    }
++
++    @Test
++    fun `a failing download has no partial state`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(failWith = "no network")
++        val result = downloader.ensureInstalled(chinese)
++
++        assertTrue(result is DownloadResult.Failed)
++        assertEquals("no network", (result as DownloadResult.Failed).reason)
++        assertTrue(result.retryable)
++        assertTrue(downloader.state(chinese) is DownloadState.Failed)
++        assertTrue(downloader.downloadAttempts.isEmpty())
++    }
++
++    @Test
++    fun `an unsupported pack fails non-retryably`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(installable = { false })
++        val result = downloader.ensureInstalled(chinese)
++
++        assertTrue(result is DownloadResult.Failed)
++        assertFalse((result as DownloadResult.Failed).retryable)
++        assertFalse((downloader.state(chinese) as DownloadState.Failed).retryable)
++    }
++
++    @Test
++    fun `release removes the pack only when it was installed`() = runBlocking {
++        val downloader = InMemoryOnDemandDownloader(steps = 1)
++        assertFalse(downloader.release(chinese)) // never installed
++        downloader.ensureInstalled(chinese)
++        assertTrue(downloader.release(chinese))
++        assertEquals(DownloadState.NotInstalled, downloader.state(chinese))
++    }
++}
+diff --git a/android/feature/stats/build.gradle b/android/feature/stats/build.gradle
+new file mode 100644
+index 00000000..d9628fa7
+--- /dev/null
++++ b/android/feature/stats/build.gradle
+@@ -0,0 +1,71 @@
++// feature/stats — native reading statistics (P6), aligned with the desktop
++// /stats page (src/pages/stats/*).
++//
++// Layout of the module:
++//   src/main/kotlin/.../stats/*.kt           pure Kotlin: models, aggregation,
++//                                            reading-time accounting, Room
++//                                            entity/DAO. NO Android imports, so
++//                                            the JVM unit tests below cover the
++//                                            desktop metric parity completely.
++//   src/main/kotlin/.../stats/ui/*.kt         Compose screen + ViewModel
++//   src/main/kotlin/.../stats/platform/*.kt   Room database + provider
++//
++// Wiring (main thread): add `include ':feature:stats'` to android/settings.gradle
++// (the P6 sub-agent must not touch that file) and
++// `implementation project(':feature:stats')` to :app. The module is
++// self-contained: it owns its `reading_sessions` table in a private database,
++// see docs/p6-stats-ocr-design.md §4 for the optional merge into koodo.db.
++plugins {
++    id 'com.android.library'
++    id 'org.jetbrains.kotlin.android'
++    id 'com.google.devtools.ksp'
++}
++
++android {
++    namespace 'com.koodoreader.feature.stats'
++    compileSdk 34
++
++    defaultConfig {
++        minSdk 24
++    }
++
++    compileOptions {
++        sourceCompatibility JavaVersion.VERSION_17
++        targetCompatibility JavaVersion.VERSION_17
++    }
++
++    kotlinOptions {
++        jvmTarget = '17'
++    }
++
++    buildFeatures {
++        compose true
++    }
++
++    composeOptions {
++        // Compose compiler compatible with Kotlin 1.9.24 (same as :app).
++        kotlinCompilerExtensionVersion '1.5.14'
++    }
++}
++
++dependencies {
++    def roomVersion = '2.6.1'
++    implementation "androidx.room:room-runtime:$roomVersion"
++    implementation "androidx.room:room-ktx:$roomVersion"
++    ksp "androidx.room:room-compiler:$roomVersion"
++
++    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
++    implementation composeBom
++    implementation 'androidx.compose.ui:ui'
++    implementation 'androidx.compose.foundation:foundation'
++    implementation 'androidx.compose.material3:material3'
++    implementation 'androidx.compose.ui:ui-tooling-preview'
++    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
++    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
++    debugImplementation 'androidx.compose.ui:ui-tooling'
++
++    // Local JVM unit tests: the pure core (stats/*.kt) is exercised on the
++    // JVM; no Android SDK needed for these.
++    testImplementation 'junit:junit:4.13.2'
++    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
++}
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ReadingSessionRepository.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ReadingSessionRepository.kt
+new file mode 100644
+index 00000000..d72f3629
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ReadingSessionRepository.kt
+@@ -0,0 +1,352 @@
++// feature/stats — reading-time persistence (P6).
++//
++// The desktop keeps reading time in two config blobs (`readingStats` per-day
++// sessions written by kookit's `ReadingTimeUtil`, and `readingTime` per-book
++// totals). Room is the native home for the same data: one row per contiguous
++// reading session, already attributed to ONE local calendar day, which makes
++// the /stats aggregation a pure fold over rows (see [StatsAggregator]).
++//
++// The repository is split in two halves:
++//   * `ReadingSessionEntity` / `ReadingSessionDao` / `ReadingSessionStore` —
++//     persistence (testable on the JVM: `androidx.room:room-common` is a plain
++//     annotation JAR, and the DAO is only implemented by Room at build time);
++//   * [ReadingSessionRepository] — the accounting state machine (idle gap
++//     clamping, midnight splitting, buffered flush). Unit-tested against
++//     [InMemoryReadingSessionStore] with an injected clock, so no test needs a
++//     real database, coroutine dispatcher or Android device.
++package com.koodoreader.feature.stats
++
++import androidx.room.ColumnInfo
++import androidx.room.Dao
++import androidx.room.Entity
++import androidx.room.Insert
++import androidx.room.OnConflictStrategy
++import androidx.room.PrimaryKey
++import androidx.room.Query
++
++/**
++ * One reading session.
++ *
++ * Column naming follows the P1 `core/data` convention (camelCase columns, `key`
++ * as the primary key) so a later move into `koodo.db` needs no rename. `day` is
++ * the desktop `dateToKey` string (`YYYY-MM-DD`) — the join key with the desktop
++ * `readingStats` blob during the P7 import/export round-trip.
++ */
++@Entity(tableName = "reading_sessions")
++data class ReadingSessionEntity(
++    @PrimaryKey @ColumnInfo(name = "key") val key: String,
++    @ColumnInfo(name = "bookKey") val bookKey: String,
++    @ColumnInfo(name = "day") val day: String,
++    @ColumnInfo(name = "startMillis") val startMillis: Long,
++    @ColumnInfo(name = "endMillis") val endMillis: Long,
++    @ColumnInfo(name = "seconds") val seconds: Long,
++    @ColumnInfo(name = "words") val words: Long = 0L,
++    @ColumnInfo(name = "cfi") val cfi: String? = null,
++) {
++    fun toSession(): ReadingSession = ReadingSession(
++        key = key,
++        bookKey = bookKey,
++        day = IsoDay.parse(day),
++        seconds = seconds,
++        words = words,
++        startMillis = startMillis,
++        endMillis = endMillis,
++    )
++}
++
++@Dao
++interface ReadingSessionDao {
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsert(row: ReadingSessionEntity)
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertAll(rows: List<ReadingSessionEntity>)
++
++    @Query("SELECT * FROM reading_sessions ORDER BY startMillis ASC")
++    suspend fun loadAll(): List<ReadingSessionEntity>
++
++    @Query("SELECT * FROM reading_sessions WHERE day = :day ORDER BY startMillis ASC")
++    suspend fun loadDay(day: String): List<ReadingSessionEntity>
++
++    @Query("SELECT * FROM reading_sessions WHERE bookKey = :bookKey ORDER BY startMillis ASC")
++    suspend fun loadForBook(bookKey: String): List<ReadingSessionEntity>
++
++    @Query("SELECT COALESCE(SUM(seconds), 0) FROM reading_sessions WHERE day = :day")
++    suspend fun secondsOn(day: String): Long
++
++    @Query("SELECT COALESCE(SUM(seconds), 0) FROM reading_sessions WHERE bookKey = :bookKey")
++    suspend fun secondsForBook(bookKey: String): Long
++
++    @Query("DELETE FROM reading_sessions WHERE `key` = :key")
++    suspend fun deleteByKey(key: String)
++
++    @Query("DELETE FROM reading_sessions WHERE bookKey = :bookKey")
++    suspend fun deleteForBook(bookKey: String)
++
++    @Query("DELETE FROM reading_sessions")
++    suspend fun clear()
++
++    @Query("SELECT COUNT(*) FROM reading_sessions")
++    suspend fun count(): Long
++}
++
++/**
++ * Storage seam of [ReadingSessionRepository]. Keeping the repository behind this
++ * interface is what makes the accounting unit-testable without Room/SQLite.
++ */
++interface ReadingSessionStore {
++    suspend fun upsertAll(rows: List<ReadingSessionEntity>)
++    suspend fun loadAll(): List<ReadingSessionEntity>
++    suspend fun deleteByKey(key: String)
++    suspend fun clear()
++}
++
++/** Room-backed store; the only production implementation. */
++class RoomReadingSessionStore(private val dao: ReadingSessionDao) : ReadingSessionStore {
++    override suspend fun upsertAll(rows: List<ReadingSessionEntity>) {
++        if (rows.isNotEmpty()) dao.upsertAll(rows)
++    }
++
++    override suspend fun loadAll(): List<ReadingSessionEntity> = dao.loadAll()
++
++    override suspend fun deleteByKey(key: String) = dao.deleteByKey(key)
++
++    override suspend fun clear() = dao.clear()
++}
++
++/**
++ * Deterministic in-memory store: used by JVM unit tests, Compose previews and
++ * the offline/no-database fallback of the shell.
++ */
++class InMemoryReadingSessionStore : ReadingSessionStore {
++    private val rows = LinkedHashMap<String, ReadingSessionEntity>()
++
++    override suspend fun upsertAll(rows: List<ReadingSessionEntity>) {
++        rows.forEach { this.rows[it.key] = it }
++    }
++
++    override suspend fun loadAll(): List<ReadingSessionEntity> =
++        rows.values.sortedBy { it.startMillis }
++
++    override suspend fun deleteByKey(key: String) {
++        rows.remove(key)
++    }
++
++    override suspend fun clear() = rows.clear()
++
++    fun size(): Int = rows.size
++}
++
++/**
++ * Reading-time accounting for the native reader.
++ *
++ * Rules (each one has a unit test in `ReadingSessionRepositoryTest`):
++ *  1. Wall-clock time is only credited for gaps between ticks that are at most
++ *     [idleTimeoutMillis]; a longer gap means the reader was backgrounded, so
++ *     the session is closed at the last tick and a fresh one starts now
++ *     (desktop `ReadingTimeUtil.start/stop` behaves the same way).
++ *  2. A tick that crosses local midnight is SPLIT between the two days, so the
++ *     calendar/streak maths never double-books a day.
++ *  3. Buffered time is flushed on session close, on a day boundary, every
++ *     [flushIntervalMillis] of credited reading, and on explicit [flush] —
++ *     a process kill therefore loses at most one flush interval.
++ *  4. Row keys are `bookKey|day|sessionStart`, so re-flushing is idempotent
++ *     (`OnConflictStrategy.REPLACE`).
++ */
++class ReadingSessionRepository(
++    private val store: ReadingSessionStore,
++    /** Zone offset (minutes) that applies at a given instant; `0` for tests. */
++    private val zoneOffsetMinutes: (Long) -> Int = { 0 },
++    private val nowMillis: () -> Long = { System.currentTimeMillis() },
++    private val idleTimeoutMillis: Long = DEFAULT_IDLE_TIMEOUT_MILLIS,
++    private val flushIntervalMillis: Long = DEFAULT_FLUSH_INTERVAL_MILLIS,
++) {
++    private var bookKey: String? = null
++    private var cfi: String? = null
++    private var lastTickMillis: Long = 0L
++    private var sessionStartMillis: Long = 0L
++
++    /**
++     * Accumulated session rows of this process, keyed by `bookKey|day|sessionStart`.
++     * Rows stay here after a flush: they are the running total, and re-writing
++     * only the dirty ones is what keeps a flush from truncating accumulated
++     * seconds (Room's REPLACE would otherwise drop the previously stored value).
++     */
++    private val buffered = LinkedHashMap<String, ReadingSessionEntity>()
++    private val dirtyKeys = LinkedHashSet<String>()
++    private var unflushedSeconds: Long = 0L
++
++    /** Sub-second carry, so a 1.5 s tick still credits 1 s and never drifts. */
++    private var pendingMillis: Long = 0L
++
++    val isActive: Boolean get() = bookKey != null
++
++    /** Opens a session for [bookKey] (no-op when the same book is already open). */
++    fun begin(bookKey: String, cfi: String? = null) {
++        if (this.bookKey == bookKey) {
++            this.cfi = cfi ?: this.cfi
++            return
++        }
++        closeActiveSession()
++        val now = nowMillis()
++        this.bookKey = bookKey
++        this.cfi = cfi
++        sessionStartMillis = now
++        lastTickMillis = now
++    }
++
++    /**
++     * Credits the time elapsed since the previous tick to the open session.
++     *
++     * @param wordsDelta words read since the previous tick
++     *                    (`StatsAggregator.wordCount(text)` for the rendered chunk)
++     */
++    suspend fun tick(wordsDelta: Long = 0L) {
++        val activeBook = bookKey ?: return
++        val now = nowMillis()
++        val gap = now - lastTickMillis
++        if (gap < 0L) {
++            // Clock moved backwards (NTP / user change) — re-anchor, credit nothing.
++            lastTickMillis = now
++            return
++        }
++        if (gap > idleTimeoutMillis) {
++            closeActiveSession()
++            bookKey = activeBook
++            sessionStartMillis = now
++            lastTickMillis = now
++            maybeFlush(force = true)
++            return
++        }
++        // Distribute the elapsed millis over the local days it spans, carrying
++        // the sub-second remainder forward into the newest part.
++        var remainder = pendingMillis
++        splitAcrossDays(lastTickMillis, now, zoneOffsetMinutes).forEach { (day, millis) ->
++            val total = millis + remainder
++            val seconds = total / 1000L
++            remainder = total - seconds * 1000L
++            credit(activeBook, day, seconds, wordsDelta = 0L, at = lastTickMillis)
++        }
++        pendingMillis = remainder
++        if (wordsDelta != 0L) {
++            creditWords(activeBook, IsoDay.ofMillis(now, zoneOffsetMinutes(now)), wordsDelta, at = now)
++        }
++        lastTickMillis = now
++        maybeFlush(force = false)
++    }
++
++    /** Closes the open session and flushes everything buffered. */
++    suspend fun end() {
++        closeActiveSession()
++        flush()
++    }
++
++    /**
++     * Writes every row touched since the previous flush. Safe to call at any
++     * time (idempotent keys, running totals kept in memory).
++     */
++    suspend fun flush() {
++        if (dirtyKeys.isEmpty()) return
++        val rows = dirtyKeys.mapNotNull { buffered[it] }
++        dirtyKeys.clear()
++        unflushedSeconds = 0L
++        store.upsertAll(rows)
++    }
++
++    /** Aggregated snapshot for the /stats screen (desktop metric parity). */
++    suspend fun snapshot(
++        booksRead: Int,
++        progressByBook: Map<String, Double> = emptyMap(),
++        today: IsoDay = IsoDay.ofMillis(nowMillis(), zoneOffsetMinutes(nowMillis())),
++        aggregator: StatsAggregator = StatsAggregator(),
++    ): StatsSnapshot = aggregator.aggregate(
++        sessions = store.loadAll().map { it.toSession() },
++        booksRead = booksRead,
++        progressByBook = progressByBook,
++        today = today,
++    )
++
++    /** Total credited seconds for one book (`readingTime` blob parity). */
++    suspend fun totalSecondsFor(bookKey: String): Long {
++        flush()
++        return store.loadAll().filter { it.bookKey == bookKey }.sumOf { it.seconds }
++    }
++
++    private fun closeActiveSession() {
++        // Nothing extra to persist: every credited second was already attributed
++        // to a (book, day) bucket by tick().
++        bookKey = null
++        cfi = null
++    }
++
++    private fun credit(bookKey: String, day: IsoDay, seconds: Long, wordsDelta: Long, at: Long) {
++        if (seconds <= 0L && wordsDelta == 0L) return
++        // One row per (book, day, session): the session start keeps the key
++        // stable across ticks, the day keeps the midnight split apart.
++        val key = rowKey(bookKey, day, sessionStartMillis)
++        val existing = buffered[key]
++        buffered[key] = (existing ?: ReadingSessionEntity(
++            key = key,
++            bookKey = bookKey,
++            day = day.toString(),
++            startMillis = sessionStartMillis,
++            endMillis = sessionStartMillis,
++            seconds = 0L,
++            words = 0L,
++            cfi = cfi,
++        )).copy(
++            seconds = (existing?.seconds ?: 0L) + seconds,
++            words = (existing?.words ?: 0L) + wordsDelta,
++            endMillis = maxOf(existing?.endMillis ?: 0L, at + seconds * 1000L),
++        )
++        dirtyKeys.add(key)
++        if (seconds > 0L) unflushedSeconds += seconds
++    }
++
++    /** Words are attributed to the day of the current instant (`at`). */
++    private fun creditWords(bookKey: String, day: IsoDay, wordsDelta: Long, at: Long) {
++        credit(bookKey, day, seconds = 0L, wordsDelta = wordsDelta, at = at)
++    }
++
++    private suspend fun maybeFlush(force: Boolean) {
++        if (force || unflushedSeconds >= flushIntervalMillis / 1000L) flush()
++    }
++
++    private fun rowKey(bookKey: String, day: IsoDay, startMillis: Long): String =
++        "$bookKey|$day|$startMillis"
++
++    companion object {
++        /** Desktop stops counting after ~2 minutes without interaction. */
++        const val DEFAULT_IDLE_TIMEOUT_MILLIS: Long = 120_000L
++
++        /** Flush at most every 30 s of credited reading. */
++        const val DEFAULT_FLUSH_INTERVAL_MILLIS: Long = 30_000L
++
++        /**
++         * Splits `[startMillis, endMillis)` into per-local-day MILLISECOND
++         * durations using [zoneOffsetMinutes] at each instant (DST-correct).
++         * Empty when the span is empty or reversed; a span inside one day yields
++         * exactly one entry.
++         */
++        fun splitAcrossDays(
++            startMillis: Long,
++            endMillis: Long,
++            zoneOffsetMinutes: (Long) -> Int,
++        ): List<Pair<IsoDay, Long>> {
++            if (endMillis <= startMillis) return emptyList()
++            val parts = ArrayList<Pair<IsoDay, Long>>(2)
++            var cursor = startMillis
++            while (cursor < endMillis) {
++                val offset = zoneOffsetMinutes(cursor)
++                val day = IsoDay.ofMillis(cursor, offset)
++                // First instant of the NEXT local day (offset at the cursor applies).
++                val nextDayStart = (day.epochDay + 1L) * 86_400_000L - offset * 60_000L
++                val boundary =
++                    if (nextDayStart <= cursor) endMillis else minOf(nextDayStart, endMillis)
++                parts.add(day to (boundary - cursor))
++                cursor = boundary
++            }
++            return parts
++        }
++    }
++}
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsAggregator.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsAggregator.kt
+new file mode 100644
+index 00000000..403c95a9
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsAggregator.kt
+@@ -0,0 +1,227 @@
++// feature/stats — the single source of truth for every number on /stats (P6).
++package com.koodoreader.feature.stats
++
++/**
++ * Aggregates persisted [ReadingSession]s into a [StatsSnapshot].
++ *
++ * Desktop parity notes (bug-for-bug, verified by reading
++ * `src/pages/stats/component.tsx`):
++ *  1. `longestStreak` is the LONGEST run of consecutive reading days inside the
++ *     trailing 365-day window — the desktop scans `i = 0..364` backwards from
++ *     today while keeping the maximum, so a run that ended months ago still
++ *     wins over a live run of the same length. The label says "streak", the
++ *     metric is "best streak in the last year".
++ *  2. `avgDailySeconds` divides by ACTIVE days (days with > 0 seconds), not by
++ *     the days since the first session.
++ *  3. The heatmap legend uses [HEATMAP_LEGEND_SECONDS] = 0/200/600/1200/2400
++ *     while the cells are coloured with [HEATMAP_COLOR_THRESHOLDS] =
++ *     300/900/1800. That desktop inconsistency is preserved here (and called
++ *     out in docs/p6-stats-ocr-design.md); changing it would break visual
++ *     parity with the web build.
++ *  4. `totalBooks` is the number of books with a non-empty `recordLocation`,
++ *     not the number of books in the library; it is supplied by the caller.
++ */
++class StatsAggregator {
++
++    /**
++     * @param sessions       day-attributed sessions (already split at midnight)
++     * @param booksRead      books with a non-empty `recordLocation` (desktop §1)
++     * @param progressByBook desktop `recordLocation.percentage`, a 0..1 fraction
++     * @param today          injected "today" — keeps the aggregation deterministic
++     */
++    fun aggregate(
++        sessions: List<ReadingSession>,
++        booksRead: Int,
++        progressByBook: Map<String, Double> = emptyMap(),
++        today: IsoDay,
++    ): StatsSnapshot {
++        val secondsByDay = LinkedHashMap<IsoDay, Long>()
++        var totalSeconds = 0L
++        var totalWords = 0L
++        for (session in sessions) {
++            val seconds = session.seconds.coerceAtLeast(0L)
++            secondsByDay[session.day] = (secondsByDay[session.day] ?: 0L) + seconds
++            totalSeconds += seconds
++            totalWords += session.words.coerceAtLeast(0L)
++        }
++
++        val activeDays = secondsByDay.count { it.value > 0L }
++        val avgDailySeconds =
++            if (activeDays > 0) Math.round(totalSeconds / activeDays.toDouble()) else 0L
++
++        return StatsSnapshot(
++            totalBooks = booksRead,
++            totalSeconds = totalSeconds,
++            longestStreak = longestStreak(secondsByDay, today),
++            avgDailySeconds = avgDailySeconds,
++            activeDays = activeDays,
++            totalWords = totalWords,
++            averageProgress = averageProgress(progressByBook),
++            last30Days = last30Days(secondsByDay, today),
++            heatmap = heatmap(secondsByDay, today),
++            secondsByDay = secondsByDay,
++        )
++    }
++
++    /**
++     * Longest run of days with reading inside
++     * `[today - (STREAK_WINDOW_DAYS - 1), today]` — mirrors the desktop
++     * backwards scan exactly.
++     */
++    fun longestStreak(secondsByDay: Map<IsoDay, Long>, today: IsoDay): Int {
++        var longest = 0
++        var current = 0
++        for (i in 0 until STREAK_WINDOW_DAYS) {
++            val day = today.plusDays(-i.toLong())
++            if ((secondsByDay[day] ?: 0L) > 0L) {
++                current++
++                if (current > longest) longest = current
++            } else {
++                current = 0
++            }
++        }
++        return longest
++    }
++
++    /** Desktop §5: fixed 30 entries, oldest first, `M/D` labels. */
++    fun last30Days(secondsByDay: Map<IsoDay, Long>, today: IsoDay): List<DayPoint> =
++        (CHART_DAYS - 1 downTo 0).map { back ->
++            val day = today.plusDays(-back.toLong())
++            DayPoint(day = day, label = "${day.month}/${day.day}", seconds = secondsByDay[day] ?: 0L)
++        }
++
++    /**
++     * Desktop §6: start at `today - 51 weeks`, snap back to that week's Sunday,
++     * then one cell per day up to and including today.
++     */
++    fun heatmap(secondsByDay: Map<IsoDay, Long>, today: IsoDay): List<HeatmapCell> {
++        val start = today
++            .plusDays(-(HEATMAP_WEEKS - 1).toLong() * 7L)
++            .plusDays(-today.dayOfWeek.toLong())
++        val cells = ArrayList<HeatmapCell>(HEATMAP_WEEKS * 7 + 6)
++        var day = start
++        while (day <= today) {
++            val seconds = secondsByDay[day] ?: 0L
++            cells.add(HeatmapCell(day = day, seconds = seconds, level = heatmapLevel(seconds)))
++            day = day.plusDays(1L)
++        }
++        return cells
++    }
++
++    /** `recordLocation.percentage` is a 0..1 fraction; the UI shows 0..100 with 2 decimals. */
++    fun averageProgress(progressByBook: Map<String, Double>): Double {
++        val values = progressByBook.values.filter { it.isFinite() && it > 0.0 }
++        if (values.isEmpty()) return 0.0
++        return round2(values.sum() / values.size * 100.0)
++    }
++
++    /**
++     * Desktop `renderHeatmap` pads the trailing week with invisible cells and
++     * splits the list into 7-cell columns (`null` = invisible cell).
++     */
++    fun heatmapWeeks(cells: List<HeatmapCell>): List<List<HeatmapCell?>> {
++        if (cells.isEmpty()) return emptyList()
++        val pad = (7 - cells.size % 7) % 7
++        val padded: List<HeatmapCell?> = cells + List(pad) { null }
++        return padded.chunked(7)
++    }
++
++    /**
++     * The month label of every heatmap column, `null` when the column gets no
++     * label. Desktop: the first column is always labelled (with its first
++     * visible day) and every later column is labelled when it contains the 1st
++     * of a month; the UI formats the returned day with the device locale.
++     */
++    fun heatmapMonthAnchors(weeks: List<List<HeatmapCell?>>): List<IsoDay?> =
++        weeks.mapIndexed { index, week ->
++            val firstVisible = week.firstOrNull { it != null }
++            if (index == 0) {
++                firstVisible?.day
++            } else {
++                week.firstOrNull { it != null && it.day.day == 1 }?.day
++            }
++        }
++
++    companion object {
++        /** Desktop loops `for (i = 0; i < 365; i++)`. */
++        const val STREAK_WINDOW_DAYS = 365
++
++        /** Desktop "Last 30 Days" chart. */
++        const val CHART_DAYS = 30
++
++        /** Desktop heatmap: `today - 51 * 7` days, snapped to Sunday. */
++        const val HEATMAP_WEEKS = 52
++
++        /** Desktop legend levels (`.heatmap-legend` maps these through getHeatmapColor). */
++        val HEATMAP_LEGEND_SECONDS = listOf(0L, 200L, 600L, 1200L, 2400L)
++
++        /** Desktop cell thresholds: <300 / <900 / <1800 / else. */
++        val HEATMAP_COLOR_THRESHOLDS = listOf(300L, 900L, 1800L)
++
++        /** Desktop `getHeatmapColor`: 0 = empty, 1..4 = increasing intensity. */
++        fun heatmapLevel(seconds: Long): Int = when {
++            seconds <= 0L -> 0
++            seconds < HEATMAP_COLOR_THRESHOLDS[0] -> 1
++            seconds < HEATMAP_COLOR_THRESHOLDS[1] -> 2
++            seconds < HEATMAP_COLOR_THRESHOLDS[2] -> 3
++            else -> 4
++        }
++
++        /** Desktop `formatTime`: `59s`, `5m`, `1h 5m` (seconds are dropped above 60). */
++        fun formatTime(seconds: Long): String {
++            if (seconds < 60L) return "${seconds}s"
++            val hours = seconds / 3600L
++            val minutes = (seconds % 3600L) / 60L
++            return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
++        }
++
++        /** Desktop `formatTime` for a fractional total (React state is numeric). */
++        fun formatTime(seconds: Double): String = formatTime(Math.round(seconds))
++
++        /**
++         * Word count used by the P6 word metric: CJK ideographs / kana / hangul
++         * count one per character, everything else is counted as
++         * whitespace-separated words.
++         */
++        fun wordCount(text: String): Long {
++            var words = 0L
++            var inLatinWord = false
++            for (ch in text) {
++                when {
++                    isCjk(ch) -> {
++                        words++
++                        inLatinWord = false
++                    }
++                    isWordChar(ch) -> {
++                        // Count a latin word once, at its first character.
++                        if (!inLatinWord) words++
++                        inLatinWord = true
++                    }
++                    else -> inLatinWord = false
++                }
++            }
++            return words
++        }
++
++        /** A latin word character: letters, digits and the two apostrophes. */
++        fun isWordChar(ch: Char): Boolean =
++            ch.isLetterOrDigit() || ch == '\'' || ch == '\u2019'
++
++        /**
++         * CJK ideographs (BMP), kana and hangul syllables. Characters outside
++         * the BMP (CJK ext B+, i.e. surrogate pairs) are not counted as words —
++         * they are rare enough in books that the desktop reader counts them the
++         * same way.
++         */
++        fun isCjk(ch: Char): Boolean {
++            val code = ch.code
++            return code in 0x3040..0x30FF || // kana
++                code in 0x3400..0x4DBF || // CJK ext A
++                code in 0x4E00..0x9FFF || // CJK unified
++                code in 0xAC00..0xD7AF || // hangul syllables
++                code in 0xF900..0xFAFF // CJK compatibility
++        }
++
++        private fun round2(value: Double): Double = Math.round(value * 100.0) / 100.0
++    }
++}
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsModels.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsModels.kt
+new file mode 100644
+index 00000000..95100043
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/StatsModels.kt
+@@ -0,0 +1,167 @@
++// feature/stats — pure-Kotlin statistics models (P6).
++//
++// Desktop /stats page (src/pages/stats/component.tsx) is the metric baseline:
++// books read, total reading time, "reading streak (days)" and daily average,
++// plus the last-30-days chart and the 52-week heatmap. Every number that the
++// Compose screen shows is produced by [StatsAggregator], so the aggregation can
++// be unit-tested on the JVM without the Android SDK (same approach as
++// :engine:feature).
++//
++// Deliberately dependency-free:
++//   * NO java.time — minSdk 24 without core-library desugaring would crash on
++//     API 24/25; [IsoDay] below is a tiny proleptic-Gregorian day value using
++//     the standard civil-days algorithm (Howard Hinnant, public domain).
++//   * NO Android / Compose / Room types — Android-only code lives in the
++//     `ui/` and `platform/` packages.
++package com.koodoreader.feature.stats
++
++/**
++ * A calendar day in the reader's local time zone (desktop uses `new Date()` +
++ * `getFullYear()/getMonth()/getDate()`, i.e. the local calendar date).
++ *
++ * `epochDay` (days since 1970-01-01) is the canonical form used for streak /
++ * window arithmetic; [toString] is the desktop storage-key format
++ * (`YYYY-MM-DD`, cf. `Stats.dateToKey`).
++ */
++data class IsoDay(val year: Int, val month: Int, val day: Int) : Comparable<IsoDay> {
++
++    /** Days since 1970-01-01 (may be negative). */
++    val epochDay: Long
++        get() {
++            val y = if (month <= 2) year - 1 else year
++            val era = (if (y >= 0) y else y - 399) / 400
++            val yoe = y - era * 400 // [0, 399]
++            val doy = (153 * (if (month > 2) month - 3 else month + 9) + 2) / 5 + day - 1 // [0, 365]
++            val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy // [0, 146096]
++            return era * 146097L + doe - 719468L
++        }
++
++    /** 0 = Sunday … 6 = Saturday — the desktop heatmap is Sunday-aligned. */
++    val dayOfWeek: Int
++        get() = (((epochDay + 4L) % 7L + 7L) % 7L).toInt()
++
++    fun plusDays(days: Long): IsoDay = ofEpochDay(epochDay + days)
++
++    fun daysUntil(other: IsoDay): Long = other.epochDay - epochDay
++
++    override fun compareTo(other: IsoDay): Int = epochDay.compareTo(other.epochDay)
++
++    /** `YYYY-MM-DD` — identical to the desktop `dateToKey` output. */
++    override fun toString(): String =
++        buildString(10) {
++            append(year.toString().padStart(4, '0'))
++            append('-')
++            append(month.toString().padStart(2, '0'))
++            append('-')
++            append(day.toString().padStart(2, '0'))
++        }
++
++    companion object {
++        fun ofEpochDay(epochDay: Long): IsoDay {
++            val z = epochDay + 719468L
++            val era = (if (z >= 0) z else z - 146096L) / 146097L
++            val doe = z - era * 146097L // [0, 146096]
++            val yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L // [0, 399]
++            val y = yoe + era * 400L
++            val doy = doe - (365L * yoe + yoe / 4L - yoe / 100L) // [0, 365]
++            val mp = (5L * doy + 2L) / 153L // [0, 11]
++            val d = doy - (153L * mp + 2L) / 5L + 1L // [1, 31]
++            val m = mp + if (mp < 10L) 3L else -9L // [1, 12]
++            return IsoDay(
++                year = (y + if (m <= 2L) 1L else 0L).toInt(),
++                month = m.toInt(),
++                day = d.toInt(),
++            )
++        }
++
++        /** Parses `YYYY-MM-DD`; throws [IllegalArgumentException] on anything else. */
++        fun parse(iso: String): IsoDay {
++            require(iso.length == 10 && iso[4] == '-' && iso[7] == '-') {
++                "not an ISO day: $iso"
++            }
++            val y = iso.substring(0, 4).toIntOrNull()
++            val m = iso.substring(5, 7).toIntOrNull()
++            val d = iso.substring(8, 10).toIntOrNull()
++            require(y != null && m != null && d != null && m in 1..12 && d in 1..31) {
++                "not an ISO day: $iso"
++            }
++            return IsoDay(y, m, d)
++        }
++
++        /**
++         * Local calendar day of [epochMillis], using the zone offset (minutes)
++         * that applies at that instant — DST-correct, unlike a fixed offset.
++         */
++        fun ofMillis(epochMillis: Long, zoneOffsetMinutes: Int): IsoDay {
++            val localMillis = epochMillis + zoneOffsetMinutes * 60_000L
++            return ofEpochDay(Math.floorDiv(localMillis, 86_400_000L))
++        }
++    }
++}
++
++/**
++ * One reading session as persisted by [ReadingSessionRepository]: a contiguous
++ * span of reading time already attributed to a single calendar [day] (spans
++ * crossing midnight are split by the repository, mirroring how the desktop
++ * `ReadingTimeUtil` books seconds into the day key it saw).
++ */
++data class ReadingSession(
++    val key: String,
++    val bookKey: String,
++    val day: IsoDay,
++    val seconds: Long,
++    val words: Long = 0L,
++    val startMillis: Long = 0L,
++    val endMillis: Long = startMillis,
++)
++
++/** Chart point of the "Last 30 Days" section (desktop: `{date: M/D, seconds}`). */
++data class DayPoint(
++    val day: IsoDay,
++    val label: String,
++    val seconds: Long,
++) {
++    /** Desktop rounds to whole minutes for both the axis and the tooltip. */
++    val minutes: Long get() = Math.round(seconds / 60.0)
++}
++
++/** Heatmap cell of the "Reading Activity" section. */
++data class HeatmapCell(
++    val day: IsoDay,
++    val seconds: Long,
++    /** 0..4, see [StatsAggregator.heatmapLevel] (desktop `getHeatmapColor`). */
++    val level: Int,
++)
++
++/**
++ * Everything the /stats screen renders. Field-for-field the desktop
++ * `StatsState` (src/pages/stats/interface.tsx) plus the two P6 additions that
++ * the desktop has no card for yet: [totalWords] and [averageProgress].
++ */
++data class StatsSnapshot(
++    val totalBooks: Int,
++    val totalSeconds: Long,
++    val longestStreak: Int,
++    val avgDailySeconds: Long,
++    val activeDays: Int,
++    val totalWords: Long,
++    val averageProgress: Double,
++    val last30Days: List<DayPoint>,
++    val heatmap: List<HeatmapCell>,
++    val secondsByDay: Map<IsoDay, Long>,
++) {
++    companion object {
++        val EMPTY = StatsSnapshot(
++            totalBooks = 0,
++            totalSeconds = 0L,
++            longestStreak = 0,
++            avgDailySeconds = 0L,
++            activeDays = 0,
++            totalWords = 0L,
++            averageProgress = 0.0,
++            last30Days = emptyList(),
++            heatmap = emptyList(),
++            secondsByDay = emptyMap(),
++        )
++    }
++}
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/platform/StatsDatabase.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/platform/StatsDatabase.kt
+new file mode 100644
+index 00000000..652c87fe
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/platform/StatsDatabase.kt
+@@ -0,0 +1,78 @@
++// feature/stats — Android-only persistence host.
++//
++// Room needs a `@Database` class to generate DAO implementations, and that class
++// must live in an Android module (RoomDatabase is an Android type). The module
++// therefore owns a small private database today; merging `reading_sessions`
++// into :core:data's `koodo.db` is a main-thread decision because it changes the
++// Room schema version (see docs/p6-stats-ocr-design.md §4.2, which contains the
++// exact patch).
++package com.koodoreader.feature.stats.platform
++
++import android.content.Context
++import androidx.room.Database
++import androidx.room.Room
++import androidx.room.RoomDatabase
++import com.koodoreader.feature.stats.IsoDay
++import com.koodoreader.feature.stats.ReadingSessionDao
++import com.koodoreader.feature.stats.ReadingSessionEntity
++import com.koodoreader.feature.stats.ReadingSessionRepository
++import com.koodoreader.feature.stats.ReadingSessionStore
++import com.koodoreader.feature.stats.RoomReadingSessionStore
++import java.util.TimeZone
++
++@Database(
++    entities = [ReadingSessionEntity::class],
++    version = 1,
++    exportSchema = false,
++)
++abstract class StatsDatabase : RoomDatabase() {
++    abstract fun readingSessionDao(): ReadingSessionDao
++
++    companion object {
++        const val NAME = "koodo-stats.db"
++
++        @Volatile
++        private var instance: StatsDatabase? = null
++
++        fun get(context: Context): StatsDatabase =
++            instance ?: synchronized(this) {
++                instance ?: Room.databaseBuilder(
++                    context.applicationContext,
++                    StatsDatabase::class.java,
++                    NAME,
++                ).build().also { instance = it }
++            }
++    }
++}
++
++/**
++ * Production wiring for the reader: same store interface the JVM tests use, so
++ * only this file (10 lines) is untested by the JVM suite.
++ *
++ * The zone offset is resolved per instant through [TimeZone] so a DST jump does
++ * not shift the day attribution of the seconds around the switch.
++ */
++object ReadingSessionWiring {
++
++    fun store(context: Context): ReadingSessionStore =
++        RoomReadingSessionStore(StatsDatabase.get(context).readingSessionDao())
++
++    fun repository(
++        context: Context,
++        nowMillis: () -> Long = { System.currentTimeMillis() },
++    ): ReadingSessionRepository = ReadingSessionRepository(
++        store = store(context),
++        zoneOffsetMinutes = { millis -> zoneOffsetMinutesAt(millis) },
++        nowMillis = nowMillis,
++    )
++
++    /** Offset of the device zone at [millis], in minutes (DST-correct). */
++    fun zoneOffsetMinutesAt(millis: Long): Int {
++        val zone = TimeZone.getDefault()
++        return zone.getOffset(millis) / 60_000
++    }
++
++    /** Local "today" of the device, used by the stats screen. */
++    fun localToday(nowMillis: Long): IsoDay =
++        IsoDay.ofMillis(nowMillis, zoneOffsetMinutesAt(nowMillis))
++}
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsScreen.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsScreen.kt
+new file mode 100644
+index 00000000..eddb7276
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsScreen.kt
+@@ -0,0 +1,405 @@
++// feature/stats — Compose UI: the native /stats screen (desktop parity).
++//
++// Desktop reference: src/pages/stats/{component.tsx,stats.css}. Layout, colour
++// tokens, chart behaviour and heatmap geometry are ported 1:1; the numbers come
++// from StatsAggregator (pure, unit-tested), the strings from the shell's
++// desktop-parity translator.
++//
++// Composition contract (keeps the module dependency-free — :app depends on
++// features, never the other way round):
++//   StatsScreen(state, t = { key -> LocalI18n.t(key) }, onClose = { nav.popBackStack() })
++//
++// Strings use the DESKTOP keys ("Reading Stats", "Books read", "Total reading
++// time", "Reading streak (days)", "Daily average", "Last 30 Days", "Bar Chart",
++// "Line Chart", "Reading Activity", "Reading progress", "Word count") so the
++// Android catalogs (verbatim copies of src/assets/locales/*.json, ADR-004)
++// translate them without a new key namespace.
++package com.koodoreader.feature.stats.ui
++
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.background
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.CircularProgressIndicator
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.Path
++import androidx.compose.ui.graphics.drawscope.Stroke
++import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.drawText
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.rememberTextMeasurer
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import com.koodoreader.feature.stats.DayPoint
++import com.koodoreader.feature.stats.HeatmapCell
++import com.koodoreader.feature.stats.StatsAggregator
++import com.koodoreader.feature.stats.StatsSnapshot
++import java.text.DateFormatSymbols
++
++/** Desktop palette (`stats.css` + inline colours in component.tsx). */
++data class StatsPalette(
++    val background: Color,
++    val card: Color,
++    val text: Color,
++    val line: Color,
++    val grid: Color,
++    val tabActiveBackground: Color,
++    val tabActiveText: Color,
++    val tabInactiveBackground: Color,
++    val tabInactiveText: Color,
++    val heatmapEmpty: Color,
++    val heatmap: List<Color>,
++) {
++    companion object {
++        fun of(dark: Boolean): StatsPalette = if (dark) {
++            StatsPalette(
++                background = Color(0xFF1E1E1E),
++                card = Color(0xFF2A2A2A),
++                text = Color(0xFFE0E0E0),
++                line = Color(0xFFFFB066),
++                grid = Color(0x14FFFFFF),
++                tabActiveBackground = Color(0xFF3A3A3A),
++                tabActiveText = Color.White,
++                tabInactiveBackground = Color(0x0FFFFFFF),
++                tabInactiveText = Color(0x99FFFFFF),
++                heatmapEmpty = Color(0x12FFFFFF),
++                heatmap = listOf(Color(0xFF0E4429), Color(0xFF006D32), Color(0xFF26A641), Color(0xFF39D353)),
++            )
++        } else {
++            StatsPalette(
++                background = Color(0xFFF5F5F5),
++                card = Color.White,
++                text = Color(0xFF333333),
++                line = Color(0xFFFF6B1A),
++                grid = Color(0x14000000),
++                tabActiveBackground = Color(0xFF333333),
++                tabActiveText = Color.White,
++                tabInactiveBackground = Color(0x0F000000),
++                tabInactiveText = Color(0x80000000),
++                heatmapEmpty = Color(0x12000000),
++                heatmap = listOf(Color(0xFF9BE9A8), Color(0xFF40C463), Color(0xFF30A14E), Color(0xFF216E39)),
++            )
++        }
++    }
++}
++
++/** Desktop `getHeatmapColor` + `legendLevels`. */
++fun heatmapColor(level: Int, palette: StatsPalette): Color =
++    if (level <= 0) palette.heatmapEmpty else palette.heatmap[(level - 1).coerceIn(0, 3)]
++
++@Composable
++fun StatsScreen(
++    state: StatsUiState,
++    modifier: Modifier = Modifier,
++    darkTheme: Boolean = false,
++    t: (String) -> String = { it },
++    onClose: () -> Unit = {},
++    onChartTabSelected: (ChartTab) -> Unit = {},
++) {
++    val palette = remember(darkTheme) { StatsPalette.of(darkTheme) }
++    Surface(modifier = modifier.fillMaxSize(), color = palette.background) {
++        Column(
++            modifier = Modifier
++                .fillMaxSize()
++                .padding(horizontal = 20.dp, vertical = 24.dp)
++                .horizontalScroll(rememberScrollState()),
++        ) {
++            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
++                Text(
++                    text = t("Reading Stats"),
++                    color = palette.text,
++                    fontSize = 28.sp,
++                    fontWeight = FontWeight.Bold,
++                    modifier = Modifier.weight(1f),
++                )
++                TextButton(onClick = onClose) { Text(text = "✕", color = palette.text, fontSize = 18.sp) }
++            }
++            Spacer(Modifier.height(20.dp))
++
++            if (state.isLoading) {
++                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
++                    CircularProgressIndicator()
++                }
++                return@Column
++            }
++
++            StatCards(state.snapshot, palette, t)
++            Spacer(Modifier.height(24.dp))
++            ChartSection(state, palette, t, onChartTabSelected)
++            Spacer(Modifier.height(24.dp))
++            HeatmapSection(state.snapshot, palette, t)
++        }
++    }
++}
++
++@Composable
++private fun StatCards(snapshot: StatsSnapshot, palette: StatsPalette, t: (String) -> String) {
++    val cards = listOf(
++        snapshot.totalBooks.toString() to t("Books read"),
++        StatsAggregator.formatTime(snapshot.totalSeconds) to t("Total reading time"),
++        snapshot.longestStreak.toString() to t("Reading streak (days)"),
++        StatsAggregator.formatTime(snapshot.avgDailySeconds) to t("Daily average"),
++    )
++    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++        cards.chunked(2).forEach { row ->
++            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                row.forEach { (value, label) ->
++                    StatCard(value, label, palette, Modifier.weight(1f))
++                }
++                if (row.size == 1) Spacer(Modifier.weight(1f))
++            }
++        }
++    }
++    Spacer(Modifier.height(12.dp))
++    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++        StatCard("${snapshot.totalWords}", t("Word count"), palette, Modifier.weight(1f))
++        StatCard("${snapshot.averageProgress}%", t("Reading progress"), palette, Modifier.weight(1f))
++    }
++}
++
++@Composable
++private fun StatCard(
++    value: String,
++    label: String,
++    palette: StatsPalette,
++    modifier: Modifier = Modifier,
++) {
++    Column(
++        modifier = modifier
++            .background(palette.card, RoundedCornerShape(16.dp))
++            .padding(horizontal = 16.dp, vertical = 20.dp),
++    ) {
++        Text(value, color = palette.text, fontSize = 25.sp, fontWeight = FontWeight.Bold)
++        Spacer(Modifier.height(6.dp))
++        Text(label, color = palette.text.copy(alpha = 0.6f), fontSize = 13.sp)
++    }
++}
++
++@Composable
++private fun ChartSection(
++    state: StatsUiState,
++    palette: StatsPalette,
++    t: (String) -> String,
++    onChartTabSelected: (ChartTab) -> Unit,
++) {
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .background(palette.card, RoundedCornerShape(16.dp))
++            .padding(16.dp),
++    ) {
++        Text(t("Last 30 Days"), color = palette.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
++        Spacer(Modifier.height(10.dp))
++        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            ChartTab.entries.forEach { tab ->
++                val selected = tab == state.chartTab
++                TextButton(
++                    onClick = { onChartTabSelected(tab) },
++                    modifier = Modifier.background(
++                        if (selected) palette.tabActiveBackground else palette.tabInactiveBackground,
++                        RoundedCornerShape(20.dp),
++                    ),
++                ) {
++                    Text(
++                        text = t(if (tab == ChartTab.BAR) "Bar Chart" else "Line Chart"),
++                        color = if (selected) palette.tabActiveText else palette.tabInactiveText,
++                        fontSize = 13.sp,
++                    )
++                }
++            }
++        }
++        Spacer(Modifier.height(12.dp))
++        ThirtyDayChart(state.snapshot.last30Days, state.chartTab, palette, Modifier.fillMaxWidth().height(220.dp))
++    }
++}
++
++/** Desktop `recharts` bar / area-line chart, hand-drawn on a Canvas. */
++@Composable
++private fun ThirtyDayChart(
++    points: List<DayPoint>,
++    tab: ChartTab,
++    palette: StatsPalette,
++    modifier: Modifier = Modifier,
++) {
++    val measurer = rememberTextMeasurer()
++    val labelStyle = remember(palette) {
++        TextStyle(fontSize = 10.sp, color = palette.text.copy(alpha = 0.5f))
++    }
++    Canvas(modifier) {
++        if (points.isEmpty()) return@Canvas
++        val axisHeight = 18.dp.toPx()
++        val axisWidth = 26.dp.toPx()
++        val plotWidth = size.width - axisWidth
++        val plotHeight = size.height - axisHeight
++        val maxMinutes = points.maxOf { it.minutes }.coerceAtLeast(1L).toFloat()
++        val slot = plotWidth / points.size
++        val barWidth = slot * 0.55f
++
++        // Horizontal grid lines (desktop CartesianGrid: 3 dashed lines, no verticals).
++        for (step in 0..3) {
++            val y = plotHeight * step / 3f
++            drawLine(
++                color = palette.grid,
++                start = Offset(axisWidth, y),
++                end = Offset(size.width, y),
++                strokeWidth = 1f,
++            )
++        }
++        // Y axis: minutes, same as the desktop `tickFormatter` (`${v}m`).
++        listOf(0f, 0.5f, 1f).forEach { fraction ->
++            val value = kotlin.math.round(maxMinutes * (1f - fraction)).toInt()
++            drawText(
++                textMeasurer = measurer,
++                text = "${value}m",
++                style = labelStyle,
++                topLeft = Offset(0f, plotHeight * fraction - 6.dp.toPx()),
++            )
++        }
++
++        when (tab) {
++            ChartTab.BAR -> points.forEachIndexed { index, point ->
++                val height = plotHeight * (point.minutes / maxMinutes)
++                drawRoundRect(
++                    color = palette.text,
++                    topLeft = Offset(axisWidth + index * slot + (slot - barWidth) / 2f, plotHeight - height),
++                    size = Size(barWidth, height),
++                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
++                )
++            }
++
++            ChartTab.LINE -> {
++                val path = Path()
++                points.forEachIndexed { index, point ->
++                    val x = axisWidth + index * slot + slot / 2f
++                    val y = plotHeight - plotHeight * (point.minutes / maxMinutes)
++                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
++                }
++                drawPath(path, color = palette.line, style = Stroke(width = 2.5.dp.toPx()))
++                // Desktop draws the area under the line with a gradient; a flat
++                // translucent fill is the Compose equivalent.
++                val area = Path().apply {
++                    addPath(path)
++                    lineTo(axisWidth + (points.size - 0.5f) * slot, plotHeight)
++                    lineTo(axisWidth + slot / 2f, plotHeight)
++                    close()
++                }
++                drawPath(area, color = palette.line.copy(alpha = 0.18f))
++            }
++        }
++        // X labels every 5th point (desktop `interval={4}`).
++        points.forEachIndexed { index, point ->
++            if (index % 5 == 0 || index == points.lastIndex) {
++                drawText(
++                    textMeasurer = measurer,
++                    text = point.label,
++                    style = labelStyle,
++                    topLeft = Offset(axisWidth + index * slot, plotHeight + 4.dp.toPx()),
++                )
++            }
++        }
++    }
++}
++
++@Composable
++private fun HeatmapSection(snapshot: StatsSnapshot, palette: StatsPalette, t: (String) -> String) {
++    val aggregator = remember { StatsAggregator() }
++    val weeks = remember(snapshot) { aggregator.heatmapWeeks(snapshot.heatmap) }
++    val anchors = remember(weeks) { aggregator.heatmapMonthAnchors(weeks) }
++    val monthNames = remember { DateFormatSymbols.getInstance().shortMonths }
++    val cell = 13.dp
++    val gap = 3.dp
++
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .background(palette.card, RoundedCornerShape(16.dp))
++            .padding(16.dp),
++    ) {
++        Text(t("Reading Activity"), color = palette.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
++        Spacer(Modifier.height(12.dp))
++        Row {
++            // Weekday labels (desktop shows Mon/Wed/Fri only).
++            Column(
++                verticalArrangement = Arrangement.spacedBy(gap),
++                modifier = Modifier.padding(end = 6.dp),
++            ) {
++                Spacer(Modifier.height(14.dp)) // month-label row height
++                listOf("", "Mon", "", "Wed", "", "Fri", "").forEach { label ->
++                    Box(Modifier.size(cell), contentAlignment = Alignment.Center) {
++                        Text(label, color = palette.text.copy(alpha = 0.55f), fontSize = 9.sp)
++                    }
++                }
++            }
++            // 52 week columns, horizontally scrollable exactly like the
++            // desktop `.stats-heatmap-wrapper { overflow-x: auto }`.
++            Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
++                weeks.forEachIndexed { index, week ->
++                    Column(
++                        verticalArrangement = Arrangement.spacedBy(gap),
++                        modifier = Modifier.padding(end = gap),
++                    ) {
++                        Text(
++                            text = anchors[index]?.let { monthNames[it.month - 1] } ?: "",
++                            color = palette.text.copy(alpha = 0.55f),
++                            fontSize = 9.sp,
++                            maxLines = 1,
++                        )
++                        week.forEach { day ->
++                            Box(
++                                Modifier
++                                    .size(cell)
++                                    .background(
++                                        if (day == null) Color.Transparent
++                                        else heatmapColor(day.level, palette),
++                                        RoundedCornerShape(3.dp),
++                                    ),
++                            )
++                        }
++                    }
++                }
++            }
++        }
++        Spacer(Modifier.height(10.dp))
++        Row(
++            horizontalArrangement = Arrangement.spacedBy(4.dp),
++            modifier = Modifier.align(Alignment.End),
++        ) {
++            StatsAggregator.HEATMAP_LEGEND_SECONDS.forEach { seconds ->
++                Box(
++                    Modifier
++                        .size(cell)
++                        .background(
++                            heatmapColor(StatsAggregator.heatmapLevel(seconds), palette),
++                            RoundedCornerShape(3.dp),
++                        ),
++                )
++            }
++        }
++    }
++}
++
++/** Desktop `formatTime` tooltip text of one heatmap cell. */
++fun heatmapCellTooltip(cell: HeatmapCell): String =
++    "${cell.day}: ${StatsAggregator.formatTime(cell.seconds)}"
+diff --git a/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsViewModel.kt b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsViewModel.kt
+new file mode 100644
+index 00000000..e8a50dea
+--- /dev/null
++++ b/android/feature/stats/src/main/kotlin/com/koodoreader/feature/stats/ui/StatsViewModel.kt
+@@ -0,0 +1,63 @@
++// feature/stats — state holder of the /stats screen.
++package com.koodoreader.feature.stats.ui
++
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.setValue
++import androidx.lifecycle.ViewModel
++import androidx.lifecycle.viewModelScope
++import com.koodoreader.feature.stats.IsoDay
++import com.koodoreader.feature.stats.ReadingSessionRepository
++import com.koodoreader.feature.stats.StatsSnapshot
++import kotlinx.coroutines.launch
++
++/** Desktop `chartTab: "line" | "bar"`. */
++enum class ChartTab { BAR, LINE }
++
++/** Desktop `StatsState` + loading/error, in Compose-observable form. */
++data class StatsUiState(
++    val isLoading: Boolean = true,
++    val snapshot: StatsSnapshot = StatsSnapshot.EMPTY,
++    val chartTab: ChartTab = ChartTab.BAR,
++    val error: String? = null,
++)
++
++/**
++ * Loads the snapshot from [ReadingSessionRepository].
++ *
++ * `booksRead` and `progressByBook` come from the library/Room layer (desktop
++ * reads them from `recordLocation`), so they are injected as suspending
++ * providers instead of hard-wiring the module to :core:data.
++ */
++class StatsViewModel(
++    private val repository: ReadingSessionRepository,
++    private val booksReadProvider: suspend () -> Int = { 0 },
++    private val progressProvider: suspend () -> Map<String, Double> = { emptyMap() },
++    private val todayProvider: () -> IsoDay,
++) : ViewModel() {
++
++    var state by mutableStateOf(StatsUiState())
++        private set
++
++    fun load() {
++        state = state.copy(isLoading = true, error = null)
++        viewModelScope.launch {
++            state = try {
++                val snapshot = repository.snapshot(
++                    booksRead = booksReadProvider(),
++                    progressByBook = progressProvider(),
++                    today = todayProvider(),
++                )
++                state.copy(isLoading = false, snapshot = snapshot, error = null)
++            } catch (failure: Exception) {
++                // Desktop `loadStats` swallows database errors and shows zeroes;
++                // the native screen keeps the reason for the log instead.
++                state.copy(isLoading = false, snapshot = StatsSnapshot.EMPTY, error = failure.message)
++            }
++        }
++    }
++
++    fun selectChartTab(tab: ChartTab) {
++        state = state.copy(chartTab = tab)
++    }
++}
+diff --git a/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/IsoDayTest.kt b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/IsoDayTest.kt
+new file mode 100644
+index 00000000..93afb7c5
+--- /dev/null
++++ b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/IsoDayTest.kt
+@@ -0,0 +1,63 @@
++package com.koodoreader.feature.stats
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * [IsoDay] is the day arithmetic behind the streak / 30-day / heatmap windows,
++ * so it is pinned against known epoch days and the desktop `Date` accessors.
++ */
++class IsoDayTest {
++
++    @Test
++    fun `epoch day matches the reference values`() {
++        assertEquals(0L, IsoDay(1970, 1, 1).epochDay)
++        assertEquals(19358L, IsoDay(2023, 1, 1).epochDay)
++        assertEquals(19723L, IsoDay(2024, 1, 1).epochDay)
++        assertEquals(-1L, IsoDay(1969, 12, 31).epochDay)
++    }
++
++    @Test
++    fun `epoch day round trips across a leap year`() {
++        var day = IsoDay(2024, 2, 27)
++        repeat(5) { index ->
++            val expected = IsoDay(2024, 2, 27).plusDays(index.toLong())
++            assertEquals(expected, IsoDay.ofEpochDay(day.epochDay))
++            assertEquals(index.toLong(), IsoDay(2024, 2, 27).daysUntil(expected))
++            day = day.plusDays(1)
++        }
++        assertEquals(IsoDay(2024, 2, 29), IsoDay(2024, 2, 28).plusDays(1))
++        assertEquals(IsoDay(2024, 3, 1), IsoDay(2024, 2, 29).plusDays(1))
++    }
++
++    @Test
++    fun `dayOfWeek is Sunday-first like the desktop heatmap`() {
++        assertEquals(4, IsoDay(1970, 1, 1).dayOfWeek) // Thursday
++        assertEquals(0, IsoDay(2023, 1, 8).dayOfWeek) // Sunday
++        assertEquals(1, IsoDay(2024, 1, 1).dayOfWeek) // Monday
++        assertEquals(5, IsoDay(2024, 3, 15).dayOfWeek) // Friday
++        assertEquals(6, IsoDay(2024, 3, 16).dayOfWeek) // Saturday
++    }
++
++    @Test
++    fun `toString and parse are the desktop dateToKey format`() {
++        assertEquals("2024-03-05", IsoDay(2024, 3, 5).toString())
++        assertEquals("0999-01-02", IsoDay(999, 1, 2).toString())
++        assertEquals(IsoDay(2024, 3, 5), IsoDay.parse("2024-03-05"))
++    }
++
++    @Test(expected = IllegalArgumentException::class)
++    fun `parse rejects a malformed key`() {
++        IsoDay.parse("2024-3-5")
++    }
++
++    @Test
++    fun `ofMillis uses the offset that applies at that instant`() {
++        val midnightUtc = 1_704_067_200_000L // 2024-01-01T00:00:00Z
++        assertEquals(IsoDay(2024, 1, 1), IsoDay.ofMillis(midnightUtc, 0))
++        assertEquals(IsoDay(2023, 12, 31), IsoDay.ofMillis(midnightUtc, -60))
++        assertEquals(IsoDay(2024, 1, 1), IsoDay.ofMillis(midnightUtc + 30_000L, 0))
++        assertTrue(IsoDay.ofMillis(midnightUtc - 1L, 0) < IsoDay(2024, 1, 1))
++    }
++}
+diff --git a/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/ReadingSessionRepositoryTest.kt b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/ReadingSessionRepositoryTest.kt
+new file mode 100644
+index 00000000..f6fa1589
+--- /dev/null
++++ b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/ReadingSessionRepositoryTest.kt
+@@ -0,0 +1,223 @@
++package com.koodoreader.feature.stats
++
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Accounting tests for [ReadingSessionRepository] — the part of P6 that decides
++ * how many seconds a day gets. They run against [InMemoryReadingSessionStore]
++ * with an injected clock, so the whole state machine (idle clamping, midnight
++ * splitting, buffered flush, idempotent keys) is exercised without Room,
++ * SQLite or an Android device.
++ */
++class ReadingSessionRepositoryTest {
++
++    private val store = InMemoryReadingSessionStore()
++    private var now = 0L
++
++    private fun repository(
++        zoneOffsetMinutes: Int = 0,
++        idleTimeoutMillis: Long = ReadingSessionRepository.DEFAULT_IDLE_TIMEOUT_MILLIS,
++        flushIntervalMillis: Long = ReadingSessionRepository.DEFAULT_FLUSH_INTERVAL_MILLIS,
++    ) = ReadingSessionRepository(
++        store = store,
++        zoneOffsetMinutes = { zoneOffsetMinutes },
++        nowMillis = { now },
++        idleTimeoutMillis = idleTimeoutMillis,
++        flushIntervalMillis = flushIntervalMillis,
++    )
++
++    @Test
++    fun `ticks are credited to the book and day and flushed on end`() = runBlocking {
++        val repository = repository()
++        now = 1_000L
++        repository.begin("book-a", cfi = "epubcfi(/6/4)")
++        now += 1_000L
++        repository.tick()
++        now += 1_000L
++        repository.tick(wordsDelta = 42L)
++        repository.end()
++
++        val rows = store.loadAll()
++        assertEquals(1, rows.size)
++        assertEquals("book-a", rows[0].bookKey)
++        assertEquals("1970-01-01", rows[0].day)
++        assertEquals(2L, rows[0].seconds)
++        assertEquals(42L, rows[0].words)
++        assertEquals("epubcfi(/6/4)", rows[0].cfi)
++        assertFalse(repository.isActive)
++    }
++
++    @Test
++    fun `an idle gap is not credited and restarts the session`() = runBlocking {
++        val repository = repository(idleTimeoutMillis = 120_000L)
++        now = 0L
++        repository.begin("book-a")
++        now += 60_000L
++        repository.tick() // credited
++        now += 5 * 60_000L
++        repository.tick() // 5 min idle: dropped
++        now += 1_000L
++        repository.tick() // credited again
++        repository.end()
++
++        assertEquals(61L, store.loadAll().sumOf { it.seconds })
++    }
++
++    @Test
++    fun `a tick crossing midnight is split between the two days`() = runBlocking {
++        val repository = repository()
++        // 2024-01-01T23:59:59Z
++        now = 1_704_153_599_000L
++        repository.begin("book-a")
++        now += 3_000L // 2024-01-02T00:00:02Z
++        repository.tick()
++        repository.end()
++
++        val rows = store.loadAll().associateBy { it.day }
++        assertEquals(setOf("2024-01-01", "2024-01-02"), rows.keys)
++        assertEquals(1L, rows.getValue("2024-01-01").seconds)
++        assertEquals(2L, rows.getValue("2024-01-02").seconds)
++    }
++
++    @Test
++    fun `sub-second ticks are carried instead of lost`() = runBlocking {
++        val repository = repository()
++        now = 0L
++        repository.begin("book-a")
++        repeat(4) {
++            now += 500L
++            repository.tick()
++        }
++        repository.end()
++        assertEquals(2L, store.loadAll().sumOf { it.seconds })
++    }
++
++    @Test
++    fun `flushing twice keeps a single row per book and day`() = runBlocking {
++        val repository = repository()
++        now = 0L
++        repository.begin("book-a")
++        now += 1_000L
++        repository.tick()
++        repository.flush()
++        repository.flush()
++        repository.end()
++
++        assertEquals(1, store.size())
++        assertEquals(1L, store.loadAll()[0].seconds)
++    }
++
++    @Test
++    fun `long sessions flush every interval and survive a restart`() = runBlocking {
++        val repository = repository(flushIntervalMillis = 3_000L)
++        now = 0L
++        repository.begin("book-a")
++        // Four consecutive 1 s ticks: the 3rd one hits the flush interval.
++        repeat(4) {
++            now += 1_000L
++            repository.tick()
++        }
++        assertEquals(3L, store.loadAll().sumOf { it.seconds })
++
++        repository.end() // flushes the remaining second
++        assertEquals(4L, store.loadAll().sumOf { it.seconds })
++    }
++
++    @Test
++    fun `switching books closes the previous session`() = runBlocking {
++        val repository = repository()
++        now = 0L
++        repository.begin("book-a")
++        now += 1_000L
++        repository.tick()
++        repository.begin("book-b")
++        now += 2_000L
++        repository.tick()
++        repository.end()
++
++        val byBook = store.loadAll().groupBy { it.bookKey }
++        assertEquals(1L, byBook.getValue("book-a").sumOf { it.seconds })
++        assertEquals(2L, byBook.getValue("book-b").sumOf { it.seconds })
++    }
++
++    @Test
++    fun `total seconds per book mirrors the desktop readingTime blob`() = runBlocking {
++        val repository = repository()
++        now = 0L
++        repository.begin("book-a")
++        now += 10_000L
++        repository.tick()
++        repository.begin("book-b")
++        now += 5_000L
++        repository.tick()
++        repository.end()
++
++        assertEquals(10L, repository.totalSecondsFor("book-a"))
++        assertEquals(5L, repository.totalSecondsFor("book-b"))
++        assertEquals(0L, repository.totalSecondsFor("missing"))
++    }
++
++    @Test
++    fun `snapshot reuses the aggregator over the stored rows`() = runBlocking {
++        val repository = repository()
++        now = 0L
++        repository.begin("book-a")
++        now += 30_000L
++        repository.tick()
++        repository.end()
++
++        val snapshot = repository.snapshot(
++            booksRead = 1,
++            progressByBook = mapOf("book-a" to 0.5),
++            today = IsoDay(1970, 1, 1),
++        )
++        assertEquals(30L, snapshot.totalSeconds)
++        assertEquals(1, snapshot.longestStreak)
++        assertEquals(30L, snapshot.avgDailySeconds)
++        assertEquals(50.0, snapshot.averageProgress, 0.0001)
++    }
++
++    @Test
++    fun `a backwards clock jump credits nothing`() = runBlocking {
++        val repository = repository()
++        now = 100_000L
++        repository.begin("book-a")
++        now = 50_000L
++        repository.tick()
++        now = 51_000L
++        repository.tick()
++        repository.end()
++
++        assertEquals(1L, store.loadAll().sumOf { it.seconds })
++    }
++
++    // ── day splitting is a pure function, tested directly ────────────────────
++
++    @Test
++    fun `splitAcrossDays returns one part inside a single day`() {
++        val parts = ReadingSessionRepository.splitAcrossDays(0L, 5_000L) { 0 }
++        assertEquals(listOf(IsoDay(1970, 1, 1) to 5_000L), parts)
++    }
++
++    @Test
++    fun `splitAcrossDays honours the local offset`() {
++        val midnightUtc = 1_704_067_200_000L // 2024-01-01T00:00:00Z
++        // UTC+2 → local midnight of 2024-01-02 is 22:00Z on 2024-01-01.
++        val localMidnight = midnightUtc + 79_200_000L
++        val parts = ReadingSessionRepository.splitAcrossDays(localMidnight - 3_000L, localMidnight + 3_000L) { 120 }
++        assertEquals(
++            listOf(IsoDay(2024, 1, 1) to 3_000L, IsoDay(2024, 1, 2) to 3_000L),
++            parts,
++        )
++    }
++
++    @Test
++    fun `splitAcrossDays ignores empty and reversed spans`() {
++        assertTrue(ReadingSessionRepository.splitAcrossDays(10L, 10L) { 0 }.isEmpty())
++        assertTrue(ReadingSessionRepository.splitAcrossDays(20L, 10L) { 0 }.isEmpty())
++    }
++}
+diff --git a/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/StatsAggregatorTest.kt b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/StatsAggregatorTest.kt
+new file mode 100644
+index 00000000..0bb1e1e6
+--- /dev/null
++++ b/android/feature/stats/src/test/kotlin/com/koodoreader/feature/stats/StatsAggregatorTest.kt
+@@ -0,0 +1,251 @@
++package com.koodoreader.feature.stats
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Desktop-parity tests for the /stats metrics. Every expectation below is
++ * derived from `src/pages/stats/component.tsx` (line references in the
++ * comments), so a regression here means the native screen would show a
++ * different number than the web build for the same data.
++ */
++class StatsAggregatorTest {
++
++    private val aggregator = StatsAggregator()
++    private val today = IsoDay(2024, 3, 15) // Friday
++
++    private fun sessions(vararg days: Pair<IsoDay, Long>): List<ReadingSession> =
++        days.mapIndexed { index, (day, seconds) ->
++            ReadingSession(
++                key = "book$index|$day|$index",
++                bookKey = "book$index",
++                day = day,
++                seconds = seconds,
++            )
++        }
++
++    // ── cards ────────────────────────────────────────────────────────────────
++
++    @Test
++    fun `total seconds and active days are summed per day`() {
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(
++                today to 600L,
++                today.plusDays(-1) to 300L,
++                today.plusDays(-1) to 300L, // second session, same day
++                today.plusDays(-40) to 0L, // zero-second day is NOT active
++            ),
++            booksRead = 7,
++            today = today,
++        )
++        assertEquals(1200L, snapshot.totalSeconds)
++        assertEquals(2, snapshot.activeDays)
++        assertEquals(7, snapshot.totalBooks)
++        assertEquals(600L, snapshot.avgDailySeconds) // desktop §4: total / activeDays
++        assertEquals(600L, snapshot.secondsByDay[today])
++        assertEquals(600L, snapshot.secondsByDay[today.plusDays(-1)])
++    }
++
++    @Test
++    fun `daily average is zero without any active day`() {
++        val snapshot = aggregator.aggregate(emptyList(), booksRead = 0, today = today)
++        assertEquals(0L, snapshot.totalSeconds)
++        assertEquals(0L, snapshot.totalWords)
++        assertEquals(0, snapshot.activeDays)
++        assertEquals(0, snapshot.longestStreak)
++        assertEquals(0L, snapshot.avgDailySeconds)
++        assertEquals(30, snapshot.last30Days.size)
++    }
++
++    // ── streak (desktop §3) ──────────────────────────────────────────────────
++
++    @Test
++    fun `longest streak counts consecutive days backwards from today`() {
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(
++                today to 60L,
++                today.plusDays(-1) to 60L,
++                today.plusDays(-2) to 60L,
++                today.plusDays(-4) to 60L,
++            ),
++            booksRead = 1,
++            today = today,
++        )
++        assertEquals(3, snapshot.longestStreak)
++    }
++
++    @Test
++    fun `an old run wins when it is longer than the live run`() {
++        // Desktop takes max() over the whole 365-day window, so a 5-day run that
++        // ended 100 days ago beats the 2-day run that ends today.
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(
++                today to 60L,
++                today.plusDays(-1) to 60L,
++                today.plusDays(-100) to 60L,
++                today.plusDays(-101) to 60L,
++                today.plusDays(-102) to 60L,
++                today.plusDays(-103) to 60L,
++                today.plusDays(-104) to 60L,
++            ),
++            booksRead = 1,
++            today = today,
++        )
++        assertEquals(5, snapshot.longestStreak)
++    }
++
++    @Test
++    fun `days outside the 365-day window are ignored`() {
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(
++                today.plusDays(-364) to 60L, // last day inside the window
++                today.plusDays(-365) to 60L, // first day outside
++                today.plusDays(-366) to 60L,
++            ),
++            booksRead = 1,
++            today = today,
++        )
++        assertEquals(1, snapshot.longestStreak)
++    }
++
++    // ── last 30 days (desktop §5) ────────────────────────────────────────────
++
++    @Test
++    fun `last 30 days is a fixed oldest-first window with M D labels`() {
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(today to 3600L, today.plusDays(-29) to 60L, today.plusDays(-30) to 60L),
++            booksRead = 1,
++            today = today,
++        )
++        val chart = snapshot.last30Days
++        assertEquals(30, chart.size)
++        assertEquals(today.plusDays(-29), chart.first().day)
++        assertEquals(today, chart.last().day)
++        assertEquals("3/15", chart.last().label)
++        assertEquals("2/15", chart.first().label)
++        assertEquals(60L, chart.first().seconds)
++        assertEquals(60L, chart.last().minutes) // 3600 s → 60 min (desktop rounds)
++        assertEquals(0L, chart[1].seconds)
++        assertTrue(chart.none { it.day == today.plusDays(-30) })
++    }
++
++    // ── heatmap (desktop §6) ─────────────────────────────────────────────────
++
++    @Test
++    fun `heatmap starts on the Sunday 51 weeks back and ends today`() {
++        val snapshot = aggregator.aggregate(
++            sessions = sessions(IsoDay(2024, 1, 1) to 120L),
++            booksRead = 1,
++            today = IsoDay(2024, 1, 1), // Monday
++        )
++        val cells = snapshot.heatmap
++        assertEquals(IsoDay(2023, 1, 8), cells.first().day)
++        assertEquals(0, cells.first().day.dayOfWeek)
++        assertEquals(IsoDay(2024, 1, 1), cells.last().day)
++        assertEquals(359, cells.size)
++        assertEquals(0, cells.first().level)
++        assertEquals(120L, cells.last().seconds)
++        assertEquals(1, cells.last().level)
++    }
++
++    @Test
++    fun `heatmap levels follow the desktop thresholds`() {
++        assertEquals(0, StatsAggregator.heatmapLevel(0L))
++        assertEquals(1, StatsAggregator.heatmapLevel(1L))
++        assertEquals(1, StatsAggregator.heatmapLevel(299L))
++        assertEquals(2, StatsAggregator.heatmapLevel(300L))
++        assertEquals(2, StatsAggregator.heatmapLevel(899L))
++        assertEquals(3, StatsAggregator.heatmapLevel(900L))
++        assertEquals(3, StatsAggregator.heatmapLevel(1799L))
++        assertEquals(4, StatsAggregator.heatmapLevel(1800L))
++        assertEquals(4, StatsAggregator.heatmapLevel(86_400L))
++    }
++
++    @Test
++    fun `legend keeps the desktop levels that disagree with the cell thresholds`() {
++        // Desktop bug-for-bug: the legend uses 0/200/600/1200/2400 while the
++        // cells are coloured with 300/900/1800 (see the design doc).
++        assertEquals(listOf(0L, 200L, 600L, 1200L, 2400L), StatsAggregator.HEATMAP_LEGEND_SECONDS)
++        assertEquals(listOf(300L, 900L, 1800L), StatsAggregator.HEATMAP_COLOR_THRESHOLDS)
++    }
++
++    @Test
++    fun `heatmap columns are padded to full weeks like the desktop grid`() {
++        val snapshot = aggregator.aggregate(emptyList(), booksRead = 0, today = IsoDay(2024, 1, 1))
++        val weeks = aggregator.heatmapWeeks(snapshot.heatmap)
++        assertEquals(IsoDay(2024, 1, 1).epochDay - IsoDay(2023, 1, 8).epochDay + 1, snapshot.heatmap.size.toLong())
++        assertEquals(52, weeks.size)
++        assertTrue(weeks.all { it.size == 7 })
++        assertTrue(weeks.first().all { it != null })
++        // 359 cells → the last column is padded with 5 invisible cells.
++        assertEquals(2, weeks.last().count { it != null })
++        assertEquals(5, weeks.last().count { it == null })
++    }
++
++    @Test
++    fun `month anchors label the first column and every column containing the 1st`() {
++        // 2024-01-01 is the first day of a month and sits in the last column.
++        val snapshot = aggregator.aggregate(emptyList(), booksRead = 0, today = IsoDay(2024, 1, 1))
++        val anchorDays = aggregator.heatmapMonthAnchors(aggregator.heatmapWeeks(snapshot.heatmap))
++        val anchors = anchorDays.filterNotNull()
++        assertEquals(IsoDay(2023, 1, 8), anchors.first()) // first column is always labelled
++        assertEquals(IsoDay(2024, 1, 1), anchors.last())
++        assertEquals(13, anchors.size) // 12 month starts + the labelled first column
++        assertEquals(12, anchors.count { it.day == 1 })
++    }
++
++    // ── time formatting (desktop formatTime) ─────────────────────────────────
++
++    @Test
++    fun `formatTime matches the desktop rendering`() {
++        assertEquals("0s", StatsAggregator.formatTime(0L))
++        assertEquals("59s", StatsAggregator.formatTime(59L))
++        assertEquals("1m", StatsAggregator.formatTime(60L))
++        assertEquals("1m", StatsAggregator.formatTime(119L))
++        assertEquals("59m", StatsAggregator.formatTime(3599L))
++        assertEquals("1h 0m", StatsAggregator.formatTime(3600L))
++        assertEquals("1h 1m", StatsAggregator.formatTime(3661L))
++        assertEquals("23h 59m", StatsAggregator.formatTime(86_399L))
++        assertEquals("2h 30m", StatsAggregator.formatTime(9000.4))
++    }
++
++    // ── P6 additions: words + progress ───────────────────────────────────────
++
++    @Test
++    fun `word count treats CJK per character and latin per word`() {
++        assertEquals(0L, StatsAggregator.wordCount(""))
++        assertEquals(0L, StatsAggregator.wordCount("   \n\t"))
++        assertEquals(2L, StatsAggregator.wordCount("hello world"))
++        assertEquals(2L, StatsAggregator.wordCount("don't stop"))
++        assertEquals(4L, StatsAggregator.wordCount("你好世界"))
++        assertEquals(3L, StatsAggregator.wordCount("你好 world"))
++        assertEquals(2L, StatsAggregator.wordCount("café naïve"))
++        assertEquals(2L, StatsAggregator.wordCount("2024-01"))
++        assertEquals(4L, StatsAggregator.wordCount("《三体》 is great"))
++    }
++
++    @Test
++    fun `word totals come from the sessions`() {
++        val snapshot = aggregator.aggregate(
++            sessions = listOf(
++                ReadingSession("a", "book1", today, seconds = 60L, words = 120L),
++                ReadingSession("b", "book1", today, seconds = 60L, words = 30L),
++            ),
++            booksRead = 1,
++            today = today,
++        )
++        assertEquals(150L, snapshot.totalWords)
++    }
++
++    @Test
++    fun `average progress converts the desktop 0-1 fraction to percent`() {
++        assertEquals(37.5, aggregator.averageProgress(mapOf("a" to 0.5, "b" to 0.25)), 0.0001)
++        assertEquals(33.33, aggregator.averageProgress(mapOf("a" to 1.0 / 3.0)), 0.0001)
++        assertEquals(0.0, aggregator.averageProgress(mapOf("a" to 0.0)), 0.0001)
++        assertEquals(0.0, aggregator.averageProgress(emptyMap()), 0.0001)
++        // Only STARTED books count: an unopened book (0 %) must not drag the
++        // average of a finished one down.
++        assertEquals(100.0, aggregator.averageProgress(mapOf("a" to 1.0, "b" to 0.0)), 0.0001)
++    }
++}
+diff --git a/docs/p6-stats-ocr-design.md b/docs/p6-stats-ocr-design.md
+new file mode 100644
+index 00000000..957804e7
+--- /dev/null
++++ b/docs/p6-stats-ocr-design.md
+@@ -0,0 +1,318 @@
++# P6：阅读统计（对齐 `/stats`）+ OCR（ML Kit 按需下载）设计
++
++> 卡片：`t-muexn6c0-3dab3i`　workspace：`E:\open-source\koodo-reader`
++> worktree：`.worktrees/p6-stats-ocr`　分支：`task/p6-stats-ocr-muexn6c0`
++> 基准：`docs/android-native-migration.md` 附录 A.4「阅读统计 → `feature/stats`」「OCR → ML Kit（按需下载）」
++
++本卡交付两个**纯新增**的原生模块（不修改任何既有文件的功能逻辑）：
++
++| 模块 | 目录 | 纯 JVM 核 | Android 层 | JVM 单测 |
++|---|---|---|---|---|
++| 阅读统计 | `android/feature/stats/` | `StatsModels.kt` / `StatsAggregator.kt` / `ReadingSessionRepository.kt` | `ui/StatsScreen.kt`、`ui/StatsViewModel.kt`、`platform/StatsDatabase.kt` | **34**（3 个测试类） |
++| OCR | `android/feature/ocr/` | `OcrEngine.kt` / `OnDemandModelDownloader.kt` / `OcrSearchRepository.kt` | `platform/MlKitOcrProvider.kt`、`platform/MlKitModelDownloader.kt`、`platform/OcrIndexDatabase.kt` | **29**（3 个测试类） |
++
++合计 **63 个 JVM 单测全绿**（运行方式见 §6）。两个模块各一个 `build.gradle`，均为 Android Library。
++
++## 1. 结论摘要
++
++1. **统计口径逐项对齐桌面 `/stats`**，包括三处「桌面 bug-for-bug」行为（§3.2），并在 `StatsAggregator` 内以常量 + 注释固化，防止后续被"顺手修好"导致两端数字不一致。
++2. **阅读时长落库为 `reading_sessions`**（Room entity + DAO）：一条记录 = 一个 `(书, 本地日, 会话)` 的连续阅读段，跨零点自动按天切分，空闲（>120 s 无 tick）不计时，聚合因此退化为一次纯函数折叠（可离线单测）。
++3. **OCR 用 ML Kit 文本识别 v2 的「按需（Play services）」变体**：模型走 Google Play services 动态下载（每脚本每 ABI ≈260 KB，APK 内 **0 个 ML Kit `.so`**），而不是内置变体（每脚本每 ABI ≈4 MB，含 native 库 → 16 KB 页对齐风险）。16 KB / `.so` 体积评估见 §5。
++4. **扫描页 OCR 形成检索闭环**：`扫描页 → 模型可用性检查/按需下载 → 识别 → 归一化 → 落 `ocr_pages` 索引 → 检索命中页码`。桌面 Web 端只做「选区→文字」（`esearch-ocr` + `onnxruntime-web`，无索引），原生端因扫描 PDF 无文本层，额外做了按页索引。
++5. 与 **P6 词典** 共用 `OnDemandDownloader` 接口名与 6 条行为契约；两个模块各自保留独立声明，**归属由 main thread 在 settings.gradle 同时注册时决定**（§5.4）。
++6. `android/settings.gradle`、`android/app/build.gradle`、`android/build.gradle`、`package.json`、`main.js` **未做任何修改**（本卡硬约束）；接线指令落在 §7，由 main thread 执行。
++
++## 2. 目录与文件
++
++```
++android/feature/stats/
++├── build.gradle                                  (com.android.library + kotlin.android + ksp + compose)
++└── src/
++    ├── main/kotlin/com/koodoreader/feature/stats/
++    │   ├── StatsModels.kt        IsoDay（自研日历）、ReadingSession、DayPoint、HeatmapCell、StatsSnapshot
++    │   ├── StatsAggregator.kt    时长/字数/进度/日历聚合 + 桌面 formatTime/热力图色阶
++    │   ├── ReadingSessionRepository.kt  Room @Entity/@Dao + 存储接口 + 内存实现 + 计时状态机
++    │   ├── ui/StatsScreen.kt     Compose 复刻 /stats（卡片 / 30 天柱线切换 / 52 周热力图 / 图例）
++    │   ├── ui/StatsViewModel.kt  StatsUiState + chartTab
++    │   └── platform/StatsDatabase.kt  Room @Database + 时区/仓库接线
++    └── test/kotlin/com/koodoreader/feature/stats/
++        ├── IsoDayTest.kt（6）  ReadingSessionRepositoryTest.kt（13）  StatsAggregatorTest.kt（15）
++
++android/feature/ocr/
++├── build.gradle                                  (com.android.library + kotlin.android + ksp)
++└── src/
++    ├── main/kotlin/com/koodoreader/feature/ocr/
++    │   ├── OcrEngine.kt              OcrScript（脚本→模型/构件/体积）、OcrEngine 接口、OcrTextNormalizer
++    │   ├── OnDemandModelDownloader.kt  OnDemandDownloader 契约 + ModelPack + DownloadState/Result + 内存实现
++    │   ├── OcrSearchRepository.kt    Room @Entity/@Dao(ocr_pages) + 索引存储 + 识别→归一化→索引→检索闭环
++    │   └── platform/MlKitOcrProvider.kt       ML Kit TextRecognition.getClient(...) 适配（OcrEngine 实现）
++    │       platform/MlKitModelDownloader.kt   ModuleInstallClient 按需下载（OnDemandDownloader 实现）
++    │       platform/OcrIndexDatabase.kt       Room @Database + 接线
++    └── test/kotlin/com/koodoreader/feature/ocr/
++        ├── OcrEngineTest.kt（9）  OnDemandModelDownloaderTest.kt（7）  OcrSearchRepositoryTest.kt（13）
++```
++
++分层规则（两个模块一致）：**`ui/`、`platform/` 之外的代码零 Android 依赖**，可被纯 JVM 测试直接编译执行；Android 相关代码只做 IO/Compose/ML Kit 适配。
++
++其它改动：
++- `src/assets/locales/en.json` + `zh-CN.json`：新增 1 个 key `"Word count"`（中文「字数」），并 `node scripts/sync-locales-android.js` 同步到 `android/app/src/main/assets/locales/*`（`--check` 通过）。其余 i18n 全部复用桌面既有 key（见 §3.4），不新增命名空间。
++- **未改动**：`android/app/build.gradle`、`android/settings.gradle`、`android/build.gradle`、`package.json`、`main.js`、`android/core/**`、`scripts/**`。
++
++## 3. 阅读统计：口径对齐 `/stats`
++
++基准文件：`src/pages/stats/component.tsx`、`src/pages/stats/interface.tsx`、`src/pages/stats/stats.css`。
++
++### 3.1 指标对齐表
++
++| # | 桌面实现（行号） | 桌面口径 | Android 对应 | 单测 |
++|---|---|---|---|---|
++| 1 | `component.tsx:47-60` | `已读图书数` = `books` 表中 `recordLocation` 非空的书籍数 | `StatsSnapshot.totalBooks`，由调用方注入（`StatsAggregator.aggregate(booksRead=…)`） | `StatsAggregatorTest.total seconds and active days are summed per day` |
++| 2 | `component.tsx:62-71` | `总时长` = `readingStats` 所有日期 `dayStats[].seconds` 之和 | `reading_sessions.seconds` 按 `day` 求和 | 同上 + `ReadingSessionRepositoryTest.ticks are credited…` |
++| 3 | `component.tsx:73-90` | `连续阅读天数` = 从今天往前 365 天窗口内**最长**连续有阅读的天数（`currentStreak` 遇空日清零，取 `max`） | `StatsAggregator.longestStreak(secondsByDay, today)`，`STREAK_WINDOW_DAYS = 365` | `longest streak counts consecutive days…`、`an old run wins…`、`days outside the 365-day window…` |
++| 4 | `component.tsx:92-97` | `日均时长` = `round(总时长 / 有阅读的天数)`（**分母是活跃天**，不是自然天） | `avgDailySeconds`，`activeDays = secondsByDay.count { it.value > 0 }` | `total seconds and active days…`、`daily average is zero…` |
++| 5 | `component.tsx:99-109` | `近30天` = 固定 30 项，`i=29..0`，标签 `M/D`，图表值 `minutes = round(seconds/60)` | `StatsAggregator.last30Days` + `DayPoint.minutes` | `last 30 days is a fixed oldest-first window with M D labels` |
++| 6 | `component.tsx:111-123` | 热力图 = `today - 51*7` 天再回退到**周日**，逐日到「今天」为止 | `StatsAggregator.heatmap`，`HEATMAP_WEEKS = 52`，`start = today - 51w - dayOfWeek` | `heatmap starts on the Sunday 51 weeks back and ends today` |
++| 7 | `component.tsx:166-203` | 热力图列 = 补齐尾部空单元后每 7 天一组；月标签：首列恒标 + 含当月 1 号的列 | `heatmapWeeks()` / `heatmapMonthAnchors()`（返回 `IsoDay`，UI 用 `DateFormatSymbols` 本地化） | `heatmap columns are padded to full weeks…`、`month anchors label the first column…` |
++| 8 | `component.tsx:151-158` | 单元格色阶：`0 / <300 / <900 / <1800 / else` → 5 级 | `StatsAggregator.heatmapLevel` + `HEATMAP_COLOR_THRESHOLDS` | `heatmap levels follow the desktop thresholds` |
++| 9 | `component.tsx:202` | 图例档位：`[0, 200, 600, 1200, 2400]` | `HEATMAP_LEGEND_SECONDS`（**与色阶不同**，见 §3.2） | `legend keeps the desktop levels…` |
++| 10 | `component.tsx:143-149` | `formatTime`：`<60 → "Ns"`；否则 `h>0 ? "Hh Mm" : "Mm"`（≥60 s 丢弃秒） | `StatsAggregator.formatTime` | `formatTime matches the desktop rendering` |
++| 11 | `component.tsx:284-301, 151-158` | 暗色/亮色配色、图表描边 `#ffb066/#ff6b1a`、网格 `rgba(…,0.08)` | `StatsPalette.of(dark)`（逐色值对齐），`heatmapColor()` | 视觉对齐（无单测，UI 层） |
++| 12 | `component.tsx:151-158`, `stats.css` | 热力图色板（亮 `#9be9a8/#40c463/#30a14e/#216e39`；暗 `#0e4429/#006d32/#26a641/#39d353`） | `StatsPalette.heatmap`（逐色值一致） | 同上 |
++| 13 | 卡片文案（i18n） | `Reading Stats` / `Books read` / `Total reading time` / `Reading streak (days)` / `Daily average` / `Last 30 Days` / `Bar Chart` / `Line Chart` / `Reading Activity` | `StatsScreen(t = …)` 使用**同名 key**（Android 目录是桌面 JSON 的逐字拷贝，ADR-004） | — |
++
++### 3.2 桌面 bug-for-bug（Android 照搬，勿"修复"）
++
++1. **"连续阅读天数" 实为"近一年最长连续天数"**：桌面从今天倒扫 365 天并保留 `max`，因此"100 天前结束的 5 连读"会压过"今天仍在延续的 2 连读"；且**不要求今天有阅读**。`StatsAggregatorTest.an old run wins when it is longer than the live run` 锁定该语义。
++2. **热力图色阶 ≠ 图例档位**：单元格用 `300/900/1800` 分档，图例却用 `200/600/1200/2400` 渲染 5 个色块 —— 桌面上"图例第 2 格"与"实际 300 s 的格子"颜色并不对应。Android 保留两者（`HEATMAP_COLOR_THRESHOLDS` / `HEATMAP_LEGEND_SECONDS`），并在 `legend keeps the desktop levels…` 中断言。若后续要修正，需桌面 + 原生同步改。
++3. **`日均时长` 分母是"活跃天"**：一段只在一天读了 10 分钟的历史，日均显示 10 分钟而非"总时长/历史天数"。
++
++### 3.3 Android 新增指标（桌面 `/stats` 暂无卡片）
++
++卡片要求「时长/字数/进度/日历」，其中后两者的口径为：
++
++- **字数**：`StatsAggregator.wordCount(text)` —— CJK（汉字/假名/谚文）**按字计数**，其余按空白分词（含 `'`/`’` 撇号），与桌面阅读进度面板的 CJK 计数习惯一致；会话记录 `words` 字段，聚合为 `totalWords`。UI 卡片文案使用新增 key `"Word count"`。
++- **进度**：桌面 `recordLocation.percentage` 是 **0..1 小数**（`progressPanel/component.tsx:53` 里 `*100` 展示），`StatsAggregator.averageProgress` 取**已开始书籍**（>0）的均值并 `round(百分比, 2)`；0 进度书籍不计入，避免"未打开的书把均值拉低"。UI 卡片文案复用桌面既有 key `"Reading progress"`。
++
++### 3.4 UI 对齐要点（`StatsScreen.kt`）
++
++- 顶部标题 + 关闭按钮（桌面右上 `stats-close-btn`）；4 张卡片 2×2 栅格（桌面 4 列，移动端 2 列，与 `stats.css` 的 `@media (max-width:900px)` 一致），另加「字数 / 阅读进度」两张卡片。
++- 近 30 天：Canvas 手绘，柱状/折线（含渐变面积）切换按钮，X 轴每 5 个点标一次（桌面 `interval={4}`），Y 轴 `Nm`，网格仅横向（桌面 `vertical={false}`）。
++- 热力图：52 列 × 7 行、格 13 dp / 间距 3 dp（对齐 `--heatmap-cell-size/--heatmap-gap`），列区 `horizontalScroll` 复刻桌面 `overflow-x:auto`；左侧 Mon/Wed/Fri 标签；底部 5 格图例。
++- 所有用户可见文案走 `t(key)` 参数注入（模块不依赖 `:app`，由 shell 传 `LocalI18n.t`），key 与桌面 JSON 完全同名。
++
++### 3.5 计时状态机（`ReadingSessionRepository`）
++
++| 规则 | 实现 | 单测 |
++|---|---|---|
++| 只在两 tick 间隔 ≤120 s 时计时 | `idleTimeoutMillis`（桌面 `ReadingTimeUtil.start/stop` 同样丢弃长时间挂起） | `an idle gap is not credited and restarts the session` |
++| 跨零点按本地日切分 | `splitAcrossDays(start, end, zoneOffset)`（逐段用该时刻的时区偏移，DST 正确） | `a tick crossing midnight is split…`、`splitAcrossDays honours the local offset` |
++| 亚秒余数不丢 | 毫秒余量向后进位（`pendingMillis`），1.5 s 的两 tick 记 3 s 而非 2 s | `sub-second ticks are carried instead of lost` |
++| 键稳定、可重复 flush | 行键 `bookKey\|day\|sessionStart`，`RoomReadingSessionStore` 用 `REPLACE`；内存中保留**累计行**、只回写 dirty 行（否则 REPLACE 会截断已落库秒数） | `flushing twice keeps a single row…`、`long sessions flush every interval and survive a restart` |
++| 换书/退出会话 | `begin(other)` 关闭旧会话；`end()` 关闭并 flush | `switching books closes the previous session` |
++| 时钟回拨 | 重锚 `lastTick`，不记负数时长 | `a backwards clock jump credits nothing` |
++| 单本累计（对齐桌面 `readingTime` blob 排序） | `totalSecondsFor(bookKey)` | `total seconds per book mirrors the desktop readingTime blob` |
++
++## 4. 持久化
++
++### 4.1 现状（本卡落地形态）
++
++两个模块**各自持有私有 Room 库**，避免本卡触碰 `:core:data` 的 schema 版本（同时避免与 P6 其它 sub 抢 `KoodoDatabase.kt`）：
++
++- `feature/stats` → `koodo-stats.db`：`reading_sessions(key, bookKey, day, startMillis, endMillis, seconds, words, cfi)`
++- `feature/ocr` → `koodo-ocr-index.db`：`ocr_pages(key, bookKey, pageIndex, script, text, normalizedText, tokenCount, recognizedAt, durationMillis, engine)`
++
++列名沿用 `core/data` 约定（camelCase 列、`key` 主键、`day` 用桌面 `dateToKey` 的 `YYYY-MM-DD`），因此并入 `koodo.db` 无需改名。
++
++### 4.2 并入 `koodo.db` 的补丁（main thread 决策，本卡**未执行**）
++
++`core/data` 不能依赖 feature 模块（方向相反），所以并入需要把 entity/DAO 上移或让 `:core:data` 反向依赖。推荐**上移**（改动最小、方向正确）：
++
++```diff
++--- a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt
+++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt
++@@
++ import com.koodoreader.core.data.entity.PluginEntity
++ import com.koodoreader.core.data.entity.WordEntity
+++import com.koodoreader.core.data.entity.ReadingSessionEntity
+++import com.koodoreader.core.data.entity.OcrPageEntity
++@@
++         PluginEntity::class,
++         WordEntity::class,
+++        ReadingSessionEntity::class,
+++        OcrPageEntity::class,
++     ],
++-    version = 1,
+++    version = 2,
++     exportSchema = true,
++ )
++ abstract class KoodoDatabase : RoomDatabase() {
++@@
++     abstract fun wordDao(): WordDao
+++    abstract fun readingSessionDao(): ReadingSessionDao
+++    abstract fun ocrPageDao(): OcrPageDao
++```
++
++配套动作：① 两个 entity/DAO 文件整体搬到 `core/data`（包名改为 `com.koodoreader.core.data.entity/dao`，feature 模块改为依赖 `:core:data`）；② `version = 2` 需要 `Migration(1,2)`（两张新建表，DDL 可从 Room 导出的 schema JSON 复制）；③ `scripts/check-room-schema.js` 目前以 `schema.lock`（桌面 DDL）为基准 —— 新表**不在桌面 schema 内**，需在守卫里登记白名单，否则 CI 会红。
++在此之前，两个模块的自有库已可独立工作。
++
++## 5. OCR
++
++### 5.1 闭环
++
++```
++扫描页(位图) ─▶ ① 模型可用性检查（OnDemandDownloader.state）
++                    │ 未安装
++                    ▼
++              ② ensureInstalled(按需下载/进度回调) ──失败──▶ ModelUnavailable（不索引，读下一页）
++                    │ 已安装
++                    ▼
++              ③ OcrEngine.recognize(MlKitOcrProvider) ──异常──▶ Failed（不抛穿调用方）
++                    ▼
++              ④ OcrTextNormalizer.normalize（去连字符换行 / CJK 行合并 / 空白折叠）
++                    ▼
++              ⑤ ocr_pages upsert（键 = bookKey#pageIndex#script，重扫即覆盖）
++                    ▼
++              ⑥ search(query, bookKey?) → OcrHit(页码, 评分, 上下文片段) → 阅读器跳转
++```
++
++- 归一化规则对齐桌面 `cleanWindowsOcrText`（`src/utils/main/ocr-util.js`）：Windows/ML Kit 都会把 CJK 拆行、加空格，索引前必须还原（`OcrEngineTest` 覆盖）。
++- 检索：查询与页面文本都归一化；索引 token = 拉丁词 + CJK **一元/二元**（`阅读` → `阅/阅读/读`），因此 1–2 字中文查询也能命中，无需分词器。
++- 打分：`命中 token 比例 × 0.75 + 整串命中 0.25`，`minScore=0.34` 过滤"只命中一个常见词"的噪声；排序 `score desc → bookKey → pageIndex`（可复现）。片段：命中点 ±40 字符 + 省略号。
++- 存储侧 `OcrPageDao.prefilter(LIKE)` 只做粗筛，排序/片段在 Kotlin 完成（因此排序逻辑可单测）；**全库检索的后续优化是 FTS4/FTS5 `ocr_pages_fts` 虚拟表**（§8）。
++
++### 5.2 ML Kit 选型：按需（Play services）vs 内置
++
++官方文本识别 v2 文档给出的两种安装方式（[ML Kit text recognition v2 — Android](https://developers.google.cn/ml-kit/vision/text-recognition/v2/android?hl=en)）：
++
++| | 按需（本卡采用） | 内置 |
++|---|---|---|
++| 构件 | `com.google.android.gms:play-services-mlkit-text-recognition:19.0.1`（+ `-chinese/-japanese/-korean/-devanagari:16.0.1`） | `com.google.mlkit:text-recognition:16.0.1`（+ 同族） |
++| 实现 | 模型由 Google Play services 动态下载 | 模型 + native 库静态打进 APK |
++| 体积 | 每脚本每架构 **≈260 KB** | 每脚本每架构 **≈4 MB** |
++| 首次可用 | 需等待下载（未完成时请求返回空结果） | 立即可用 |
++| 16 KB 页对齐 | **APK 内无 ML Kit `.so`**，风险转移给 Play services APK | 自带 native 库，需保住对齐（见 §5.3） |
++| 代码 API | `TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)` / `ChineseTextRecognizerOptions.Builder().build()` … | **完全相同** |
++
++工程侧配套（均已在模块内注释/settings 文档化）：
++
++```xml
++<application …>
++  <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
++             android:value="ocr,ocr_chinese" />   <!-- OcrScript.manifestValue(...) 生成 -->
++</application>
++```
++
++- 安装期预下载：上面的 meta-data（避免用户首次扫码时才等下载）。
++- 运行期显式下载/进度：`ModuleInstallClient`（`areModulesAvailable` / `installModules` + `InstallStatusListener` 的 `bytesDownloaded/totalBytesToDownload`）——见 [Module install APIs](https://developers.google.cn/android/guides/module-install-apis?hl=en)；`MlKitModelDownloader` 即其实现，`release()` 恒返回 `false`（ML Kit 模型归 Play services，App 无权删除，契约第 6 条）。
++- ML Kit 文本识别 v2 要求 **API 23+**（本模块 `minSdk 24` ✓）。
++
++### 5.3 16 KB 页对齐与 `.so` 体积评估（本卡重点结论）
++
++**风险背景**：Android 15+ 起 16 KB 页大小设备要求 `LOAD` 段 `p_align` 是 `0x4000` 的整数倍；仓库已有守卫 `scripts/check-elf-16kb.js`（Node 版，`llvm-readelf -l` 逐 `.so` 校验）与 `scripts/check-elf-16kb.sh`，并且 `docs/android-native-migration.md:175` 已因 16 KB 对齐问题**排除 Pdfium**。P3 选择 pdf.js 后，当前 APK 内 `.so` 数量为 0。
++
++**事实依据**：
++
++1. ML Kit 官方文本识别 v2 的体积数据（上表）：内置变体 ≈4 MB/脚本/架构；5 个脚本 × 2 个常用 ABI（`arm64-v8a`、`armeabi-v7a`）最坏可达 **≈40 MB** 的模型 + native 库，全部进入 APK。
++2. 社区实测：ML Kit native 库曾在 AGP 8.5/8.6 + `stripDebugSymbols` 阶段报 `ELF file alignment does not match 16 KB requirement`（[googlesamples/mlkit#987](https://github.com/googlesamples/mlkit/issues/987)）。维护者在推荐基线（AGP 8.5.1 + targetSdk 35）下复测 `barcode-scanning:17.3.0` 单依赖**未发现 16 KB 问题**，真凶是**传递依赖** —— 当时 `androidx.camera:camera-core < 1.4.2` 携带 4 KB 对齐的 `libimage_processing_util_jni.so`；修复方式是把 CameraX 强制到 ≥1.4.2。
++3. 本仓库 AGP 为 **8.2.2**（`android/build.gradle`），低于 16 KB 打包的推荐最低线（AGP 8.5.1）；`app/build.gradle` 已有 `-PabiFilters=<abi>` 单 ABI 切分开关（由 `scripts/build-android.js` 驱动）。
++
++**结论与建议（按优先级）**：
++
++1. **保持按需变体**（本卡实现）：APK 内 0 个 ML Kit `.so`，16 KB 风险从"我们的 APK"消失；体积代价 ≈260 KB/脚本/架构（客户端桩）。
++2. 若产品要求"离线装机即用"而必须内置：
++   - 升级构建链到 **AGP ≥ 8.5.1**（同时 `targetSdk 35`），让 AGP 的 16 KB 校验在构建期就拦下未对齐 `.so`；
++   - CI/发版强制跑 `node scripts/check-elf-16kb.js <apk>`（或对 `--dir` 解包目录），失败即阻断；
++   - **按 ABI 拆分**：继续用 `-PabiFilters`（已有）或改 App Bundle（每设备只装 1 个 ABI 的 `.so`），把 ≈40 MB 压到 ≈20 MB 量级；
++   - 只装**用得到的脚本**：中文/日文/韩文/天城文按用户语言按需（`OcrScript.manifestValue(listOf(...))` 已是这个模型）；
++   - **动态特性模块（on-demand dynamic feature）**：把 OCR UI + ML Kit 依赖整体挪进 dynamic feature，base APK 加 `com.google.mlkit:playstore-dynamic-feature-support:16.0.0-beta2`（[Reduce APK size](https://developers.google.cn/ml-kit/tips/reduce-app-size?hl=en)），首装体积再降；
++   - 传递依赖排查：确保没有引入 `< 1.4.2` 的 CameraX（我们不用相机，风险仅来自未来依赖）。
++3. **桌面 Web OCR 资产不进 APK**：`public/lib/onnxruntime-web/ort.min.js`（352 KB）+ `public/lib/esearch-ocr/esearch-ocr.umd.js`（27 KB）只是 JS 壳，`esearch-ocr` 的 `init({ort, detPath, recPath, dic, docClsPath})` 需要外部 `.onnx`/字典文件，`onnxruntime-web` 的 `.wasm` 也从 CDN/本地路径加载 —— 仓库内**没有** `.wasm`/`.onnx` 实体文件（已核实 `public/lib/onnxruntime-web`、`public/lib/esearch-ocr` 仅两个 JS）。因此 native 版没有任何"WASM 16 KB 打包"负担；打包脚本只需保证不把这类资产塞进 APK（当前 webapp 资产是 webview 轨的资源，不受 native OCR 影响）。
++4. 结论：**本卡选择=零 `.so` 增量**；即便未来改内置，也有 §5.3-2 的 5 条可控路径，且守卫脚本可量化验证。
++
++### 5.4 与 P6 词典共用 `OnDemandDownloader`（归属待 main thread 决定）
++
++- 接口名固定 `OnDemandDownloader`，两个模块**各自声明**（本卡声明在 `feature/ocr/OnDemandModelDownloader.kt`），行为契约 6 条：① `state` 非阻塞无 IO；② `ensureInstalled` 幂等（已装 → `AlreadyInstalled` 不触网）；③ 进度单调、落在 `0f..1f`，可跳过；④ 不存在"半装"状态；⑤ 同 pack 并发调用由实现合并；⑥ `release` 可返回 `false`（平台不允许删除）。
++- 归属规则：当 `feature:dictionary` 与 `feature:ocr` 同时注册进 `android/settings.gradle` 时，**由 main thread 决定**单一归属（建议：`feature:dictionary` 拥有接口、`feature:ocr` 依赖它；或两者都上移到 `:core:common`）。在归属决定前，两个模块互不依赖，避免"引用对方目录里的文件"。
++- 契约测试在两侧都可复制：本卡的 `OnDemandModelDownloaderTest`（7 例）即契约的可执行规格。
++
++## 6. 测试与自验
++
++**运行方式（本机无网络、`~/.gradle` 不可写、`settings.gradle` 禁改，故不用 Gradle）**：
++`.p6-stats-ocr-check/verify.ps1`（**worktree 之外的临时目录，不进 patch**）用 Gradle 模块缓存里已有的 `kotlin-compiler-embeddable:1.9.24` 直接编译两个模块的纯 Kotlin 源（排除 `ui/`、`platform/`）+ `src/test/kotlin`，再用 JUnit 4 `JUnitCore` 运行：
++
++```
++[verify] compiling 6 main + 6 test file(s)
++[verify] running 6 JUnit class(es)
++OK (63 tests)
++```
++
++| 模块 | 测试类 | 用例数 | 覆盖 |
++|---|---|---|---|
++| stats | `IsoDayTest` | 6 | epoch-day 换算（含闰年/负值）、Sunday-first 星期、`dateToKey` 往返、时区偏移取日、非法输入 |
++| stats | `StatsAggregatorTest` | 15 | §3.1 表 1–10 全部口径 + 字数/进度 + 热力图分列/月锚点 |
++| stats | `ReadingSessionRepositoryTest` | 13 | §3.5 计时规则全部（含跨零点、空闲裁剪、亚秒进位、重复 flush、时钟回拨、按书累计） |
++| ocr | `OcrEngineTest` | 9 | 语言→脚本映射、manifest 值、构件坐标、归一化（CJK 合并/去连字符/空白折叠）、token 方案、CJK 判定 |
++| ocr | `OnDemandModelDownloaderTest` | 7 | 目录与体积、状态迁移、进度单调、幂等、失败无半装、不可重试、release |
++| ocr | `OcrSearchRepositoryTest` | 13 | 索引落库、重扫覆盖、空页不入库、语言隔离、模型缺失/引擎异常不抛穿、分词命中、排序与阈值、按书过滤、limit、片段省略号、按书删除 |
++
++**未覆盖（见 §8 风险）**：`ui/`、`platform/` 下的 Android-only 代码（Compose/ML Kit/Room 运行时）在本环境无法编译（无 Android SDK 构建链、AGP 8.2.2 需 JDK17+ 且模块未注册），仅做静态审查。
++
++## 7. 接线指令（main thread 执行；本卡未做）
++
++```diff
++--- a/android/settings.gradle
+++++ b/android/settings.gradle
+++// Native reading statistics + scanned-page OCR (P6).
+++include ':feature:stats'
+++include ':feature:ocr'
++```
++
++```diff
++--- a/android/app/build.gradle   (native 轨依赖)
+++++ b/android/app/build.gradle
+++    implementation project(':feature:stats')
+++    implementation project(':feature:ocr')
++```
++
++```diff
++--- a/android/app/src/main/AndroidManifest.xml
+++++ b/android/app/src/main/AndroidManifest.xml
+++  <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
+++             android:value="ocr,ocr_chinese" />
++```
++
++阅读器接线（建议）：
++- 进入阅读页 `ReadingSessionWiring.repository(context)` → `begin(book.key, cfi)`；翻页/滚动 tick 调 `tick(wordsDelta = StatsAggregator.wordCount(renderedChunk))`；退出 `end()`。
++- `/stats` 入口：`StatsViewModel(repository, booksReadProvider = { bookDao.countWithLocation() }, progressProvider = { locationDao.percentages() }, todayProvider = { ReadingSessionWiring.localToday(now) })` + `StatsScreen(state, t = { LocalI18n.current.localization.t(it) }, onClose = …)`。
++- 扫描 PDF：`OcrWiring.repository(context)` → 每页渲染位图后 `indexPage(OcrRequest(key, pageIndex, script), MlKitPageImage(bitmap))`，检索页用 `search(query, bookKey)`。
++
++## 8. 风险与后续
++
++| 级别 | 风险 | 说明 / 缓解 |
++|---|---|---|
++| 中 | `platform/`、`ui/` 未编译验证 | 本环境无 Android 构建链（模块未注册 + AGP/JDK 限制）。缓解：这些文件均为薄适配（Compose 布局 / ML Kit 调用 / Room 建库），纯逻辑全在已测核心；接线时先跑 `gradle :feature:stats:testDebugUnitTest` 与 `:feature:ocr:testDebugUnitTest` |
++| 中 | `MlKitOptionalModuleApis.of()` 的 5 行类型依赖 | ML Kit 的 options 对象作为 `OptionalModuleApi` 传入 `ModuleInstallRequest`；若与所选版本不符，会在该 5 行**编译失败**（刻意返回可空类型），届时按官方文档改用对应 API 句柄即可 |
++| 中 | 首次 OCR 需下载模型 | 未装完时 ML Kit 返回空结果；缓解：manifest 安装期预下载 + `ensureInstalled` 进度 UI + `ModelUnavailable` 回执（不阻塞翻页） |
++| 中 | Room schema 归属未定 | 两个私有库已可用；并入 `koodo.db` 需 `version=2` + 迁移 + 改 `scripts/check-room-schema.js` 白名单（§4.2） |
++| 低 | 全库检索性能 | 目前 `LIKE` 粗筛 + Kotlin 精排，单本规模足够；跨书全库检索应上 FTS4/FTS5 `ocr_pages_fts` |
++| 低 | 热力图图例/色阶不一致 | 桌面 bug-for-bug 保留；如需统一需两端同步改（§3.2） |
++| 低 | 新增 i18n key | 仅 `"Word count"`（en/zh-CN + Android 资产已同步，`--check` 通过）；其余 39 语言按 ADR-004 的按需语言包策略，缺失时回退英文 |
++
++## 9. 变更文件
++
++新增（worktree `task/p6-stats-ocr-muexn6c0`）：
++`android/feature/stats/{build.gradle, src/main/kotlin/.../stats/{StatsModels,StatsAggregator,ReadingSessionRepository}.kt, ui/{StatsScreen,StatsViewModel}.kt, platform/StatsDatabase.kt, src/test/kotlin/.../stats/{IsoDayTest,StatsAggregatorTest,ReadingSessionRepositoryTest}.kt}`
++`android/feature/ocr/{build.gradle, src/main/kotlin/.../ocr/{OcrEngine,OnDemandModelDownloader,OcrSearchRepository}.kt, platform/{MlKitOcrProvider,MlKitModelDownloader,OcrIndexDatabase}.kt, src/test/kotlin/.../ocr/{OcrEngineTest,OnDemandModelDownloaderTest,OcrSearchRepositoryTest}.kt}`
++`docs/p6-stats-ocr-design.md`、`docs/patches/p6-stats-ocr.patch`
++
++修改：`src/assets/locales/{en,zh-CN}.json`、`android/app/src/main/assets/locales/{en,zh-CN,manifest}.json`（新增 `"Word count"` + 同步）。
++
++**未修改硬约束文件**：`android/app/build.gradle`、`android/settings.gradle`、`android/build.gradle`、`package.json`、`main.js`（可用 `git status` 验证，见 patch 与执行报告）。
++
++## 10. 参考
++
++- ML Kit 文本识别 v2（Android）：<https://developers.google.cn/ml-kit/vision/text-recognition/v2/android?hl=en>（按需/内置构件、体积、manifest meta-data、ModuleInstallClient）
++- Google Play services 按需模块（`ModuleInstallClient`）：<https://developers.google.cn/android/guides/module-install-apis?hl=en>
++- ML Kit APK 瘦身（dynamic feature / ABI / playstore-dynamic-feature-support）：<https://developers.google.cn/ml-kit/tips/reduce-app-size?hl=en>
++- ML Kit native 库 16 KB 对齐实测与结论：<https://github.com/googlesamples/mlkit/issues/987>
++- 仓库内：`scripts/check-elf-16kb.js`、`docs/android-native-migration.md`（§6 / 附录 A.4 / 第 175 行 Pdfium 排除依据）、`docs/android-pdf-poc.md`
+diff --git a/src/assets/locales/en.json b/src/assets/locales/en.json
+index 31891f63..accc7048 100644
+--- a/src/assets/locales/en.json
++++ b/src/assets/locales/en.json
+@@ -792,6 +792,7 @@
+   "Automatic": "Automatic",
+   "Inflection": "Inflection",
+   "Word comparison": "Word comparison",
++  "Word count": "Word count",
+   "Language auto-detection may not be accurate. Please try selecting the source language manually": "Language auto-detection may not be accurate. Please try selecting the source language manually",
+   "Action": "Action",
+   "Copy to": "Copy to",
+diff --git a/src/assets/locales/zh-CN.json b/src/assets/locales/zh-CN.json
+index 39924c85..6e05db6b 100644
+--- a/src/assets/locales/zh-CN.json
++++ b/src/assets/locales/zh-CN.json
+@@ -430,6 +430,7 @@
+   "Unknown chapter": "未知章节",
+   "Inflection": "变形",
+   "Word comparison": "单词对比",
++  "Word count": "字数",
+   "Language auto-detection may not be accurate. Please try selecting the source language manually": "语言自动检测可能不够准确，请尝试手动选择源语言",
+   "Minute": "分钟",
+   "Empty": "这里什么都没有",
