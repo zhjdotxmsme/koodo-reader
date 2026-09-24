@@ -1,5 +1,8 @@
 package com.koodoreader.engine.annotate
 
+// `mismatches` is a member extension of the AnnotationSchema object, so it has to
+// be imported explicitly to be callable on a TableSpec from outside.
+import com.koodoreader.engine.annotate.AnnotationSchema.mismatches
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test

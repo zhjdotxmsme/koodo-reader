@@ -18,7 +18,9 @@ package com.koodoreader.engine.annotate
 sealed class JsonValue {
     data class JsonObject(val entries: LinkedHashMap<String, JsonValue>) : JsonValue() {
         constructor(vararg pairs: Pair<String, JsonValue>) : this(LinkedHashMap<String, JsonValue>().apply {
-            pairs.forEach { (k, v) -> entries[k] = v }
+            // `entries` here is the receiver map's read-only view, so the pairs
+            // must be inserted through `put`.
+            pairs.forEach { (k, v) -> put(k, v) }
         })
 
         operator fun get(key: String): JsonValue? = entries[key]
@@ -139,7 +141,8 @@ private class JsonReader(private val text: String) {
                         '\\' -> builder.append('\\')
                         '/' -> builder.append('/')
                         'b' -> builder.append('\b')
-                        'f' -> builder.append('\f')
+                        // Kotlin has no `\f` escape (unlike Java): form feed is U+000C.
+                        'f' -> builder.append('\u000C')
                         'n' -> builder.append('\n')
                         'r' -> builder.append('\r')
                         't' -> builder.append('\t')
