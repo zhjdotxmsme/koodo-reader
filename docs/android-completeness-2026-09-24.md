@@ -299,4 +299,80 @@ APK 内容核对                                   → res/drawable/ic_tts_notif
 
 **仍未做**：P6 六个模块的**宿主屏幕/导航入口**（缺口 2 的主体）——TTS 现在缺的只是一个启动它的 UI；Android 13+ 的 `POST_NOTIFICATIONS` 运行时请求也挂在同一处宿主里。另外 TTS 通知的 `Stop/Play/Pause/Resume/Previous/Next` 在 zh-CN 下仍回退英文（桌面 zh-CN 没有这几个 key），属 i18n 补全，不在本卡范围。
 
+---
+
+## 12 · 剩余缺口的体量切分与依赖（尚未动手项）
+
+本轮把「能独立闭环」的缺口修完后，剩下 5 项卡在**体量**、**他人卡**或**产品决策**上。逐项给出可核对的判断，避免把「没做」包装成「做完了」。
+
+### #1 EPUB 原生阅读器接线（P2 主体）—— 超出会话体量，需排期
+
+**事实**：仓库里**没有** `android/engine/epub` 模块，`ShellNavHost` 只有 `"PDF"` 分支，EPUB 落到 `ReaderPlaceholderScreen`。已交付的是可复用的零件：`engine:{cfi,layout,gesture,annotate,link,toc}` + 字体体系（`FontCatalog/FontManager/FontFallbackResolver`）+ `NativeReaderScreen` 骨架。迁移方案自估 **8–12 周**。
+
+**最小可行切分**（建议按此排期，每步都能单独验收）：
+
+1. **`engine:epub` 只读解析**（2–3 周）：ZIP/OPF/NAV 解析 → 章节 `XHTML→TextBlock`（与 R1/D0 的产物对齐）→ 资源表；JVM 测试 + 桌面 CFI 黄金向量复用。
+2. **排版接线**（2–3 周）：`engine:layout` 接管分页（视口/字体/行高/主题）→ `NativeReaderScreen` 渲染首页。
+3. **导航与进度**（1–2 周）：`engine:toc` 目录、`engine:cfi` 位置、阅读位置持久化（ADR-002 的 CFI parity）。
+4. **标注/链接**（2 周）：`engine:annotate` + `engine:link` 落地；批注与桌面 DB 双向可读。
+5. **手势/主题收尾**（1–2 周）：`engine:gesture` 接入 + 字体/主题/双栏。
+
+**本轮未做**：任何代码。原因：第 1 步就依赖 R1 的 `core:archive` 与 D0 的扁平化产物（见 #9），且 8–12 周无法在一个会话内诚实闭合。
+
+### #2 P6 六个模块的宿主入口 —— 可做，但需按模块分批
+
+TTS 的**接线**已完成（§11）。剩下的入口屏幕按风险分三档：
+
+| 档 | 模块 | 说明 |
+|---|---|---|
+| 低 | 统计(`feature:stats`)、词典(`feature:dictionary`)、简繁(`core:locale`) | 无系统服务依赖、无权限、无网络，接 `ShellNavHost` + 一个屏幕即可 |
+| 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate`) | 需要在阅读器内叠加 UI，依赖 #1 的 reader host 或 PDF 屏的宿主 |
+| 高 | TTS(`feature:tts`)、OCR(`feature:ocr`) | 需要前台服务/权限运行时请求、模型下载（见 #5）；TTS 现在只差启动 UI |
+
+### #5 OCR 下载适配层 —— 需产品决策（APK 体积 vs 首次下载）
+
+卡点属实：`feature:ocr` 走 `OptionalModuleApi` 抽象，而 ML Kit 的 `TextRecognizerOptions` **不是** `OptionalModuleApi`，两者对不上。两条可行路线：
+
+1. **跟随 ML Kit 自身下载**（`com.google.android.gms:play-services-mlkit-text-recognition`，Play 服务按需下发模型）：APK 几乎不增，首次识别需下载 + **依赖 Play 服务**（无 GMS 设备不可用）。
+2. **bundled 制品**（`com.google.mlkit:text-recognition`，模型进 APK）：无网络可用、无 GMS 依赖，代价是 **APK 增加约 4–16 MB**（按脚本/语言子集浮动，且是 `.so`/模型二进制，需重跑 16 KB 守卫）。
+
+**本轮未做**：改动方向取决于「APK 体积」与「无 GMS 可用性」哪个优先，属产品决策；不擅自选一种。
+
+### #7 MOBI HUFF/CDIC —— 阻塞于他人卡，本轮不动手
+
+`engine:mobi` 对 HUFF/CDIC 压缩的 MOBI 抛类型化错误（压缩方式 17480）。该项属卡 `t-muexn60r-4p3sky`（`in_review`，验收清单 1/6），**不越权接管**。本轮只记录依赖。
+
+### #9 MHTML/HTML/FB2/DOCX —— 阻塞于他人卡，本轮不动手
+
+- `D0`（`t-mufbaotg-g1abhm`，`in_progress`）：XHTML→TextBlock 扁平化，是 FB2/HTML/MHTML 的前置。
+- `R1`（`t-mufbaou8-ew1jbe`，`in_review`）：`core:archive`，是 DOCX(OOXML)/MHTML(MIME) 的前置。
+两个前置未落地前实现这 4 种格式只能重复造轮子，且会与 `docs/patches/{d0-textblock-flattener,r1-core-archive}.patch` 冲突。只记录依赖。
+
+### #11 内置字体 8.25 MB —— 产品决策，本轮不动手
+
+release 形态最大单项。三条路线：
+
+1. **按需下载**（默认字体常驻、其它字体走下载）：体积最省，需网络 + 字体缓存/校验（新增一类资源下载，与 #5 的下载层可共用）。
+2. **子集化**（按 CJK 常用字表裁剪）：离线可用，体积可压到 ~1–3 MB，代价是生僻字回退系统字体（字形不一致）。
+3. **维持现状**：8.25 MB 换「任何设备、任何字符都一致」。
+
+**本轮未做**：三条路线对用户体验的影响不同，需产品定；不擅自削减内置字体。
+
+### 汇总（§5 缺口 → 本轮状态）
+
+| # | 缺口 | 状态 |
+|---|---|---|
+| 1 | EPUB 原生阅读器 | 未做：8–12 周，切分见上 |
+| 2 | P6 模块入口 | **部分完成**：TTS 接线 ✅（§11）；6 个宿主屏幕未做（分档见上） |
+| 3 | `engine:toc` JSON | ✅ 已修（§8） |
+| 4 | 46 个失败测试 | ✅ 已修（§8） |
+| 5 | OCR 下载适配层 | 未做：待产品决策（两条路线） |
+| 6 | CB7 / CBR | ✅ CB7 实装（§9）；CBR 明确不做原生 |
+| 7 | MOBI HUFF/CDIC | 阻塞：卡 `t-muexn60r-4p3sky`（in_review） |
+| 8 | PDF 工具栏 3 TODO | ✅ 已修（§10，实为整条链路未接线） |
+| 9 | MHTML/HTML/FB2/DOCX | 阻塞：卡 D0（in_progress）+ R1（in_review） |
+| 10 | 16 KB 守卫 | ✅ 已修（§8） |
+| 11 | 内置字体 8.25 MB | 未做：待产品决策（三条路线） |
+
+
 
