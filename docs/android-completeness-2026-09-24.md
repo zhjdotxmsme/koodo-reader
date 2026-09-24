@@ -61,7 +61,7 @@ gradle -p android :app:assembleRelease -Ptarget=native                          
 - **P8 L1 杠杆实测成立**：`-PstripIsland=true` 省 7.85 MB 且 `assets/webapp` 条目归零（`docs/android-baseline-after.json` 的 `after.measured` 已回填，status 由 `pending-build` 改为 `measured`）。
 - **P8 L3 杠杆实测**：R8 把 dex 从 11.97 MB 压到 1.18 MB。release 形态下 **res 的 8.43 MB（其中 8.25 MB 是内置字体 lxgw_wenkai_lite.ttf）成为最大单项**，即 P8 的 L2 杠杆。
 - **`.so` 不再是 0**：`:feature:tts` 引入 `androidx.datastore` 后，APK 内出现 `lib/arm64-v8a/libdatastore_shared_counter.so`（7112 B）。用直接解析 ELF program header 的方式核对：`PT_LOAD p_align = 0x4000 (16384)` → **满足 Android 15+ 16 KB page size 要求**。
-- `scripts/check-elf-16kb.js` 本身**在本机跑不了**（需要 `unzip` + `readelf`，Windows 上没有）——守卫脚本存在但未接入 CI 的 Windows 环境，建议改为纯 Node 实现或用 Gradle 任务。
+- ~~`scripts/check-elf-16kb.js` 本身**在本机跑不了**（需要 `unzip` + `readelf`，Windows 上没有）~~ → **已修复**：脚本重写为纯 Node（自解析 ZIP + ELF program header），本机实测通过；CI 已接入（见 §8）。
 
 ---
 
@@ -137,14 +137,14 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 |---|---|---|---|
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
 | 2 | **P6 六个模块无入口** | TTS/词典/翻译/OCR/统计/简繁 交付了但用户摸不到 | 需要各自宿主屏幕 + 导航项 + manifest 接线（TTS 前台服务/通知/`<queries>` 未加） |
-| 3 | `engine:toc` ReadingPosition JSON 非法 | **写用户数据**，恢复位置会解析失败 | 直接修 `ReadingPosition` 编码（键加引号） |
-| 4 | 46 个失败测试 | 6 个 module 的既有缺陷（详见 §3） | 各需要一个卡 |
+| 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
+| 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
 | 5 | OCR 下载适配层 | OCR 无法按需下载模型 | ML Kit 的 options 不是 `OptionalModuleApi`，需改设计（改跟随 ML Kit 自身下载 / 换 bundled 制品） |
 | 6 | CB7（7z）/ CBR（rar） | 漫画格式两种不可原生读 | `SevenZExtractor` 接 commons-compress；CBR 需另立项 |
 | 7 | MOBI HUFF/CDIC | 部分老 mobi 读不了 | `engine:mobi` 明确未实现压缩 17480 |
 | 8 | PDF 工具栏 3 个 TODO | 大纲/搜索/导出快照不可用 | 接 `PdfHostBridge` 已有接口 |
 | 9 | MHTML/HTML/FB2/DOCX | 4 种格式无原生实现 | 看板 D0（XHTML→TextBlock 扁平化）+ R1（core/archive） |
-| 10 | `scripts/check-elf-16kb.js` 依赖 unzip/readelf | Windows/CI 上无法守 16 KB | 改为纯 Node 解析 ELF |
+| 10 | ~~`scripts/check-elf-16kb.js` 依赖 unzip/readelf~~ | **已修**：纯 Node 实现 + CI 接入（见 §8） | — |
 | 11 | 内置字体 8.25 MB | release 形态最大单项 | P8 L2（按需下载/子集化） |
 
 ---
@@ -160,8 +160,36 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 
 ## 7 · 建议
 
-1. **先把 P2 接线做完**（reader host），否则 P2 的 8–12 周投入在用户侧为 0；P6 模块同理，至少把统计/词典/简繁这类低风险入口接上。
-2. **`ReadingPosition` JSON 缺陷优先修**（数据损坏级）。
-3. CI 加上 `gradle :app:assembleDebug` + `gradle test` 两道门槛 —— 本轮所有问题的根因都是「提交前没编译」。
-4. 把 `check-elf-16kb.js` 改成纯 Node，接入 CI；现在 APK 已经真的带 `.so` 了。
-5. 真机验证另开一轮（有设备时），本文档的 `deviceMetrics` 与 Macrobenchmark 才有结论。
+1. **先把 P2 接线做完**（reader host），否则 P2 的 8–12 周投入在用户侧为 0；P6 模块同理，至少把统计/词典/简繁这类低风险入口接上。 ← **仍待做**
+2. ~~`ReadingPosition` JSON 缺陷优先修~~ → **已修**（`engine:toc` 提交）。
+3. ~~CI 加上 `gradle :app:assembleDebug` + `gradle test` 两道门槛~~ → **已接入**（`gradle test` 为全量门禁；`:app:assembleDebug` 由既有 build-android.js 步骤承担，见 §8）。
+4. ~~把 `check-elf-16kb.js` 改成纯 Node，接入 CI~~ → **已完成**（纯 Node + CI 步骤）。
+5. 真机验证另开一轮（有设备时），本文档的 `deviceMetrics` 与 Macrobenchmark 才有结论。 ← **仍待做**
+
+---
+
+## 8 · 修复进展（同日，缺陷清零）
+
+§3 的 46 个失败测试与 §5 的缺口 3/4/10 已全部修完，每个主题单独提交（未 push）：
+
+| 提交 | 主题 | 结果 |
+|---|---|---|
+| `56a1b2cd` | `engine:toc` 17 个失败 | 43/43 ✅（含**数据损坏级**的 `PositionCodec` 非法 JSON + decode 重加引号） |
+| `16c999ce` | `engine:annotate` 11 个 + `engine:cfi` 加固 | 112/112 ✅（cfi 对「无 step 的 CFI」抛 `EMPTY_PATH`） |
+| `c72aa45d` | `engine:gesture` 6 个失败 | 40/40 ✅（`GestureEngine(config)` 忽略 config、`FlingPhysics` 负速度归零、甩动方向、TapZone 右上区） |
+| `c9b55989` | `engine:pdf` 5 个失败 | 61/61 ✅（`PdfZoom` 哨兵被自家校验拒绝、`fromDesktop` 越界处理、selfCheck 入口类名） |
+| `6ef61c90` | `core:locale` 4 个失败 | 51/51 ✅（4 处均为测试期望写错，逐条与模块内已通过用例交叉核对） |
+| `e9ab3c39` | `core:dbio` 3 个失败 | 22/22 ✅（测试流未关闭导致 @TempDir 清理失败、导出 JSON 空格、夹具违反 byKey⊇byMd5 不变量） |
+| `2fe78ea3` | 16 KB 守卫纯 Node 化 + CI 门禁 | 真机无设备也能跑；CI 单测改全量 `gradle test` |
+
+最终验证（本机 Gradle 8.5 + JDK 17 + Android SDK 34）：
+
+```
+gradle -p android --continue test                     → BUILD SUCCESSFUL
+                                                       1155 个唯一测试 / 0 失败 / 22 个 module 全绿
+gradle -p android :app:assembleDebug -Ptarget=native  → BUILD SUCCESSFUL（30.97 MB）
+node scripts/check-elf-16kb.js <app-debug.apk>        → 4 个 .so 全 PASS（p_align=0x4000），exit 0
+自检 runner（cfi/annotate/gesture/pdf/toc/locale）      → 全部 PASS（修复前 pdf/gesture 是坏的）
+```
+
+仍未做（不在本轮范围）：§5 的缺口 1/2（P2 reader host、P6 六个模块入口——产品接线）、5/6/7/8/9/11，以及 §6 的全部真机项。

@@ -152,6 +152,8 @@ javap ...TextRecognizerOptionsInterface
 > 上表的 feature:* 数字在首次统计时被 debug/release 双变体重复计入（dictionary 126→63、ocr 58→29、stats 68→34、translate 156→78、tts 110→55）；此处为去重后的唯一测试数。「原始执行数约 1400」是 Gradle 实际跑的次数。
 >
 > `:app` 的 `LibraryLogicTest`（11 个）在合并当时取自 **11:22 的旧构建**（当时 `:app` 无法编译），后续修复后已重新跑过：**11/11 通过**（`:app` 共 3 个变体 × 11）。
+>
+> **补记（同日）**：下表这 46 个失败**已全部修复**——`gradle -p android --continue test` 现在 BUILD SUCCESSFUL，**1155 个唯一测试 / 0 失败 / 22 个 module 全绿**。逐 module 的提交与结论（含「实现缺陷 vs 测试期望写错」的分类）见 [`docs/android-completeness-2026-09-24.md`](android-completeness-2026-09-24.md) §8。
 
 典型失败（按严重度）：
 

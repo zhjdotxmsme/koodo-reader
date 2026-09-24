@@ -208,7 +208,7 @@ android/feature/ocr/
 
 ### 5.3 16 KB 页对齐与 `.so` 体积评估（本卡重点结论）
 
-**风险背景**：Android 15+ 起 16 KB 页大小设备要求 `LOAD` 段 `p_align` 是 `0x4000` 的整数倍；仓库已有守卫 `scripts/check-elf-16kb.js`（Node 版，`llvm-readelf -l` 逐 `.so` 校验）与 `scripts/check-elf-16kb.sh`，并且 `docs/android-native-migration.md:175` 已因 16 KB 对齐问题**排除 Pdfium**。P3 选择 pdf.js 后，当前 APK 内 `.so` 数量为 0。
+**风险背景**：Android 15+ 起 16 KB 页大小设备要求 `LOAD` 段 `p_align` 是 `0x4000` 的整数倍；仓库已有守卫 `scripts/check-elf-16kb.js`（**纯 Node**：自解析 APK 的 ZIP 中央目录取出 `lib/**/*.so`，再自解析 ELF program header 校验每个 `PT_LOAD`，不依赖 `unzip`/`llvm-readelf`；已接入 CI 出包后的守卫步骤）与 `scripts/check-elf-16kb.sh`（POSIX 版，仍走 `unzip`+`readelf`），并且 `docs/android-native-migration.md:175` 已因 16 KB 对齐问题**排除 Pdfium**。P3 选择 pdf.js 后，当时 APK 内 `.so` 数量为 0；P6-TTS 引入 `androidx.datastore` 后出现首个 `.so`（7 KB，实测 `p_align=0x4000` 合规）。
 
 **事实依据**：
 

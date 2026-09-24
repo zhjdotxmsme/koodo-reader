@@ -146,7 +146,7 @@
         "totalBytes": 7112,
         "source": "androidx.datastore:datastore-preferences:1.1.1（由 :feature:tts 引入）",
         "elfCheck": "PT_LOAD p_align = 0x4000（16384）→ 满足 Android 15+ 16 KB page size 要求",
-        "note": "★ 本 APK 不再是「零 .so」：P6-TTS 接线引入了第一个原生库，16 KB 守卫从此有真实对象。scripts/check-elf-16kb.js 依赖 unzip+readelf（本机没有），本次改用直接解析 ELF program header 得到上述结论。"
+        "note": "★ 本 APK 不再是「零 .so」：P6-TTS 接线引入了第一个原生库，16 KB 守卫从此有真实对象。守卫脚本已改为**纯 Node**（自解析 ZIP + ELF program header，不再需要 unzip/readelf）：`node scripts/check-elf-16kb.js <apk>` → 4 个 ABI 全部 PASS，并已在 CI 出包步骤后接入。"
       }
     },
     "deliverablePatches": [
