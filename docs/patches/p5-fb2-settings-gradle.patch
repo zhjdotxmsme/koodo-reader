@@ -1,0 +1,57 @@
+P5.5 模块接入模板（**未应用**，供主线程/用户人工决定）
+================================================================
+
+本文件是 `android/settings.gradle` 的最小接入 patch 模板，对应
+`docs/fb2-docx-html-mhtml-eval.md` §8 与 `docs/adr/ADR-006-fb2-docx-html-mhtml-native.md`。
+
+为什么单独放这里、而不是直接改 `android/settings.gradle`：
+
+1. 本评估任务卡（t-muexn64a-j64yvl）的硬约束：**不得修改** `android/settings.gradle`、
+   `android/app/build.gradle`、`android/build.gradle`。
+2. `android/settings.gradle` 是并行 sub 任务的共享热点文件（本仓库已有 `:engine:toc`、
+   `:engine:mobi`、`:engine:pdf` 等由不同轮次追加的 include 行）。并行追加必然冲突，
+   应由主线程**串行**合并。
+
+应用方式（在仓库根目录，确认无并行改动进行中时）：
+
+    git apply docs/patches/p5-fb2-settings-gradle.patch
+
+已用 `git apply --check --verbose` 验证可应用（在本 worktree 的 `android/settings.gradle`
+上 Hunk #1 命中于第 59 行、offset -19 —— 因为本 patch 的上下文取自**含并行改动的
+工作区版本**；Gradle 的 include 行顺序无语义影响，故两种偏移都可接受）。
+
+回滚：
+
+    git checkout -- android/settings.gradle
+
+注意：patch 只登记 4 个模块的 include 行；各模块自身的 `build.gradle`
+（`id 'org.jetbrains.kotlin.jvm'` + JUnit5 test-only + 可选 `selfCheck` 任务，与
+`android/engine/text/build.gradle`、`android/engine/mobi/build.gradle` 同构）
+随各格式的实现卡产出，不在本 patch 内。
+
+----------------------------------------------------------------------
+diff --git a/android/settings.gradle b/android/settings.gradle
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -78,5 +78,21 @@
+ // in the engine WebView (Apache-2.0, zero .so; see docs/android-pdf-poc.md).
+ // Pure JVM module — outline / text search / password gate / Range→CFI
+ // mapping / snapshot exporter are all algorithm-only, unit-tested without
+ // the Android SDK. The Compose WebView host (engine/pdfhost) lives in :app.
+ include ':engine:pdf'
++
++// Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
++// desktop backup bundles. Do not add a fourth ad-hoc ZipFile reader — see
++// docs/fb2-docx-html-mhtml-eval.md risk R1.
++include ':core:archive'
++
++// Native FB2 (FictionBook 2) converter (P5.5a): XML -> XHTML structure +
++// metadata, structure-equivalent to kookit src/libs/fb2.js (CFI parity).
++include ':engine:fb2'
++
++// Native single-file HTML / MHTML converter (P5.5b/c): lenient HTML parse +
++// MIME multipart/related decode -> flattened blocks for :engine:layout.
++include ':engine:htmlbook'
++
++// Native DOCX (WordprocessingML subset) converter (P5.5d).
++include ':engine:docx'
