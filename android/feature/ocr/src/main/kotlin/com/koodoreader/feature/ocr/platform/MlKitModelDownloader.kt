@@ -1,197 +1,135 @@
-// feature/ocr — ML Kit model packs through the Play services module-install API.
+// feature/ocr — ML Kit adapter for the on-demand download contract.
 //
-// ML Kit's unbundled models ARE on-demand Google Play services modules, so the
-// download is driven by `ModuleInstallClient`
-// (https://developers.google.cn/android/guides/module-install-apis):
-//   areModulesAvailable → check, installModules → urgent install with progress,
-//   deferredInstall → background install, InstallStatusListener → progress.
+// This is the ANDROID half of the OCR download layer: it turns
+// [OcrModelInstaller]'s probe into a real ML Kit call. The state machine,
+// coalescing and retry policy live in the pure module
+// (`ocr/OcrModelInstaller.kt`, covered by OcrModelInstallerTest).
 //
-// Two things the app must also do (main-thread wiring, NOT done by this module):
-//   1. request the install-time download in the app manifest:
-//        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES"
-//                   android:value="ocr,ocr_chinese" />
-//      (`OcrScript.manifestValue(listOf(...))` builds that value);
-//   2. add `com.google.android.gms:play-services-base` (ModuleInstall lives
-//      there) — already implied by the play-services-mlkit-* artifacts.
+// ---------------------------------------------------------------------------
+// Why there is no ModuleInstallClient here (was: BLOCKED, 2026-09-24)
 //
-// Android-only file (excluded from the JVM harness); the contract it implements
-// is covered by OnDemandModelDownloaderTest against the in-memory double.
+// The first revision used the Play-services module-install API
+// (`ModuleInstall.getClient(...).areModulesAvailable/installModules`). That API
+// needs an `OptionalModuleApi` per module, and ML Kit's text-recognition options
+// objects are not one:
+//
+//   $ javap -classpath play-services-mlkit-text-recognition-19.0.1/classes.jar \
+//       com.google.mlkit.vision.text.latin.TextRecognizerOptions
+//   public class ...TextRecognizerOptions
+//       implements com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+//   $ javap ... com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+//   public interface ...TextRecognizerOptionsInterface {   // no OptionalModuleApi
+//     getModuleId() is declared; getOptionalFeatures() is not
+//   }
+//
+// 19.0.1 is the newest published version, and the bundled `com.google.mlkit:
+// text-recognition*` artifacts do not put that class on the classpath at all, so
+// no import change, version bump or adapter makes it type-correct. This file
+// therefore implements the documented fallback: the manifest `DEPENDENCIES`
+// meta-data is the install-time pre-download mechanism, and "is the model usable
+// yet?" is answered by probing the recognizer — which also triggers ML Kit's own
+// on-demand fetch for a missing model.
+//
+// Android-only file; the contract it implements is JVM-tested through
+// OcrModelInstaller.
+// ---------------------------------------------------------------------------
 package com.koodoreader.feature.ocr.platform
 
 import android.content.Context
-import com.google.android.gms.common.api.OptionalModuleApi
-import com.google.android.gms.common.moduleinstall.InstallStatusListener
-import com.google.android.gms.common.moduleinstall.ModuleInstall
-import com.google.android.gms.common.moduleinstall.ModuleInstallClient
-import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
-import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
-import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
-import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import android.graphics.Bitmap
+import android.graphics.Color
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognizer
 import com.koodoreader.feature.ocr.DownloadResult
 import com.koodoreader.feature.ocr.DownloadState
 import com.koodoreader.feature.ocr.ModelPack
+import com.koodoreader.feature.ocr.ModelProbe
+import com.koodoreader.feature.ocr.OcrModelInstaller
 import com.koodoreader.feature.ocr.OcrScript
 import com.koodoreader.feature.ocr.OnDemandDownloader
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * The `OptionalModuleApi` handle of an ML Kit script model.
+ * [OnDemandDownloader] for ML Kit script models.
  *
- * ML Kit's text-recognition options objects are the module handles for the
- * Play-services artifacts — the very same objects are passed to
- * `TextRecognition.getClient(...)`. The declared return type is nullable on
- * purpose: if a future ML Kit version stops exposing them here, this file stops
- * COMPILING at these five lines instead of silently reporting "not installed".
- * (Integration-time check, design doc §5.3.)
- */
-object MlKitOptionalModuleApis {
-    fun of(script: OcrScript): OptionalModuleApi? = when (script) {
-        OcrScript.LATIN -> TextRecognizerOptions.DEFAULT_OPTIONS
-        OcrScript.CHINESE -> ChineseTextRecognizerOptions.Builder().build()
-        OcrScript.DEVANAGARI -> DevanagariTextRecognizerOptions.Builder().build()
-        OcrScript.JAPANESE -> JapaneseTextRecognizerOptions.Builder().build()
-        OcrScript.KOREAN -> KoreanTextRecognizerOptions.Builder().build()
-    }
-}
-
-/**
- * [OnDemandDownloader] for ML Kit model packs.
- *
- * `state` never performs IO (contract rule 1): it returns the last observed
- * availability, refreshed by [refresh] / [ensureInstalled].
- * `release` always returns false — models live in Google Play services and
- * cannot be removed by the app (contract rule 6).
+ * See the file header for why a probe replaces the ModuleInstall API, and
+ * `ocr/OcrModelInstaller.kt` for the retry/coalescing policy.
  */
 class MlKitModelDownloader(
-    private val client: ModuleInstallClient,
-    private val apiFor: (OcrScript) -> OptionalModuleApi? = MlKitOptionalModuleApis::of,
+    retryDelaysMs: List<Long> = OcrModelInstaller.DEFAULT_RETRY_DELAYS_MS,
+    probe: ModelProbe = MlKitModelProbe(),
 ) : OnDemandDownloader {
 
-    private val observed = ConcurrentHashMap<String, DownloadState>()
+    private val installer = OcrModelInstaller(probe = probe, retryDelaysMs = retryDelaysMs)
 
-    constructor(context: Context) : this(ModuleInstall.getClient(context.applicationContext))
+    /**
+     * Kept for call sites that already hold a `Context` (see [OcrWiring]); ML Kit
+     * resolves its own `MlKitContext` from the manifest-registered init provider,
+     * so nothing here needs the context.
+     */
+    constructor(
+        context: Context,
+        retryDelaysMs: List<Long> = OcrModelInstaller.DEFAULT_RETRY_DELAYS_MS,
+        probe: ModelProbe = MlKitModelProbe(),
+    ) : this(retryDelaysMs, probe)
 
-    override fun state(pack: ModelPack): DownloadState =
-        observed[pack.id] ?: DownloadState.NotInstalled
-
-    /** Queries Google Play services once and caches the answer. */
-    suspend fun refresh(pack: ModelPack): DownloadState {
-        val api = pack.script?.let(apiFor) ?: return DownloadState.NotInstalled
-        val available = suspendCancellableCoroutine { continuation ->
-            client.areModulesAvailable(api)
-                .addOnSuccessListener { response ->
-                    if (continuation.isActive) continuation.resume(response.areModulesAvailable())
-                }
-                .addOnFailureListener { error ->
-                    if (continuation.isActive) continuation.resumeWithException(error)
-                }
-        }
-        val state = if (available) DownloadState.Installed else DownloadState.NotInstalled
-        observed[pack.id] = state
-        return state
-    }
+    override fun state(pack: ModelPack): DownloadState = installer.state(pack)
 
     override suspend fun ensureInstalled(
         pack: ModelPack,
         onProgress: ((Float) -> Unit)?,
-    ): DownloadResult {
-        val api = pack.script?.let(apiFor)
-            ?: return DownloadResult.Unsupported
+    ): DownloadResult = installer.ensureInstalled(pack, onProgress)
 
-        runCatching { refresh(pack) }
-        if (observed[pack.id] == DownloadState.Installed) return DownloadResult.AlreadyInstalled
+    override suspend fun release(pack: ModelPack): Boolean = installer.release(pack)
 
-        observed[pack.id] = DownloadState.Downloading(null)
-        val outcome = runCatching {
-            suspendCancellableCoroutine { continuation ->
-                val listener = object : InstallStatusListener {
-                    override fun onInstallStatusUpdated(update: ModuleInstallStatusUpdate) {
-                        update.progressInfo?.let { info ->
-                            val total = info.totalBytesToDownload
-                            val progress =
-                                if (total > 0L) (info.bytesDownloaded.toFloat() / total.toFloat()) else null
-                            observed[pack.id] = DownloadState.Downloading(progress)
-                            if (progress != null && continuation.isActive) onProgress?.invoke(progress)
-                        }
-                        when (update.installState) {
-                            ModuleInstallStatusUpdate.InstallState.STATE_COMPLETED -> {
-                                client.unregisterListener(this)
-                                if (continuation.isActive) continuation.resume(DownloadResult.Downloaded(pack.approxBytes))
+    /** Convenience for the settings screen: install without progress reporting. */
+    suspend fun install(pack: ModelPack): DownloadResult = installer.install(pack)
+
+    /** Probe once and cache: "is this script usable on this device?" */
+    suspend fun refresh(pack: ModelPack): DownloadState = installer.refresh(pack)
+
+    /**
+     * The real probe: create the script's recognizer and run it against a blank
+     * image.
+     *
+     * Creating the recognizer already resolves the model; running it once is what
+     * makes ML Kit fetch a model that is not on the device yet, and it is also
+     * what surfaces "no Play services" / "no network" as a failure instead of a
+     * silent empty result. The blank image keeps the cost to a model load plus an
+     * empty-page pass.
+     */
+    internal class MlKitModelProbe(
+        private val recognizerFactory: (OcrScript) -> TextRecognizer =
+            MlKitOcrProvider.Companion::defaultRecognizer,
+    ) : ModelProbe {
+
+        override suspend fun probe(script: OcrScript) {
+            val recognizer = recognizerFactory(script)
+            try {
+                val bitmap = Bitmap.createBitmap(PROBE_SIZE, PROBE_SIZE, Bitmap.Config.ARGB_8888)
+                try {
+                    bitmap.eraseColor(Color.WHITE)
+                    val image = InputImage.fromBitmap(bitmap, 0)
+                    suspendCancellableCoroutine { continuation ->
+                        recognizer.process(image)
+                            .addOnSuccessListener { if (continuation.isActive) continuation.resume(Unit) }
+                            .addOnFailureListener { error ->
+                                if (continuation.isActive) continuation.resumeWithException(error)
                             }
-
-                            ModuleInstallStatusUpdate.InstallState.STATE_CANCELED -> {
-                                client.unregisterListener(this)
-                                if (continuation.isActive) {
-                                    continuation.resume(DownloadResult.Failed("download canceled"))
-                                }
-                            }
-
-                            ModuleInstallStatusUpdate.InstallState.STATE_FAILED -> {
-                                client.unregisterListener(this)
-                                if (continuation.isActive) {
-                                    continuation.resume(
-                                        DownloadResult.Failed(
-                                            update.errorCode.takeIf { it != 0 }
-                                                ?.let { "module install failed (error $it)" }
-                                                ?: "module install failed",
-                                        ),
-                                    )
-                                }
-                            }
-                        }
                     }
+                } finally {
+                    bitmap.recycle()
                 }
-                val request = ModuleInstallRequest.newBuilder()
-                    .addApi(api)
-                    .setListener(listener)
-                    .build()
-                client.installModules(request)
-                    .addOnSuccessListener { response ->
-                        // "already installed" short-circuits the listener path.
-                        if (response.areModulesAlreadyInstalled() && continuation.isActive) {
-                            client.unregisterListener(listener)
-                            continuation.resume(DownloadResult.AlreadyInstalled)
-                        }
-                    }
-                    .addOnFailureListener { error ->
-                        client.unregisterListener(listener)
-                        if (continuation.isActive) {
-                            continuation.resume(DownloadResult.Failed(error.message ?: "module install request failed"))
-                        }
-                    }
-                continuation.invokeOnCancellation { client.unregisterListener(listener) }
+            } finally {
+                runCatching { recognizer.close() }
             }
         }
 
-        return outcome.fold(
-            onSuccess = { result ->
-                observed[pack.id] = when (result) {
-                    DownloadResult.AlreadyInstalled, is DownloadResult.Downloaded -> DownloadState.Installed
-                    is DownloadResult.Failed -> DownloadState.Failed(result.reason, result.retryable)
-                    DownloadResult.Unsupported -> DownloadState.Failed("unsupported", retryable = false)
-                }
-                result
-            },
-            onFailure = { error ->
-                val reason = error.message ?: error::class.java.simpleName
-                observed[pack.id] = DownloadState.Failed(reason)
-                DownloadResult.Failed(reason)
-            },
-        )
+        private companion object {
+            /** Small enough to be free, large enough for ML Kit to accept it. */
+            const val PROBE_SIZE = 8
+        }
     }
-
-    /** ML Kit models are owned by Google Play services — the app cannot delete them. */
-    override suspend fun release(pack: ModelPack): Boolean {
-        observed.remove(pack.id)
-        return false
-    }
-
-    /** Convenience for the settings screen: install without progress reporting. */
-    suspend fun install(pack: ModelPack): DownloadResult = ensureInstalled(pack)
 }

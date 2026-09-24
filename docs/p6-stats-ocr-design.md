@@ -202,9 +202,35 @@ android/feature/ocr/
 </application>
 ```
 
-- 安装期预下载：上面的 meta-data（避免用户首次扫码时才等下载）。
-- 运行期显式下载/进度：`ModuleInstallClient`（`areModulesAvailable` / `installModules` + `InstallStatusListener` 的 `bytesDownloaded/totalBytesToDownload`）——见 [Module install APIs](https://developers.google.cn/android/guides/module-install-apis?hl=en)；`MlKitModelDownloader` 即其实现，`release()` 恒返回 `false`（ML Kit 模型归 Play services，App 无权删除，契约第 6 条）。
+- 安装期预下载：上面的 meta-data（避免用户首次扫码时才等下载）。**这是本项目实际生效的机制**（见下面 §5.2.1）。
+- 运行期显式下载/进度：原设计走 `ModuleInstallClient`（`areModulesAvailable` / `installModules` + `InstallStatusListener` 的 `bytesDownloaded/totalBytesToDownload`，见 [Module install APIs](https://developers.google.cn/android/guides/module-install-apis?hl=en)），但该路径对本模块**不可用**，已改为探针实现（§5.2.1）。`release()` 恒返回 `false`（ML Kit 模型归 Play services，App 无权删除，契约第 6 条）。
 - ML Kit 文本识别 v2 要求 **API 23+**（本模块 `minSdk 24` ✓）。
+
+#### 5.2.1 ModuleInstall 不可用的证据与替代实现（2026-09-24 定案）
+
+`ModuleInstallRequest.addApi(...)` 只接受 `OptionalModuleApi`，而 ML Kit 的文本识别 options 对象并不是它：
+
+```
+$ javap -classpath play-services-mlkit-text-recognition-19.0.1/classes.jar \
+    com.google.mlkit.vision.text.latin.TextRecognizerOptions
+public class ...TextRecognizerOptions
+    implements com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+$ javap ... com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+public interface ...TextRecognizerOptionsInterface {   // 无 OptionalModuleApi
+  getModuleId() 有；getOptionalFeatures() 未声明
+}
+```
+
+19.0.1 是当前最新版本，内置变体 `com.google.mlkit:text-recognition*` 的 classpath 上根本没有这个类，因此**改 import / 升版本 / 写适配器都无法让它类型正确**。结论：本模块保留「按需（Play services）构件」路线（产品已确认），但下载驱动改为：
+
+1. **安装期**：app manifest 的 `com.google.mlkit.vision.DEPENDENCIES` meta-data（`android:value="ocr,ocr_chinese"`，即 latin + chinese）由 Play services 在装包时预取；其余脚本（日/韩/天城文）首次使用时再取。
+2. **运行期**：`OcrModelInstaller`（纯 JVM，可单测）用**探针**判定可用性——创建该脚本的 `TextRecognizer` 并对一张 8×8 白图跑一次；失败即重试（1s/3s/8s 退避），重试后成功说明期间完成了取模。`platform/MlKitModelDownloader.kt` 只是把探针接到 ML Kit 上，两个文件**已解除 quarantine 并重新参与编译**。
+
+由此带来的两个 UI 事实（契约里已写明）：
+
+- **没有字节进度**：ML Kit 不为这些模型暴露下载进度，故 `DownloadState.Downloading(progress = null)`、`onProgress` 不会被调用，宿主必须显示不确定进度条；不要伪造 0..1。
+- **「已装」与「刚下载」只能靠探测顺序区分**：首次探针即成功 → `AlreadyInstalled`；重试后才成功 → `Downloaded(bytes)`。
+
 
 ### 5.3 16 KB 页对齐与 `.so` 体积评估（本卡重点结论）
 

@@ -85,6 +85,9 @@ jobs:
       - name: Check TTS manifest wiring matches the feature module (P6 guard)
         run: node scripts/check-tts-manifest.js
 
+      - name: Check OCR pre-download meta-data matches OcrScript (P6 guard)
+        run: node scripts/check-ocr-manifest.js
+
       - name: Test the pdf.js engine core (native PDF reader bridge)
         run: node scripts/test-pdfengine.js
 

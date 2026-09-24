@@ -159,6 +159,19 @@
         </activity-alias>
 
         <!--
+          P6 OCR: asks Google Play services to fetch these ML Kit script models
+          when the app is installed, so the first scan does not sit on a
+          download. The value is `OcrScript.manifestValue(...)` (latin +
+          chinese); the other scripts (japanese / korean / devanagari) are
+          fetched by ML Kit on first use, which the reader reports as an
+          indeterminate "downloading" state. `scripts/check-ocr-manifest.js`
+          keeps this value and the `OcrScript` enum in sync.
+        -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,ocr_chinese" />
+
+        <!--
           P6 TTS playback: a foreground service of type `mediaPlayback` so
           reading aloud survives the screen going off. Not exported: only our
           own notification actions and the receiver start it.

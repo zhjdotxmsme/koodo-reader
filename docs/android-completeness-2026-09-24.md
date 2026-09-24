@@ -139,13 +139,13 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | 2 | **P6 六个模块无入口** | TTS/词典/翻译/OCR/统计/简繁 交付了但用户摸不到 | 需要各自宿主屏幕 + 导航项 + manifest 接线（TTS 的 manifest/`<queries>`/通知/图标/i18n 已补，见 §11；**宿主屏幕仍缺**） |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
-| 5 | OCR 下载适配层 | OCR 无法按需下载模型 | ML Kit 的 options 不是 `OptionalModuleApi`，需改设计（改跟随 ML Kit 自身下载 / 换 bundled 制品） |
+| 5 | ~~OCR 下载适配层~~ | **已修（见 §13）**：`ModuleInstallClient` 对本模块不可用（ML Kit options 不是 `OptionalModuleApi`），改为「manifest 预下载 + 探针重试」实现，两个被 quarantine 的文件重新参与编译 | — |
 | 6 | ~~CB7（7z）~~ 已修 / CBR（rar） | CB7 可原生读；CBR 仍不可 | CB7 已接 commons-compress（见 §9）；**CBR 按 ADR-002 明确不做原生**（无纯 JVM 可用 RAR5 解压器，继续走兜底岛） |
 | 7 | MOBI HUFF/CDIC | 部分老 mobi 读不了 | `engine:mobi` 明确未实现压缩 17480 |
 | 8 | ~~PDF 工具栏 3 个 TODO~~ | **已修（见 §10）**：查证后发现整条 PDF 链路从未运行——空壳屏幕 + 6 个「编译通过但永不生效」的缺陷；本轮全部接线 | — |
 | 9 | MHTML/HTML/FB2/DOCX | 4 种格式无原生实现 | 看板 D0（XHTML→TextBlock 扁平化）+ R1（core/archive） |
 | 10 | ~~`scripts/check-elf-16kb.js` 依赖 unzip/readelf~~ | **已修**：纯 Node 实现 + CI 接入（见 §8） | — |
-| 11 | 内置字体 8.25 MB | release 形态最大单项 | P8 L2（按需下载/子集化） |
+| 11 | 内置字体 8.25 MB | release 形态最大单项 | **产品已定：维持现状**（不裁剪、不下载，任何字符/设备一致；见 §12） |
 
 ---
 
@@ -329,14 +329,9 @@ TTS 的**接线**已完成（§11）。剩下的入口屏幕按风险分三档�
 | 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate`) | 需要在阅读器内叠加 UI，依赖 #1 的 reader host 或 PDF 屏的宿主 |
 | 高 | TTS(`feature:tts`)、OCR(`feature:ocr`) | 需要前台服务/权限运行时请求、模型下载（见 #5）；TTS 现在只差启动 UI |
 
-### #5 OCR 下载适配层 —— 需产品决策（APK 体积 vs 首次下载）
+### #5 OCR 下载适配层 —— 已修（用户选定「跟随 Play 服务按需下载」）
 
-卡点属实：`feature:ocr` 走 `OptionalModuleApi` 抽象，而 ML Kit 的 `TextRecognizerOptions` **不是** `OptionalModuleApi`，两者对不上。两条可行路线：
-
-1. **跟随 ML Kit 自身下载**（`com.google.android.gms:play-services-mlkit-text-recognition`，Play 服务按需下发模型）：APK 几乎不增，首次识别需下载 + **依赖 Play 服务**（无 GMS 设备不可用）。
-2. **bundled 制品**（`com.google.mlkit:text-recognition`，模型进 APK）：无网络可用、无 GMS 依赖，代价是 **APK 增加约 4–16 MB**（按脚本/语言子集浮动，且是 `.so`/模型二进制，需重跑 16 KB 守卫）。
-
-**本轮未做**：改动方向取决于「APK 体积」与「无 GMS 可用性」哪个优先，属产品决策；不擅自选一种。
+见 §13。这里保留原决策记录：ML Kit 的 options 不是 `OptionalModuleApi`，因此**没有**采用 bundled 制品（APK +4~16 MB / 16 KB `.so` 风险），而是保留 unbundled 构件 + 安装期 meta-data 预下载 + 探针重试。
 
 ### #7 MOBI HUFF/CDIC —— 阻塞于他人卡，本轮不动手
 
@@ -348,15 +343,9 @@ TTS 的**接线**已完成（§11）。剩下的入口屏幕按风险分三档�
 - `R1`（`t-mufbaou8-ew1jbe`，`in_review`）：`core:archive`，是 DOCX(OOXML)/MHTML(MIME) 的前置。
 两个前置未落地前实现这 4 种格式只能重复造轮子，且会与 `docs/patches/{d0-textblock-flattener,r1-core-archive}.patch` 冲突。只记录依赖。
 
-### #11 内置字体 8.25 MB —— 产品决策，本轮不动手
+### #11 内置字体 8.25 MB —— 产品已定：维持现状
 
-release 形态最大单项。三条路线：
-
-1. **按需下载**（默认字体常驻、其它字体走下载）：体积最省，需网络 + 字体缓存/校验（新增一类资源下载，与 #5 的下载层可共用）。
-2. **子集化**（按 CJK 常用字表裁剪）：离线可用，体积可压到 ~1–3 MB，代价是生僻字回退系统字体（字形不一致）。
-3. **维持现状**：8.25 MB 换「任何设备、任何字符都一致」。
-
-**本轮未做**：三条路线对用户体验的影响不同，需产品定；不擅自削减内置字体。
+release 形态最大单项。三条路线中，**用户选择维持现状**：不裁剪（子集化会让生僻字回退系统字体、字形不一致），不按需下载（会引入网络与缓存校验，且离线阅读正是产品定位）。因此该项**关闭为「已决策、不实施」**，不是遗留缺陷。
 
 ### 汇总（§5 缺口 → 本轮状态）
 
@@ -366,13 +355,51 @@ release 形态最大单项。三条路线：
 | 2 | P6 模块入口 | **部分完成**：TTS 接线 ✅（§11）；6 个宿主屏幕未做（分档见上） |
 | 3 | `engine:toc` JSON | ✅ 已修（§8） |
 | 4 | 46 个失败测试 | ✅ 已修（§8） |
-| 5 | OCR 下载适配层 | 未做：待产品决策（两条路线） |
+| 5 | OCR 下载适配层 | ✅ 已修（§13，用户选定「跟随 Play 服务按需下载」） |
 | 6 | CB7 / CBR | ✅ CB7 实装（§9）；CBR 明确不做原生 |
 | 7 | MOBI HUFF/CDIC | 阻塞：卡 `t-muexn60r-4p3sky`（in_review） |
 | 8 | PDF 工具栏 3 TODO | ✅ 已修（§10，实为整条链路未接线） |
 | 9 | MHTML/HTML/FB2/DOCX | 阻塞：卡 D0（in_progress）+ R1（in_review） |
 | 10 | 16 KB 守卫 | ✅ 已修（§8） |
-| 11 | 内置字体 8.25 MB | 未做：待产品决策（三条路线） |
+| 11 | 内置字体 8.25 MB | ✅ 已决策：维持现状（8.25 MB 保留，§12） |
+
+---
+
+## 13 · 缺口修复进展（第五轮：OCR 下载适配层）
+
+对应 §5 缺口 5。用户决策：**跟随 Play 服务按需下载**（不换 bundled 制品）。
+
+**原卡点**（此前以 `exclude` 把两个文件隔离出构建）：`ModuleInstallRequest.addApi(...)` 只接受 `OptionalModuleApi`，而 ML Kit 的 options 对象不是它——`TextRecognizerOptionsInterface` 只声明 `getModuleId()`，没有 `getOptionalFeatures()`；19.0.1 已是最新版，bundled 构件的 classpath 上根本没有该类，**改 import / 升版本 / 写适配器都无法类型正确**。
+
+**解法的关键：把「能不能装」从 ModuleInstall 换成探针。** 逻辑与 Android 分离，于是第一次变得可测：
+
+| 文件 | 内容 |
+|---|---|
+| `ocr/OcrModelInstaller.kt`（新，纯 JVM） | 重试/合并/状态机：探针成功即 `Installed`；首次成功 → `AlreadyInstalled`，重试后成功 → `Downloaded(bytes)`（这是唯一能证明"期间完成了取模"的观测）；同 pack 并发只跑一个探针；`release` 恒 `false`（模型归 Play services） |
+| `platform/MlKitModelDownloader.kt`（重写，**解除 quarantine**） | 探针实现：创建该脚本的 `TextRecognizer`，对 8×8 白图跑一次（成功=模型可用；**首次使用会触发 ML Kit 自己的按需取模**），用完 `close()` |
+| `platform/OcrIndexDatabase.kt`（**解除 quarantine**） | 只因消费 downloader 而被一并隔离，现在随下载器一起恢复编译 |
+| `:app` manifest | `<meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr,ocr_chinese"/>`——安装期预取 latin + chinese；日/韩/天城文首次使用时取 |
+| `scripts/check-ocr-manifest.js`（新，CI 门禁） | meta-data 必须存在、每个 token 都必须是 `OcrScript.manifestValue`、不得重复、latin 必须在列（未知语言回退脚本） |
+
+**必须让宿主知道的两个事实**（已写进契约与设计文档，避免以后有人"补"出一个假的进度条）：
+
+- **没有字节进度**：ML Kit 不为这些模型暴露下载进度 → `DownloadState.Downloading(progress = null)`，`onProgress` 不会被调用，UI 只能显示不确定进度。
+- **无 GMS 设备不可用**：这是「跟随 Play 服务」路线的固有代价，已被用户接受。
+
+验证：
+
+```
+gradle -p android :feature:ocr:test                  → 39/39 ✅（新增 OcrModelInstallerTest 10 项）
+node scripts/check-ocr-manifest.js                    → 6/6 ✅（负例：token 写成 ocr_typo → exit 1 并列出已知 token）
+gradle -p android :app:assembleDebug -Ptarget=native  → BUILD SUCCESSFUL（debug 37.13 MB）
+gradle -p android :app:assembleRelease -Ptarget=native → BUILD SUCCESSFUL（**18.90 MB，与上一轮持平**）
+node scripts/check-elf-16kb.js <release apk>          → 4 个 .so 全 PASS（OCR 未引入任何 `.so`）
+merged manifest 核对                                   → DEPENDENCIES meta-data 值为 "ocr,ocr_chinese"
+```
+
+体积说明：debug 33.54 → 37.13 MB，但 **release 不变（18.90 MB）**；A/B 实测已排除「解除两个文件 quarantine」这一原因（带/不带 exclude 的 debug 包同为 37.13 MB），确切归因未继续追（仅影响无 R8 的调试包，出包形态不受影响）。
+
+**仍未做**：OCR 的宿主入口（缺口 2 的高风险档）——现在缺的是把 `OcrWiring.repository(context)` 接到阅读器上的那个屏幕，以及"无 GMS / 无网络"时的用户提示。
 
 
 
