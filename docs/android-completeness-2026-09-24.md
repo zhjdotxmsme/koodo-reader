@@ -113,7 +113,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
 | P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
 | P5.5 FB2/DOCX/HTML/MHTML | 单独立项评估 | ✅ 评估 + ADR-006（**仅文档**） | n/a | n/a | ❌ 4 个 include 是幽灵工程（已注释） |
-| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 的 manifest/`<queries>`/通知已接线（§11） | ✅ | 6 模块 289 全绿；locale 51（4 失败） | ❌ **仍无任何入口**（`ShellNavHost` 里没有对应屏幕；TTS 的服务与通知已可用，但没有启动它的 UI） |
+| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 接线（§11）+ **统计入口**（§14）已做 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | 🟡 **统计已可达**；TTS/词典/翻译 的屏幕仍未挂载（`scripts/check-p6-entries.js` 把它们连同"为什么没挂"一起列为 pending） |
 | P7 本地备份 | zip 导入导出、数据导入导出（无云同步） | ✅ `BackupScreen` + `core:dbio` | ✅ | 22（3 失败） | ✅ |
 | P8 收尾 | 兜底岛下线、体积优化、Crash、Macrobenchmark | ✅ crash + benchmarks + 4 个 patch；体积已实测 | ✅ | crash 15 | 🟡 默认构建**仍打包兜底岛**（等 P8-F1 intent 路由迁移）；`:benchmarks` 需真机 |
 
@@ -136,7 +136,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | # | 缺口 | 影响 | 阻断条件 |
 |---|---|---|---|
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
-| 2 | **P6 六个模块无入口** | TTS/词典/翻译/OCR/统计/简繁 交付了但用户摸不到 | 需要各自宿主屏幕 + 导航项 + manifest 接线（TTS 的 manifest/`<queries>`/通知/图标/i18n 已补，见 §11；**宿主屏幕仍缺**） |
+| 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计已接（§14）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）；词典/翻译的屏幕、以及 TTS 的启动 UI 仍未挂载——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
 | 5 | ~~OCR 下载适配层~~ | **已修（见 §13）**：`ModuleInstallClient` 对本模块不可用（ML Kit options 不是 `OptionalModuleApi`），改为「manifest 预下载 + 探针重试」实现，两个被 quarantine 的文件重新参与编译 | — |
@@ -321,13 +321,16 @@ APK 内容核对                                   → res/drawable/ic_tts_notif
 
 ### #2 P6 六个模块的宿主入口 —— 可做，但需按模块分批
 
-TTS 的**接线**已完成（§11）。剩下的入口屏幕按风险分三档：
+TTS 的**接线**已完成（§11），统计的**入口**已完成（§14）。剩下的入口屏幕按风险分三档：
 
-| 档 | 模块 | 说明 |
+| 档 | 模块 | 状态 |
 |---|---|---|
-| 低 | 统计(`feature:stats`)、词典(`feature:dictionary`)、简繁(`core:locale`) | 无系统服务依赖、无权限、无网络，接 `ShellNavHost` + 一个屏幕即可 |
-| 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate`) | 需要在阅读器内叠加 UI，依赖 #1 的 reader host 或 PDF 屏的宿主 |
-| 高 | TTS(`feature:tts`)、OCR(`feature:ocr`) | 需要前台服务/权限运行时请求、模型下载（见 #5）；TTS 现在只差启动 UI |
+| 低 | 统计(`feature:stats`) | ✅ **已接**（§14：`StatsRoute` + 书库菜单项 + 导航路由） |
+| 低 | 词典(`feature:dictionary`) | ⏳ 未接：需要 app 侧 `DictRepository(filesDir)` 状态装配 + SAF 导入 `.mdx/.mdd`；云端目录还缺 `dicts/manifest.json` 资产与 HTTP `OnDemandDownloader` 实现 |
+| 低 | 简繁(`core:locale`) | ⏳ 无屏幕可挂：它的接入点是**阅读器文本管线**（OpenCC 转换），不是独立页面 |
+| 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate` 的 `TranslationPopup`) | ⏳ 需要阅读器内叠加 UI，依赖 gap 1 的 reader host |
+| 高 | TTS(`feature:tts` 的 `TtsControlSheet`) | ⏳ 需要可朗读的文本阅读器（gap 1）；manifest/通知/服务**已就绪**（§11） |
+| 高 | OCR(`feature:ocr`) | ⏳ 无屏幕：接入点是「扫页 → 识别 → 索引检索」，挂在 PDF/阅读器宿主上；下载层已修（§13） |
 
 ### #5 OCR 下载适配层 —— 已修（用户选定「跟随 Play 服务按需下载」）
 
@@ -352,7 +355,7 @@ release 形态最大单项。三条路线中，**用户选择维持现状**：�
 | # | 缺口 | 状态 |
 |---|---|---|
 | 1 | EPUB 原生阅读器 | 未做：8–12 周，切分见上 |
-| 2 | P6 模块入口 | **部分完成**：TTS 接线 ✅（§11）；6 个宿主屏幕未做（分档见上） |
+| 2 | P6 模块入口 | 🟡 进行中：**统计已可达**（§14）+ TTS 接线（§11）+ OCR 下载层（§13）；词典/翻译/TTS 屏幕待接（门禁里带原因） |
 | 3 | `engine:toc` JSON | ✅ 已修（§8） |
 | 4 | 46 个失败测试 | ✅ 已修（§8） |
 | 5 | OCR 下载适配层 | ✅ 已修（§13，用户选定「跟随 Play 服务按需下载」） |
@@ -402,6 +405,54 @@ merged manifest 核对                                   → DEPENDENCIES meta-d
 体积说明：debug 33.54 → 37.13 MB，但 **release 不变（18.90 MB）**；A/B 实测已排除「解除两个文件 quarantine」这一原因（带/不带 exclude 的 debug 包同为 37.13 MB），确切归因未继续追（仅影响无 R8 的调试包，出包形态不受影响）。
 
 **仍未做**：OCR 的宿主入口（缺口 2 的高风险档）——现在缺的是把 `OcrWiring.repository(context)` 接到阅读器上的那个屏幕，以及"无 GMS / 无网络"时的用户提示。
+
+---
+
+## 14 · 缺口修复进展（第六轮：P6 第一个真正可达的入口 + 入口门禁）
+
+缺口 2 的第一个切片：**阅读统计（feature:stats）现在可达**。
+
+`feature:stats` 在 P6 卡里验收 5/5，但 `:app` 从未挂载过它的屏幕——典型的"编译期在、运行期不用"。本轮补的是纯胶水（`android/app/src/main/java/com/koodoreader/reader/shell/StatsRoute.kt`）：
+
+| 项 | 内容 |
+|---|---|
+| 数据源 | `ReadingSessionWiring.repository(context)`（模块自带私有 Room 库，未动 `koodo.db` schema） |
+| 书籍数 | `:core:data` 的 `BookDao.count()` |
+| i18n | 桌面同名 key（`Reading Stats`/`Total reading time`/`Books read`/`Word count`/`Daily average`/`Reading Activity`/`Reading streak (days)`/`Last 30 Days`/`Reading progress`——全部已存在于 locale，未新增 key） |
+| 导航 | `ShellRoutes.STATS` + `ShellNavHost` 路由 + 书库菜单「Reading Stats」 |
+| 主题 | `isSystemInDarkTheme()` 走屏幕自带的 `StatsPalette` |
+
+**明确不伪造的一项**：`progressProvider` 传空 map——原生阅读器（P2/PDF）目前都**不持久化阅读进度**，`books` 表也没有进度列，所以没有可传的真实数据；屏幕会像桌面「全新数据库」那样显示 0。等阅读器落地进度写入后，这里换成真实 provider 即可（`StatsViewModel` 本来就是注入式的）。
+
+**把 backlog 做成机器可验证的门禁**：新增 `scripts/check-p6-entries.js`（CI 一步）——对每个已交付的 P6 界面声明「已接 / 未接 + 原因」，并做双向检查：
+
+- `wired`：屏幕必须被**导航可达**地挂载（两跳检查：宿主入口被 nav graph 调用 + 宿主编译期引用屏幕；仅被某个死文件引用不算）；
+- `pending`：必须**尚未**被挂载，且原因写在脚本里——一旦有人接线而没更新矩阵，检查失败（防止清单腐烂）。
+
+负例验证：把 `StatsRoute(...)` 从 `ShellNavHost` 注掉 → exit 1 并指出「宿主没有被导航到」；恢复后 exit 0。
+
+当前门禁输出（即缺口 2 的剩余 backlog）：
+
+```
+[wired]   StatsScreen
+[pending] DictManagementScreen — 需要 app 侧 DictRepository(filesDir) 装配 + SAF 导入 .mdx/.mdd
+[pending] TtsControlSheet      — 需要可朗读的文本阅读器（gap 1）；manifest/服务已就绪
+[pending] TranslationPopup     — 需要文本选区来源（阅读器）；弹窗本身无状态、已就绪
+[no-ui]   feature/ocr          — 接入点是「扫页→识别→索引」挂在阅读器宿主上
+[no-ui]   core/locale          — 接入点是阅读器文本管线（OpenCC），不是页面
+```
+
+验证：
+
+```
+node scripts/check-p6-entries.js                       → OK（1 wired / 3 pending + 原因 / 2 no-ui）；负例 exit 1
+gradle -p android --continue test                      → BUILD SUCCESSFUL（全部既有测试不受影响）
+gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（debug 37.13 MB，与上一轮持平）
+node scripts/check-elf-16kb.js <apk>                   → 4 个 .so 全 PASS
+```
+
+**真机未验证**（按用户要求跳过）：统计页面的实际渲染、菜单项点击后的导航都只到「可编译 + 门禁」层。
+
 
 
 

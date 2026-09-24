@@ -16,6 +16,7 @@ object ShellRoutes {
     const val READER = "reader/{bookKey}"
     const val BACKUP = "backup"
     const val TRASH = "trash"
+    const val STATS = "stats"
 
     fun reader(bookKey: String): String = "reader/${Uri.encode(bookKey)}"
 }
@@ -29,6 +30,7 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
                 onOpenBook = { key -> navController.navigate(ShellRoutes.reader(key)) },
                 onOpenBackup = { navController.navigate(ShellRoutes.BACKUP) },
                 onOpenTrash = { navController.navigate(ShellRoutes.TRASH) },
+                onOpenStats = { navController.navigate(ShellRoutes.STATS) },
             )
         }
         composable(ShellRoutes.BACKUP) {
@@ -36,6 +38,12 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
         }
         composable(ShellRoutes.TRASH) {
             TrashScreen(onBack = { navController.popBackStack() })
+        }
+        // P6 reading stats (desktop /stats): the module shipped long before this
+        // route existed, which is exactly the "delivered but unreachable" gap this
+        // nav entry closes.
+        composable(ShellRoutes.STATS) {
+            StatsRoute(onBack = { navController.popBackStack() })
         }
         composable(
             route = ShellRoutes.READER,

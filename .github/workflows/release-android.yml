@@ -88,6 +88,9 @@ jobs:
       - name: Check OCR pre-download meta-data matches OcrScript (P6 guard)
         run: node scripts/check-ocr-manifest.js
 
+      - name: Check every delivered P6 screen is reachable from :app (P6 guard)
+        run: node scripts/check-p6-entries.js
+
       - name: Test the pdf.js engine core (native PDF reader bridge)
         run: node scripts/test-pdfengine.js
 
