@@ -3,12 +3,14 @@ package com.koodoreader.reader
 import android.app.Application
 
 /**
- * Application entry point. Intentionally minimal: the host is a WebView shell
- * and the real work happens in the bundled web build (assets/webapp). Kept as a
- * hook for future native initialisation (logging, crash hooks, OTA checks).
+ * Application entry point. WebView shell host for the webview track; the
+ * native track adds one startup hook: registering the device-side SQLite
+ * engine (framework sqlite) for the desktop .db bridge — sqlite-jdbc's
+ * natives don't exist on Android, so it must never run there.
  */
 class KoodoReaderApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        AndroidDesktopDb.install()
     }
 }

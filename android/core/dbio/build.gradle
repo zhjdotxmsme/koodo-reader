@@ -2,9 +2,10 @@
 //
 // PURE KOTLIN JVM MODULE (same rationale as :core:importer): the desktop
 // .db files are stock SQLite; reading/writing them is dependency-light JVM
-// work that we unit-test without the Android SDK. The single non-stdlib
-// dependency is org.xerial:sqlite-jdbc (bundles the SQLite engine for both
-// JVM and Android natives).
+// work that we unit-test without the Android SDK. The SQLite ENGINE is
+// pluggable (DesktopDbEngine): JVM tests use org.xerial:sqlite-jdbc
+// (testImplementation only — it ships no Android natives); the Android app
+// installs a framework-SQLite factory at startup.
 //
 // The five table DDLs in DesktopDdl are copied VERBATIM from schema.lock
 // (the frozen desktop schema); scripts/check-dbio-ddl.js fails CI when they
@@ -24,7 +25,10 @@ kotlin {
 }
 
 dependencies {
-    implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+    // NO runtime SQLite dependency: the JDBC engine below is JVM/test-only
+    // (sqlite-jdbc ships no Android natives — xerial#794). On device, the app
+    // installs a framework-SQLite factory via DesktopDbEngine at startup.
+    testImplementation 'org.xerial:sqlite-jdbc:3.46.1.0'
 
     // Test only.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'

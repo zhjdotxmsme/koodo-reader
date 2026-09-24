@@ -216,12 +216,12 @@ object BackupBundle {
             val realFile: File? = dbFiles[t + "@real"]
             val tempFile: File? = dbFiles[t + "@temp"]
             val realRows: List<Row> = realFile?.let {
-                DesktopDbReader(it).use { r -> r.rows(t) }
+                DesktopDbEngine.readerFactory(it).use { r -> r.rows(t) }
             } ?: emptyList()
             when {
                 realRows.isNotEmpty() -> out.add(TableSource(t, "real", realRows))
                 tempFile != null -> {
-                    val tempRows = DesktopDbReader(tempFile).use { r -> r.rows(t) }
+                    val tempRows = DesktopDbEngine.readerFactory(tempFile).use { r -> r.rows(t) }
                     out.add(TableSource(t, if (tempRows.isNotEmpty()) "temp" else "empty", tempRows))
                 }
                 realFile != null -> out.add(TableSource(t, "empty", realRows))
@@ -256,7 +256,7 @@ object BackupBundle {
                     for (t in DesktopDdl.TABLES) {
                         val rows = tables[t].orEmpty()
                         val dbFile = File(work, "$t.db")
-                        DesktopDbWriter(dbFile).use { w ->
+                        DesktopDbEngine.writerFactory(dbFile).use { w ->
                             w.createTable(t)
                             w.insert(t, rows)
                         }
