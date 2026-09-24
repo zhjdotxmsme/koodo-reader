@@ -29,15 +29,6 @@ class TocModel private constructor(
     val flatNodes: List<TocNode>,
 ) {
     /**
-     * Pre-order traversal of all nodes.
-     *
-     * The order matches the reading order (root → first child → sibling), which
-     * is the order the TOC appears in the nav / NCX document.
-     */
-    private fun flatten(nodes: List<TocNode>): List<TocNode> =
-        nodes.flatMap { node -> listOf(node) + flatten(node.children) }
-
-    /**
      * Exact-lookup by href as written in the source document.
      *
      * Note: this compares the raw [TocNode.href] string, so `chapter01.xhtml`
@@ -67,6 +58,18 @@ class TocModel private constructor(
 
     companion object {
         /**
+         * Pre-order traversal of all nodes.
+         *
+         * The order matches the reading order (root → first child → sibling), which
+         * is the order the TOC appears in the nav / NCX document.
+         *
+         * It lives in the companion object because the two factories below are its
+         * only callers, and neither has a [TocModel] instance to call it on.
+         */
+        private fun flatten(nodes: List<TocNode>): List<TocNode> =
+            nodes.flatMap { node -> listOf(node) + flatten(node.children) }
+
+        /**
          * Build a [TocModel] from a tree of [TocNode]s by resolving their
          * hrefs to CFI targets via [resolver].
          *
@@ -85,7 +88,7 @@ class TocModel private constructor(
             val resolved = rootNodes.map { resolveNode(it) }
             return TocModel(
                 rootNodes = resolved,
-                flatNodes = resolved.flatMap { flatten(listOf(it)) },
+                flatNodes = flatten(resolved),
             )
         }
 
@@ -94,6 +97,6 @@ class TocModel private constructor(
          * CFI targets (useful for testing with fixed data).
          */
         fun fromResolved(rootNodes: List<TocNode>): TocModel =
-            TocModel(rootNodes = rootNodes, flatNodes = rootNodes.flatMap { flatten(it) })
+            TocModel(rootNodes = rootNodes, flatNodes = flatten(rootNodes))
     }
 }

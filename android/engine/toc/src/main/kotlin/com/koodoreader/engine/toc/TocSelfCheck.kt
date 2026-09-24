@@ -114,6 +114,9 @@ fun main() {
     }
 
     // Smoke test 4: SearchIndex
+    // SearchIndex.CONTEXT_LEN is private; mirror it here for the length checks below.
+    val CONTEXT_LEN_FOR_TEST = 40
+
     run("SearchIndex basic") {
         val chapters = listOf(
             ChapterText(0, "Chapter 1", "This is the first chapter about Kotlin.", "epubcfi(/6/2!)"),
@@ -148,11 +151,8 @@ fun main() {
         check(index.search(SearchQuery("book-x", "")).isEmpty())
 
         // No match → empty list
-        check(index.search(SearchQuery("book-x", "zigzag").isEmpty()))
+        check(index.search(SearchQuery("book-x", "zigzag")).isEmpty())
     }
-
-    // CONTEXT_LEN is private; re-declare here for the test above
-    val CONTEXT_LEN_FOR_TEST = 40
 
     if (failed) {
         println("\n=== FAIL ===")
