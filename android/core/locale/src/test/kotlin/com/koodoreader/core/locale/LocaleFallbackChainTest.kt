@@ -64,8 +64,11 @@ class LocaleFallbackChainTest {
 
         chain.language = "de"
         assertEquals("de", chain.language)
-        assertEquals("Bücher", chain.resolve("Books"))
-        assertEquals("Language", chain.resolve("L")) // German miss → en → key
+        assertEquals("Bücher", chain.resolve("Books")) // de hit
+        // "Language" is missing from the de pack → the English pack answers it…
+        assertEquals("Language", chain.resolve("Language"))
+        // …and a key nobody has falls back to the key text itself (never blank).
+        assertEquals("L", chain.resolve("L"))
 
         chain.language = "zh_CN"
         assertEquals("zh-CN", chain.language)

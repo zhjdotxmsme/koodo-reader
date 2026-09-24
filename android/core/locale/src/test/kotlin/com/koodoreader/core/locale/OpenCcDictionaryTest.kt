@@ -69,7 +69,9 @@ class OpenCcDictionaryTest {
     @DisplayName("MaxMatch: the longest key wins, unmatched text is copied through")
     fun `max match segmentation`() {
         val dict = OpenCcDictionary.parse("MaxMatch", "干\t幹\n干净\t乾淨\n净\t淨\n")
-        assertEquals(3, dict.maxKeyLength)
+        // maxKeyLength = the longest KEY in UTF-16 units. The keys are 干(1) / 干净(2) /
+        // 净(1), so it is 2 — the trie walk needs exactly this bound.
+        assertEquals(2, dict.maxKeyLength)
         assertEquals("乾淨", dict.convert("干净"))
         assertEquals("幹杯", dict.convert("干杯"))
         assertEquals("乾淨", dict.convert("干净")) // no double conversion of 淨
@@ -85,7 +87,8 @@ class OpenCcDictionaryTest {
         assertEquals(2, segments.size)
         assertEquals("網" to true, segments[0])
         assertEquals("上" to false, segments[1])
-        assertEquals("网上", dict.convert("网上"))
+        // convert() is the join of the segments, so 网 IS rewritten: 網 + 上 = 網上.
+        assertEquals("網上", dict.convert("网上"))
         assertEquals(listOf("" to false), dict.segments("").filter { it.first.isEmpty() })
     }
 

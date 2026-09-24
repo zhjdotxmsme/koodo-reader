@@ -190,7 +190,9 @@ class ZhConvertEngineTest {
         assertEquals(TRADITIONAL, engine.convertWire(SIMPLIFIED, "Simplified To Traditional"))
         assertEquals(SIMPLIFIED, engine.convertWire(TRADITIONAL, "Traditional To Simplified"))
         assertEquals(SIMPLIFIED, engine.convertWire(SIMPLIFIED, "")) // desktop default / auto
-        assertEquals(TRADITIONAL, engine.convertWire(SIMPLIFIED, null, "zh-TW"))
+        // AUTO follows the reader language, and zh-TW means the Taiwan phrase stage runs
+        // too (same rule as `auto follows the reader language` below) → TRADITIONAL_TW.
+        assertEquals(TRADITIONAL_TW, engine.convertWire(SIMPLIFIED, null, "zh-TW"))
     }
 
     @Test
