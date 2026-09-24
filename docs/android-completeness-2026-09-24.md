@@ -216,9 +216,11 @@ node scripts/check-elf-16kb.js <app-debug.apk>        → 4 个 .so 全 PASS（p
 ```
 gradle -p android :engine:image:test                   → 78/78 ✅
 gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（33.54 MB，+2.29 MB）
+gradle -p android :app:assembleRelease -Ptarget=native → BUILD SUCCESSFUL（18.90 MB，+0.12 MB）
 node scripts/check-elf-16kb.js <app-debug.apk>         → 4 个 .so 全 PASS，exit 0
+node scripts/check-elf-16kb.js <app-release-*.apk>     → 4 个 .so 全 PASS，exit 0
 ```
 
-体积代价：debug APK 31.25 → 33.54 MB（无 R8），`libdatastore_shared_counter.so` 仍是首个 `.so`（p_align 0x4000），**未引入任何新原生库**，16 KB 判定不变。
+体积代价：debug 31.25 → 33.54 MB（+2.29 MB，**无 R8**）；release 18.78 → 18.90 MB（**+0.12 MB**，commons-compress 被 R8 裁到只剩用到的一小部分）。`libdatastore_shared_counter.so` 仍是首个 `.so`（p_align 0x4000），**未引入任何新原生库**，16 KB 判定在 debug/release 两种形态下均不变。
 
 CBR 结论：**不做原生**。ADR-002 的矩阵里 CBR 标为 `DEFERRED`——纯 JVM 侧没有可用的 RAR5 解压器（junrar 只到 RAR4 且对 RAR5 无效，其余方案都带 `.so`），强行实装会同时破坏「零原生依赖」与「体积」两条约束，继续由兜底岛承担。
