@@ -82,5 +82,8 @@ tasks.register('selfCheck', JavaExec) {
     group = 'verification'
     description = 'Runs the native PDF engine self-check (outline / search / password / Range mapping) without a test framework.'
     classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'com.koodoreader.engine.pdf.PdfSelfCheckKt'
+    // `PdfSelfCheck` is an `object` with a @JvmStatic main, so the entry point class is
+    // `PdfSelfCheck` — the `...Kt` name only exists for top-level functions (all the
+    // other engine self-checks use a top-level `fun main`, this one does not).
+    mainClass = 'com.koodoreader.engine.pdf.PdfSelfCheck'
 }

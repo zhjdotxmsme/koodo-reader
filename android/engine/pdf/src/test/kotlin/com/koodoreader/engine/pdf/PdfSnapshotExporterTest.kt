@@ -24,9 +24,12 @@ class PdfSnapshotExporterTest {
 
     @Test
     fun noEnlargeForVeryLargePage() {
+        // The rule is "longest side = targetWidthPx" (same as letterAt1024 / a4At1024), so a
+        // huge 8000×12000pt page is scaled DOWN to 1024 on its longest side:
+        //   1024 * 8000/12000 = 682.6 → 682.  The output never exceeds the target side.
         val (w, h) = PdfSnapshotExporter.computeSize(8000f, 12000f, PdfSnapshotExporter.Spec(targetWidthPx = 1024))
-        assertEquals(1024, w)
-        assertEquals(1536, h)
+        assertEquals(682, w)
+        assertEquals(1024, h)
     }
 
     @Test

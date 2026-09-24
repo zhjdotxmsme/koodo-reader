@@ -57,9 +57,11 @@ class PdfViewportMathTest {
     @Test
     fun renderWindowClampsToBook() {
         val m = PdfViewportMath(360f, 640f, 2.0f)
-        assertEquals(1..3, m.renderWindow(1, 200))
+        // Window = [center-4, center+3] (the "current + 3 ahead, keep 4 behind" heuristic
+        // documented on renderWindow), truncated at both ends of the book.
+        assertEquals(1..4, m.renderWindow(1, 200))
         assertEquals(96..103, m.renderWindow(100, 200))
-        assertEquals(197..200, m.renderWindow(199, 200))
+        assertEquals(195..200, m.renderWindow(199, 200))
         assertEquals(1..3, m.renderWindow(0, 3))
     }
 

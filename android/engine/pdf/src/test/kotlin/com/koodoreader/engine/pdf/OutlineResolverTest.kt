@@ -83,7 +83,10 @@ class OutlineResolverTest {
         )
         assertEquals("1.1", OutlineResolver.nearestEntry(tree, 2)?.title)
         assertEquals("1.2", OutlineResolver.nearestEntry(tree, 7)?.title)
-        assertEquals("Chapter 1", OutlineResolver.nearestEntry(tree, 11)?.title)
+        // The LAST entry that starts at or before the page wins: page 11 is still inside
+        // 1.2's span (1.2 starts at 5, Chapter 2 starts at 12), so the label is "1.2" —
+        // a page after a sub-entry keeps reporting that sub-entry, not its parent.
+        assertEquals("1.2", OutlineResolver.nearestEntry(tree, 11)?.title)
         assertEquals("Chapter 2", OutlineResolver.nearestEntry(tree, 13)?.title)
         // Before the first entry: returns null
         assertNull(OutlineResolver.nearestEntry(tree, 0))

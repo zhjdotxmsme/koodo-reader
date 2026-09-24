@@ -39,7 +39,12 @@ enum class PdfViewMode(val desktopValue: String) {
  */
 data class PdfZoom(val percent: Int) {
     init {
-        require(percent in MIN..MAX) { "PdfZoom percent must be in [$MIN..$MAX] (was $percent)" }
+        // FIT_WIDTH / FIT_PAGE are SENTINELS, not percentages: PdfViewportMath branches
+        // on them before it ever calls asScale(). The old validation rejected them, so
+        // `PdfZoom(PdfZoom.FIT_WIDTH)` threw and fit-width could not be constructed.
+        require(percent in MIN..MAX || percent == FIT_WIDTH || percent == FIT_PAGE) {
+            "PdfZoom percent must be in [$MIN..$MAX] or FIT_WIDTH/FIT_PAGE (was $percent)"
+        }
     }
 
     fun asScale(): Float = percent / 100f
@@ -51,15 +56,26 @@ data class PdfZoom(val percent: Int) {
         const val FIT_WIDTH = -1
         const val FIT_PAGE = -2
 
+        /**
+         * Clamp a percentage into [MIN]..[MAX], falling back to [DEFAULT] outside it.
+         * The FIT_WIDTH / FIT_PAGE sentinels are not percentages — construct those
+         * with `PdfZoom(PdfZoom.FIT_WIDTH)` directly.
+         */
         fun of(percent: Int): PdfZoom = if (percent in MIN..MAX) PdfZoom(percent) else PdfZoom(DEFAULT)
 
-        /** Parse a desktop `scale` config ("" / "1" / "1.5") into a [PdfZoom]. */
+        /**
+         * Parse a desktop `scale` config ("" / "1" / "1.5") into a [PdfZoom].
+         *
+         * A scale outside the supported range falls back to [DEFAULT] rather than being
+         * clamped to the nearest bound (the desktop slider cannot produce it either, so
+         * there is nothing to preserve).
+         */
         fun fromDesktop(raw: Any?): PdfZoom {
             val f = (raw as? Number)?.toFloat()
                 ?: raw?.toString()?.trim()?.toFloatOrNull()
                 ?: return PdfZoom(DEFAULT)
-            val pct = (f * 100f).toInt().coerceIn(MIN, MAX)
-            return PdfZoom(pct)
+            val pct = (f * 100f).toInt()
+            return if (pct in MIN..MAX) PdfZoom(pct) else PdfZoom(DEFAULT)
         }
     }
 }

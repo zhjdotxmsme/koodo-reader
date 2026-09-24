@@ -42,7 +42,9 @@ object PdfSelfCheck {
         )
         check(
             "outline.nearest(11)",
-            OutlineResolver.nearestEntry(tree, 11)?.title == "Chapter 1",
+            // The last entry that starts at or before the page wins: 1.2 starts at 5 and
+            // Chapter 2 at 12, so page 11 still reports 1.2 (not its parent Chapter 1).
+            OutlineResolver.nearestEntry(tree, 11)?.title == "1.2",
             "got ${OutlineResolver.nearestEntry(tree, 11)?.title}",
         )
         check(
@@ -70,9 +72,10 @@ object PdfSelfCheck {
         )
         check(
             "password.giveUp",
-            (1..2).all {
-                gate.attempt("k2", "wrong", RuntimeException("bad")) is PasswordGate.Attempt.TryAgain
-            } && (gate.attempt("k2", "wrong", RuntimeException("bad")) is PasswordGate.Attempt.GiveUp),
+            // maxAttempts = 3 and password.tryAgain above already consumed attempt #1 for
+            // "k2", so attempt #2 is the last TryAgain and attempt #3 gives up.
+            (gate.attempt("k2", "wrong", RuntimeException("bad")) is PasswordGate.Attempt.TryAgain) &&
+                (gate.attempt("k2", "wrong", RuntimeException("bad")) is PasswordGate.Attempt.GiveUp),
         )
         check(
             "password.forget",
@@ -135,9 +138,11 @@ object PdfSelfCheck {
         // longest side = 792, so 1024/792 = 1.293…; 612*1.293 = 791 → 791.
         check("snapshot.letter", w1 == 791 && h1 == 1024, "got $w1 x $h1")
         val (w2, h2) = PdfSnapshotExporter.computeSize(420f, 594f, PdfSnapshotExporter.Spec(targetWidthPx = 1024))
-        // longest = 594; 420 * (1024/594) = 723.6 → 723.
-        check("snapshot.aspect", w2 == 723 && h2 == 1024, "got $w2 x $h2")
-        check("snapshot.noEnlarge", PdfSnapshotExporter.computeSize(8000f, 12000f, PdfSnapshotExporter.Spec(targetWidthPx = 1024)).first == 1024)
+        // longest = 594; 420 * (1024/594) = 724.04 → 724 (toInt truncates; it is NOT 723).
+        check("snapshot.aspect", w2 == 724 && h2 == 1024, "got $w2 x $h2")
+        val (w3, h3) = PdfSnapshotExporter.computeSize(8000f, 12000f, PdfSnapshotExporter.Spec(targetWidthPx = 1024))
+        // The longest side is brought DOWN to the target: 1024 * 8000/12000 = 682.6 → 682.
+        check("snapshot.noEnlarge", w3 == 682 && h3 == 1024, "got $w3 x $h3")
 
         // ── PdfViewportMath ────────────────────────────────────────────────
         val math = PdfViewportMath(viewportWidthPx = 360f, viewportHeightPx = 640f, deviceDensity = 2.0f)
