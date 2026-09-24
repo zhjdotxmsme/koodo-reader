@@ -1,0 +1,52 @@
+// EPUB spine / TOC, reading-position, and full-text-search core (`engine/toc`).
+//
+// A PURE KOTLIN JVM MODULE (same rationale as :engine:cfi and :engine:gesture):
+//   - no Android dependency, so it can be unit-tested on any JVM without the
+//     Android SDK, and
+//   - it can be consumed by the Compose reader (app module) and by the
+//     future native rendering pipeline without dragging in Android APIs.
+//
+// This is the "目录 / 进度 / 导航 + 全书搜索" (P2 TOC, progress, navigation,
+// and full-text search) DATA + DECISION layer for EPUB books.
+//
+// Consumes :engine:cfi for epubcfi: link validation and CFI target generation.
+
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // CFI parsing, serialization, and operations — the only address format
+    // shared with the desktop app (ADR-002).
+    implementation project(':engine:cfi')
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Framework-free verification runner (mirror of :engine:cfi:selfCheck):
+//   gradle :engine:toc:selfCheck
+tasks.register('selfCheck', JavaExec) {
+    group = 'verification'
+    description = 'Runs the TOC / position / search self-checks without a test framework.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.koodoreader.engine.toc.TocSelfCheckKt'
+}
