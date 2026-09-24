@@ -15,8 +15,8 @@
 | 看板 P1 阻塞 B1（settings/app 注册） | ✅ 闭环：12 个 module 注册 + `:app` 8 个依赖 |
 | 看板 P1 阻塞 B2（locale 红状态） | ✅ 闭环：`sync-locales-android.js --check` / `check-locales.mjs` 均通过 |
 | 合并暴露的编译阻断 | ⚠️ 7 个 module / 9 个文件**从未被编译过**，已修（见 §2） |
-| 全量 `gradle test` | ⚠️ 1402 个测试 / **46 失败** / 0 错误；21 个 module 中 15 个全绿 |
-| `:app:assembleDebug` | ❌ 仍失败，但 **`:app` 自身 7 处源码错误是合并前既有**（P2/P3/P7 提交时未编译，见 §3.5） |
+| 全量 `gradle test` | ⚠️ **1154 个唯一测试 / 46 失败**（去重后；Android 库按 debug/release 双变体执行，原始执行数 ~1400）；22 个有测试的 module 中 16 个全绿 |
+| `:app:assembleDebug` | 合并当时 ❌（`:app` 自身 10 处源码错误，P2/P3/P7 提交时未编译，见 §3.5）→ **后续已修复并出包**，见 [`docs/android-completeness-2026-09-24.md`](android-completeness-2026-09-24.md) |
 | 未完成（看板其余 12 项） | 见 §4.2 |
 
 **结论一句话**：合并本身已完成且可自证（每个新 module 都能编译、测试可跑）；真正的问题不在合并，而在于 **dev 分支上的 Android 原生轨从来没有被构建过**——包括 `:app` 自己。
@@ -147,9 +147,11 @@ javap ...TextRecognizerOptionsInterface
 | feature:stats | 68 | 0 | ✅ P6 卡交付 |
 | feature:translate | 156 | 0 | ✅ P6 卡交付 |
 | feature:tts | 110 | 0 | ✅ P6 卡交付 |
-| **合计** | **1402** | **46** | 21 个 module 中 15 个全绿 |
+| **合计** | **1154（去重）** | **46** | 22 个有测试的 module 中 16 个全绿 |
 
-> `:app` 的 11 个 `LibraryLogicTest` 结果来自 **11:22 的旧构建**（`:app` 现已无法编译），故不计入。
+> 上表的 feature:* 数字在首次统计时被 debug/release 双变体重复计入（dictionary 126→63、ocr 58→29、stats 68→34、translate 156→78、tts 110→55）；此处为去重后的唯一测试数。「原始执行数约 1400」是 Gradle 实际跑的次数。
+>
+> `:app` 的 `LibraryLogicTest`（11 个）在合并当时取自 **11:22 的旧构建**（当时 `:app` 无法编译），后续修复后已重新跑过：**11/11 通过**（`:app` 共 3 个变体 × 11）。
 
 典型失败（按严重度）：
 
@@ -182,7 +184,9 @@ javap ...TextRecognizerOptionsInterface
 
 `:feature:ocr:testDebugUnitTest` ✅ 58 测试（3 个测试类）；`:feature:ocr:compileDebug/ReleaseKotlin` ✅（排除 2 文件后）。
 
-### 3.5 `:app:assembleDebug` ❌ —— 但**不是合并造成的**
+### 3.5 `:app:assembleDebug` 当时 ❌ —— **不是合并造成的**，后续已修复
+
+> **补记（同日稍后）**：这 10 处错误已全部修掉，`:app` 现在 debug/release/benchmark 三个变体都能编译，`assembleDebug` / `assembleRelease` 均成功；修法与出包数据见 [`docs/android-completeness-2026-09-24.md`](android-completeness-2026-09-24.md) §1、§2。下面保留当时的原始证据，用于说明「问题在 dev 分支既有、与本次合并无关」。
 
 ```
 > Task :app:compileDebugKotlin FAILED   (+ compileReleaseKotlin / compileBenchmarkKotlin)
@@ -231,21 +235,25 @@ e: .../shell/ReaderGestureModifier.kt:140  Unresolved reference: ReaderGestureMo
 4. **46 个行为测试失败**散布 6 个 module，其中 `engine:toc` 的 `ReadingPosition` 非法 JSON 属数据损坏级。
 5. `.gitignore` 漏 `android/feature/*/build/`、`android/benchmarks/build/`（已补）。
 6. `docs/android-baseline-after.json` 里的「本机无 gradle CLI / 无构建能力」记录有误：本机存在 Gradle 8.5 发行版与 `D:\jdk-17`，加 `org.gradle.java.installations.paths` 即可构建（本会话即以此完成验证）。
+7. **4 个「幽灵 module」**：`settings.gradle` 里的 `:core:archive` / `:engine:fb2` / `:engine:htmlbook` / `:engine:docx` 来自 P5-FB2 评估卡的 settings 模板，但目录从未创建；Gradle 容忍空工程，于是 4 个计划中的 module 在 `gradle projects` 里显示为已交付。（后续已注释并标注解除条件 → 真实 module 数 = 24）
+8. **APK 不再是「零 .so」**：`:feature:tts` 引入 `androidx.datastore` 后带进 `libdatastore_shared_counter.so`（7 KB，经 ELF program header 核对 `p_align=0x4000`，满足 Android 15+ 16 KB 要求）；同时 `scripts/check-elf-16kb.js` 依赖 `unzip`+`readelf`，Windows/CI 上跑不了。
 
 ---
 
 ## 5 · 建议
 
-1. **不要直接提交**：先决定 OCR 下载层方案（§2.1），并决定 46 个失败测试是修还是先登记为卡。
+1. **提交前先拍板**：OCR 下载层方案（§2.1）与 46 个失败测试是修还是登记为卡（提交本身已由用户授权完成，见 §6）。
 2. 把「`gradle test` + `:app:assembleDebug`」加入 CI 门槛——本轮所有问题的根因都是「提交前没有编译」。
-3. 优先修 `:app` 的 7 处编译错误（P2/P3/P7 收口），否则整条原生轨不可构建。
+3. ~~优先修 `:app` 的编译错误~~ **已完成**：10 处错误全修，`:app` 现在 debug/release/benchmark 均可编译并出包（见 `docs/android-completeness-2026-09-24.md`）。
 4. `engine:toc` 的 `ReadingPosition` JSON 编解码优先于其它 toc 失败项（写入用户数据）。
 5. 清理：9 个 worktree（含 2 个 locked）、10 个仍是 `9abe7904` 的 `task/*` 分支（其中 `task/p6-translate-tran` 无 worktree，是重复分支）。
 6. 补 `.gitignore` 后确认无构建产物被 `git add`；`docs/patches/p5-fb2-settings-gradle.patch` 已应用，勿重复 apply。
+7. **接线优先于继续铺模块**：目前只有 PDF 一条原生阅读链路可达，P6 六个模块与 P2 的 EPUB 链路都还悬在 `ShellNavHost` 之外（见 `docs/android-completeness-2026-09-24.md` §4）。
 
 ## 6 · 边界（本次未做）
 
-- 未执行 `git commit` / `git push`（CLAUDE.md）。
+- ~~未执行 `git commit` / `git push`~~：**后续已按用户授权把合并结果与修复提交为 15+2 个 commit（仍未 push）**。
 - 未修 46 个行为失败（属新工作项，非「合并」范畴），仅修「不修就无法编译/无法验证」的阻断。
-- 未跑真机、未跑 macrobenchmark（无设备）、未出 release/签名包。
+- 未跑真机、未跑 macrobenchmark（无设备，用户明确要求跳过）；release 出包为**未签名**形态。
 - 未改桌面端（React/Electron）代码，仅新增 2 个 locale key。
+- 后续的完整度验证另见 [`docs/android-completeness-2026-09-24.md`](android-completeness-2026-09-24.md)。
