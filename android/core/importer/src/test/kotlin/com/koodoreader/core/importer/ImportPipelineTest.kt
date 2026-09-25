@@ -1,5 +1,6 @@
 package com.koodoreader.core.importer
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -69,7 +70,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `imports txt and enriched epub with cover and dedup`() {
+    fun `imports txt and enriched epub with cover and dedup`() = runBlocking {
         val book1 = src("hello.txt", byteArrayOf(1, 2, 3))
         val epub = makeEpub("story.epub")
         // Same content as book1 under another name = same md5 = duplicate.
@@ -106,7 +107,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `md5 already in the database is skipped and the copy deleted`() {
+    fun `md5 already in the database is skipped and the copy deleted`() = runBlocking {
         val f = src("db.txt", byteArrayOf(9, 9))
         val known = FileMd5.ofFile(f)
         val before = booksOut.listFiles()?.size ?: 0
@@ -121,7 +122,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `unsupported and broken books are counted, good books proceed`() {
+    fun `unsupported and broken books are counted, good books proceed`() = runBlocking {
         val good = src("good.txt", byteArrayOf(5))
         val missing = File(srcDir, "ghost.txt") // not created
         val result = pipeline.process(
@@ -140,7 +141,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `epub without cover still imports (no cover in map)`() {
+    fun `epub without cover still imports (no cover in map)`() = runBlocking {
         val noCover = makeEpub("plain.epub")
         val result = pipeline.process(listOf(pending("plain.epub", noCover)), booksOut)
         assertEquals(1, result.imported)
@@ -148,7 +149,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `cbz gets its natural-sorted cover and page count on the record`() {
+    fun `cbz gets its natural-sorted cover and page count on the record`() = runBlocking {
         val cbz = File(srcDir, "comic.cbz")
         val png = bytes(0x89, 0x50, 0x4E, 0x47)
         java.io.ByteArrayOutputStream().use { bos ->
@@ -173,7 +174,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `a thousand synthetic books import without duplicates and stay in memory-bounded`() {
+    fun `a thousand synthetic books import without duplicates and stay in memory-bounded`() = runBlocking {
         val n = 1000
         val pendings = (0 until n).map {
             pending("book-${it}.txt", src("s${it}.txt", "unique-content-$it".toByteArray()))
@@ -194,7 +195,7 @@ class ImportPipelineTest {
     }
 
     @Test
-    suspend fun `MAX_FILES cap keeps the batch bounded`() {
+    fun `MAX_FILES cap keeps the batch bounded`() = runBlocking {
         val big = (0 until BookRules.MAX_FILES + 5).map {
             pending("x${it}.txt", src("xb${it}.txt", "content-$it".toByteArray()))
         }

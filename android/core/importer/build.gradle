@@ -24,6 +24,9 @@ kotlin {
 dependencies {
     // Test only — this module has zero runtime dependencies.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    // `runBlocking` for the suspend pipeline API (JUnit 5 cannot invoke a
+    // `suspend fun` test method, which silently skipped this whole class).
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -31,6 +34,31 @@ tasks.named('test') {
     useJUnitPlatform()
     testLogging {
         events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Opt-in mixed-format import scale harness (board card P1-IMPORT, JVM half).
+//
+// Not part of `test`: it imports the whole corpus twice (batch + per-book
+// percentiles), which is minutes of CI for a number only a device comparison
+// consumes. `node scripts/measure-import-jvm.js` drives it, parses the
+// `IMPORT_SCALE_JSON=` line and records the result.
+//
+//   gradle -p android :core:importer:importScaleTest -PimportBooks=1000 -PimportHeap=256m
+tasks.register('importScaleTest', Test) {
+    description = 'Mixed-format import scale harness: 1000 books, bounded heap, JSON output.'
+    group = 'verification'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    systemProperty 'koodo.import.scale', 'true'
+    systemProperty 'koodo.import.scale.n', (project.findProperty('importBooks') ?: '1000').toString()
+    // A bounded heap is the point: the pass has to survive it, not merely finish.
+    maxHeapSize = (project.findProperty('importHeap') ?: '256m').toString()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = true
         exceptionFormat 'full'
     }
 }

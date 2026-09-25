@@ -29,14 +29,26 @@
   },
   "jvmImportThroughput": {
     "status": "measured-jvm",
-    "metric": "1000 synthetic books imported end-to-end (copy + streaming MD5 + dedupe + EPUB/CBZ enrich)",
-    "result": "pass: 1000/1000 imported, 0 duplicates, unique md5/keys, files on disk, memory bounded (16 KB chunks, batch 50)",
-    "test": "com.koodoreader.core.importer.ImportPipelineTest `a thousand synthetic books import without duplicates and stay in memory-bounded`",
-    "elapsedMs": null,
+    "metric": "1000 synthetic books imported end-to-end (500 TXT / 300 EPUB-with-cover / 200 CBZ-with-pages)",
+    "result": "pass: 1000/1000 imported, 0 duplicates, 0 failures, unique md5/keys, peak heap 20 MB of 256 MB cap",
+    "test": "com.koodoreader.core.importer.ImportScaleHarnessTest (run: node scripts/measure-import-jvm.js)",
+    "elapsedMs": 10258,
     "caveats": [
-      "JVM desktop-class CPU, not device ARM; per-book ms deliberately not extrapolated.",
-      "Timing printed by the test via stdout; enable showStandardStreams to capture."
-    ]
+      "JVM desktop-class CPU and JVM heap, NOT an ARM device: do not read device memory budgets from this.",
+      "SAF, Room upserts and cover files on disk are not exercised here (Android-only).",
+      "The device half of the card (P1-IMPORT adb + dumpsys run) stays pending-device."
+    ],
+    "peakHeapMb": 20,
+    "heapCapMb": 256,
+    "perBookMs": {
+      "p50": 3,
+      "p90": 12,
+      "p95": 14,
+      "p99": 16,
+      "max": 19
+    },
+    "measuredAt": "2026-09-25",
+    "csv": "docs/benchmarks/2026-09-25-import-1000-jvm.csv"
   },
   "device": {
     "coldStartP90Ms": {

@@ -533,6 +533,67 @@ node scripts/sync-locales-android.js --check           → OK（en 1404 / zh-CN 
 
 **真机未验证**（按用户要求跳过）：ML Kit 识别的实际准确率、模型下载联网路径、大文档索引耗时都未在设备上跑过——只到「可编译 + 8 项索引循环单测 + 门禁链」这一层。
 
+---
+
+## 17 · 看板剩余任务（第九轮：两个真机卡的环境分诊 + 一处「幽灵测试」修复）
+
+看板上未认领的只剩两张真机卡（`t-mufbb7fb-euf33l` P1-DEVICE、`t-mufbb7gc-lvvqp3` P1-IMPORT），两张都带 `受阻` 标记与同一条分诊评论。本轮复核环境并**把两张卡在无设备条件下能推进的部分推到尽头**。
+
+### 17.1 环境复核（2026-09-25）
+
+```
+adb devices                                  → 空列表（daemon 每次调用重启，无法常驻）
+emulator.exe                                 → 存在
+$USERPROFILE\.android\avd                    → 空（无 AVD）
+SDK\system-images                            → 空（无系统镜像，起不了模拟器）
+bash -n scripts/ci-macro-benchmark.sh        → 语法通过（真机脚本本身可用）
+Git Bash 下 --dry-run                        → SIGSEGV（Git-Bash/Win 环境问题，真机会话在 Linux/macOS 上执行不受影响）
+```
+
+结论：**两张卡的验收项全部需要设备**，本环境无法产出；未认领（保持 `todo`+`受阻`，不动 taskboard_move），仅补可离线完成的部分并留档。
+
+### 17.2 修复：P1 导入管线的「幽灵测试」（这轮最重要的发现）
+
+准备 P1-IMPORT 的 JVM 侧证据时发现：`ImportPipelineTest` 的 7 个用例**从来没有执行过**——每个都是 `@Test suspend fun`，而 **JUnit 5 无法调用 suspend 测试方法**，于是整个类被静默忽略（`build/test-results/` 里根本没有 `TEST-...ImportPipelineTest.xml`，只有其余 5 个类）。
+
+后果比"少跑几个测试"严重：`docs/android-baseline.json` 的 `jvmImportThroughput.result` 写着 *"pass: 1000/1000 imported, 0 duplicates, unique md5/keys …"*，而它引用的正是这个类——**这条基线结论此前没有任何执行证据**。
+
+修复（`android/core/importer/`）：
+- 7 个用例改为 `fun … = runBlocking { … }`；
+- 补 `testImplementation kotlinx-coroutines-core:1.7.1`（仅测试用，模块运行时仍零依赖）；
+- 修复后 `ImportPipelineTest` **7/7 PASSED**，首次产出结果 XML；顺带把整个 `gradle test` 的计数从 1209 → 1217（其中 7 个是这批"复活"的用例，1 个是新增 harness，其余为 debug/release 双跑）。
+
+### 17.3 新增：混合格式 1000 本压测 harness（JVM 侧，可复现）
+
+`ImportScaleHarnessTest` + `:core:importer:importScaleTest` Gradle 任务 + `scripts/measure-import-jvm.js`：
+
+| 项 | 内容 |
+|---|---|
+| 语料 | 1000 本：500 TXT / 300 EPUB（含 cover entry）/ 200 CBZ（含页数）——压到 ZIP 解析、OPF 读取、封面字节、自然排序这些真实重路径，而不只是复制 |
+| 边界 | `-PimportHeap=256m` 固定堆上限；峰值堆每 5 ms 采样 |
+| 指标 | 批量总耗时、**单本 P50/P90/P95/P99/max**（每本一次 `process()`）、峰值堆、导入/重复/失败数 |
+| 输出 | 机器可读 `IMPORT_SCALE_JSON=` → `docs/benchmarks/2026-09-25-import-1000-jvm.csv` + `--update-baseline` 回填 `docs/android-baseline.json` |
+| 默认关闭 | `@EnabledIfSystemProperty` 门控，普通 `gradle test` 只标记 skipped（CI 不受影响） |
+
+**实测结果**（本机 Gradle 8.5 + JDK 17）：
+
+```
+1000 本（500 TXT / 300 EPUB / 200 CBZ），256 MB 堆上限
+  批量导入        10,258 ms   → 1000/1000，0 重复，0 失败，md5/key 全唯一
+  峰值堆          20 MB / 256 MB
+  单本时延        P50 3 ms · P90 12 ms · P95 14 ms · P99 16 ms · max 19 ms
+```
+
+首轮跑还抓到一个夹具 bug：所有 CBZ 内容字节相同 → 被 md5 去重成 1 本（导入 801/1000）。已修（notes entry 带 index），同时也顺带证明了去重路径确实生效。
+
+`docs/android-baseline.json` 的 `jvmImportThroughput` 由 `elapsedMs: null` 变为实测值 + 分位数 + 峰值堆，并写明三条 caveat（JVM 非 ARM、未过 SAF/Room、设备半边仍 `pending-device`）。**`device` 段的 4 个字段一个都没动**——那是设备会话的工作。
+
+### 17.4 仍未做（设备会话清单）
+
+- **P1-DEVICE**：`bash scripts/ci-macro-benchmark.sh`（4 项指标，脚本已就绪且语法通过）→ 回填 `docs/android-baseline.json` 的 `device.*` → ADR-010。
+- **P1-IMPORT**：真机 1000 本复测（`dumpsys meminfo` 峰值 + logcat 无 FATAL）→ ADR-011 + 设备 CSV。JVM 侧的数字（§17.3）可作为对照基线，但**不能当作设备指标**。
+
+
 
 
 

@@ -1,0 +1,17 @@
+metric,value,unit,scope,note
+books,1000,books,measured-jvm,mixed formats
+formats.txt,500,books,measured-jvm,plain copy path
+formats.epub,300,books,measured-jvm,OPF parse + cover bytes
+formats.cbz,200,books,measured-jvm,natural sort + page count
+batch.imported,1000,books,measured-jvm,single process() call
+batch.duplicates,0,books,measured-jvm,
+batch.failed,0,books,measured-jvm,
+batch.elapsedMs,10258,ms,measured-jvm,1000 books end-to-end
+batch.peakHeapMb,20,MB,measured-jvm,sampled every 5 ms
+batch.heapCapMb,256,MB,measured-jvm,JVM -Xmx for the run
+perBook.p50,3,ms,measured-jvm,one process() per book
+perBook.p90,12,ms,measured-jvm,
+perBook.p95,14,ms,measured-jvm,
+perBook.p99,16,ms,measured-jvm,
+perBook.max,19,ms,measured-jvm,
+wallClock,54,s,measured-jvm,includes Gradle + compile
