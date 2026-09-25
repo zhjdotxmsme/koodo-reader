@@ -1,0 +1,1353 @@
+diff --git a/android/core/archive/build.gradle b/android/core/archive/build.gradle
+new file mode 100644
+index 00000000..662081d3
+--- /dev/null
++++ b/android/core/archive/build.gradle
+@@ -0,0 +1,41 @@
++// core/archive — ONE zip-reading facade for EPUB / CBZ / DOCX (OOXML) /
++// desktop backup bundles (R1, P5.5 hard prerequisite; risk R1 of
++// docs/fb2-docx-html-mhtml-eval.md).
++//
++// PURE KOTLIN JVM MODULE (same rationale as :core:dbio / :core:importer):
++// java.util.zip is stock JVM, so everything here is unit-testable without
++// the Android SDK, and the Android runtime needs no extra dependency.
++//
++// Why this module exists — before R1 the same code lived four times:
++//   EpubBook.kt / ComicCover.kt (exact-then-case-insensitive entry lookup),
++//   BackupBundle.kt (reopen the zip per accessor call), engine/image
++//   ZipExtractor.kt (long-lived handle). See docs/patches/r1-core-archive.patch
++//   for the migration of the first three onto this facade.
++plugins {
++    id 'org.jetbrains.kotlin.jvm'
++}
++
++java {
++    sourceCompatibility = JavaVersion.VERSION_17
++    targetCompatibility = JavaVersion.VERSION_17
++}
++
++kotlin {
++    jvmToolchain(17)
++}
++
++dependencies {
++    // Zero runtime dependencies by design — this module is the dependency.
++
++    // Test only.
++    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
++    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
++}
++
++tasks.named('test') {
++    useJUnitPlatform()
++    testLogging {
++        events 'passed', 'skipped', 'failed'
++        exceptionFormat 'full'
++    }
++}
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveCache.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveCache.kt
+new file mode 100644
+index 00000000..17f57b9c
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveCache.kt
+@@ -0,0 +1,67 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.util.LinkedHashMap
++
++/**
++ * LRU pool of open [ZipArchive] handles keyed by canonical file path.
++ *
++ * Consumers that touch the same archive repeatedly (BackupBundle's cover /
++ * book / font accessors used to REOPEN the zip on every call; the comic
++ * viewer holds one for a whole reading session) share one handle instead.
++ *
++ * Thread-safe: all state access is under [lock]. [maxOpen] bounds the number
++ * of simultaneously open archives; the least-recently-used handle is closed
++ * on eviction. Because a returned handle may be shared by several callers,
++ * **callers must NOT close archives obtained from [get]** — lifecycle is
++ * owned by the cache ([close] closes everything).
++ */
++class ArchiveCache(private val maxOpen: Int = DEFAULT_MAX_OPEN) : AutoCloseable {
++
++    init {
++        require(maxOpen >= 1) { "maxOpen must be >= 1 (was $maxOpen)" }
++    }
++
++    private val lock = Any()
++    private val open = LinkedHashMap<String, ZipArchive>(16, 0.75f, /* accessOrder = */ true)
++
++    /** Open (or reuse) the archive for [file]. Never returns a closed handle. */
++    fun get(file: File): ZipArchive {
++        val key = file.canonicalFile.path
++        synchronized(lock) {
++            open.remove(key)?.let { existing ->
++                // Handles are never closed while pooled, so reuse is safe…
++                open[key] = existing // touch LRU order
++                return existing
++            }
++            val fresh = ZipArchives.open(file)
++            open[key] = fresh
++            evictIfNeeded()
++            return fresh
++        }
++    }
++
++    /** Currently open handle count (test/telemetry hook). */
++    val size: Int
++        get() = synchronized(lock) { open.size }
++
++    /** Close every pooled handle. Safe to call twice. */
++    override fun close() {
++        synchronized(lock) {
++            open.values.forEach { runCatching { it.close() } }
++            open.clear()
++        }
++    }
++
++    private fun evictIfNeeded() {
++        while (open.size > maxOpen) {
++            val eldestKey = open.keys.iterator().next() // accessOrder LinkedHashMap: first = LRU
++            val eldest = open.remove(eldestKey)
++            runCatching { eldest?.close() }
++        }
++    }
++
++    companion object {
++        const val DEFAULT_MAX_OPEN = 4
++    }
++}
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveEntry.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveEntry.kt
+new file mode 100644
+index 00000000..685e3897
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveEntry.kt
+@@ -0,0 +1,14 @@
++package com.koodoreader.core.archive
++
++/**
++ * One entry of an archive, in archive order. [name] is the raw zip entry
++ * name (forward slashes, may contain directory prefixes); [sizeBytes] is the
++ * UNCOMPRESSED size (-1 when the writer used a data descriptor and did not
++ * backfill it — streamed zips do this; see engine/image PageEntry for the
++ * same convention).
++ */
++data class ArchiveEntry(
++    val name: String,
++    val sizeBytes: Long,
++    val isDirectory: Boolean,
++)
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveException.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveException.kt
+new file mode 100644
+index 00000000..e3860b98
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ArchiveException.kt
+@@ -0,0 +1,15 @@
++package com.koodoreader.core.archive
++
++/**
++ * Typed archive errors — callers NEVER see a raw java.util.zip.IOException
++ * (mirrors the "永不抛 / parseOrThrow 类型化异常" convention of engine/mobi).
++ */
++open class ArchiveException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
++
++/** [file] exists but is not a readable zip (bad magic, truncated, corrupt central directory). */
++class ArchiveOpenException(file: String, cause: Throwable? = null) :
++    ArchiveException("not a readable zip archive: $file", cause)
++
++/** Entry [name] is absent — exact AND case-insensitive lookup both missed. */
++class ArchiveEntryNotFoundException(name: String) :
++    ArchiveException("archive entry not found: $name")
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/JavaZipArchive.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/JavaZipArchive.kt
+new file mode 100644
+index 00000000..f7e0a2a3
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/JavaZipArchive.kt
+@@ -0,0 +1,66 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.io.InputStream
++import java.util.zip.ZipEntry
++import java.util.zip.ZipFile
++
++/**
++ * The java.util.zip-backed [ZipArchive]. Internal — create via [ZipArchives].
++ *
++ * Entry model is materialised once; lookups go through a lowercase-keyed
++ * index so the case-insensitive fallback never rescans the archive.
++ */
++internal class JavaZipArchive(
++    override val file: File,
++    private val zip: ZipFile,
++) : ZipArchive {
++
++    /** name → ArchiveEntry, archive order. */
++    private val byName: Map<String, ArchiveEntry>
++    override val entries: List<ArchiveEntry>
++
++    /** lowercase name → ORIGINAL entry name (case-mangled packages). */
++    private val lowerIndex: Map<String, String>
++
++    init {
++        val seq = zip.entries().asSequence()
++        val list = ArrayList<ArchiveEntry>()
++        val lower = HashMap<String, String>()
++        seq.forEach { e ->
++            val entry = ArchiveEntry(
++                name = e.name,
++                sizeBytes = if (e.size < 0) -1L else e.size,
++                isDirectory = e.isDirectory,
++            )
++            list.add(entry)
++            lower.putIfAbsent(e.name.lowercase(), e.name)
++        }
++        entries = list
++        byName = list.associateBy { it.name }
++        lowerIndex = lower
++    }
++
++    private fun zipEntryOf(name: String): ZipEntry? {
++        // Exact first (byName keys come from the same ZipFile), then CI.
++        if (byName.containsKey(name)) return zip.getEntry(name)
++        val original = lowerIndex[name.lowercase()] ?: return null
++        return zip.getEntry(original)
++    }
++
++    override fun entry(name: String): ArchiveEntry? {
++        byName[name]?.let { return it }
++        val original = lowerIndex[name.lowercase()] ?: return null
++        return byName[original]
++    }
++
++    override fun openStream(name: String): InputStream {
++        val e = zipEntryOf(name)
++            ?: throw ArchiveEntryNotFoundException(name)
++        return zip.getInputStream(e)
++    }
++
++    override fun close() {
++        zip.close()
++    }
++}
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/SafeZipExtractor.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/SafeZipExtractor.kt
+new file mode 100644
+index 00000000..22e38c55
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/SafeZipExtractor.kt
+@@ -0,0 +1,126 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.io.FileOutputStream
++
++/**
++ * Zip-slip-proof extraction of [ZipArchive] contents to a directory.
++ *
++ * Defences (belt AND suspenders):
++ *  1. NAME validation — rejects absolute paths (leading `/` or `\`), Windows
++ *     drive letters (`C:\`), any `..` path segment, empty names and NUL
++ *     bytes. This is where most zip-slip implementations stop; we don't.
++ *  2. CANONICAL-PATH containment — after joining, the destination's
++ *     canonical path must remain inside the target directory's canonical
++ *     path (catches symlinked dirs and anything the name check missed).
++ *  3. RESOURCE caps — per-entry and total uncompressed byte caps plus an
++ *     entry-count cap, so a malicious archive cannot exhaust disk or memory
++ *     (decompression bombs).
++ *
++ * Files are streamed (8 KiB buffer); no entry is ever fully materialised.
++ */
++object SafeZipExtractor {
++
++    /** Resource caps — tighten for untrusted archives, keep defaults for books. */
++    data class Limits(
++        val maxEntries: Int = 10_000,
++        val maxEntryUncompressedBytes: Long = 512L * 1024 * 1024, // 512 MB per entry
++        val maxTotalUncompressedBytes: Long = 2L * 1024 * 1024 * 1024, // 2 GB per archive
++    )
++
++    /** [name] cannot be safely mapped under any target directory. */
++    class UnsafeEntryNameException(name: String) :
++        ArchiveException("unsafe archive entry name: $name")
++
++    /** Caps exceeded — the archive is hostile or simply too large for this context. */
++    class LimitExceededException(message: String) : ArchiveException(message)
++
++    /**
++     * Extract [filter]-selected entries under [targetDir] (created if needed).
++     * Returns the written files, in archive order. Directories are never
++     * written; nested entry paths (`a/b/c.png`) map to nested directories.
++     */
++    fun extract(
++        archive: ZipArchive,
++        targetDir: File,
++        limits: Limits = Limits(),
++        filter: (ArchiveEntry) -> Boolean = { !it.isDirectory },
++    ): List<File> {
++        require(targetDir.isDirectory || targetDir.mkdirs()) {
++            "cannot create extraction dir: ${targetDir.path}"
++        }
++        val targetRoot = targetDir.canonicalFile
++        val written = ArrayList<File>()
++        var totalBytes = 0L
++        var count = 0
++
++        for (entry in archive.entries) {
++            if (!filter(entry)) continue
++            if (++count > limits.maxEntries) {
++                throw LimitExceededException("archive exceeds $limits.maxEntries entries")
++            }
++
++            val dest = destinationOf(targetRoot, entry.name)
++            dest.parentFile?.mkdirs() // nested entry paths (a/b/c.txt)
++
++            archive.openStream(entry.name).use { input ->
++                FileOutputStream(dest).use { out ->
++                    val buf = ByteArray(BUFFER_SIZE)
++                    var entryBytes = 0L
++                    while (true) {
++                        val n = input.read(buf)
++                        if (n < 0) break
++                        entryBytes += n
++                        totalBytes += n
++                        if (entryBytes > limits.maxEntryUncompressedBytes) {
++                            throw LimitExceededException(
++                                "entry '${entry.name}' exceeds per-entry cap",
++                            )
++                        }
++                        if (totalBytes > limits.maxTotalUncompressedBytes) {
++                            throw LimitExceededException("archive exceeds total cap")
++                        }
++                        out.write(buf, 0, n)
++                    }
++                }
++            }
++            written.add(dest)
++        }
++        return written
++    }
++
++    /**
++     * Map an entry name to a file under [targetRoot] (canonical), enforcing
++     * both defences 1 and 2.
++     */
++    internal fun destinationOf(targetRoot: File, name: String): File {
++        if (name.isEmpty()) throw UnsafeEntryNameException(name)
++        if (name.indexOf('\u0000') >= 0) throw UnsafeEntryNameException(name)
++
++        // Windows drive letters ("C:\x" or "C:/x").
++        if (name.length >= 2 && name[1] == ':' && name[0].isLetter()) {
++            throw UnsafeEntryNameException(name)
++        }
++        // Absolute-ish paths (unix + windows separator flavour).
++        if (name.startsWith('/') || name.startsWith('\\')) {
++            throw UnsafeEntryNameException(name)
++        }
++        // Any ".." segment escapes the target by construction.
++        val segments = name.split('/', '\\')
++        if (segments.any { it == ".." }) throw UnsafeEntryNameException(name)
++
++        val dest = File(targetRoot, segments.joinToString(File.separator))
++        // Defence 2: canonical containment (symlinks, case quirks, anything
++        // the textual check missed). startsWith on the canonical root path
++        // with the separator suffix so "/target-evil" cannot pass as
++        // "/target".
++        val rootPath = targetRoot.canonicalPath + File.separator
++        val destPath = dest.canonicalPath
++        if (destPath != targetRoot.canonicalPath && !destPath.startsWith(rootPath)) {
++            throw UnsafeEntryNameException(name)
++        }
++        return dest
++    }
++
++    private const val BUFFER_SIZE = 8 * 1024
++}
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchive.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchive.kt
+new file mode 100644
+index 00000000..7878ea97
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchive.kt
+@@ -0,0 +1,51 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.io.InputStream
++import java.io.OutputStream
++
++/**
++ * A readable zip archive — the single abstraction every in-repo zip reader
++ * goes through (EPUB OPF, CBZ pages, desktop backup bundles, and the future
++ * DOCX/OOXML readers).
++ *
++ * Contract:
++ *  - [entries] is materialised ONCE at open (cheap; zips in this app's size
++ *    range) and re-used for every lookup — no repeated central-directory
++ *    walks.
++ *  - [entry] resolves exact first, then case-insensitively — the shared
++ *    policy previously duplicated in EpubBook / ComicCover / ZipExtractor
++ *    (some packagers mangle entry case).
++ *  - [openStream] streams; callers decide how much to buffer. Nothing here
++ *    loads a whole entry except the explicit [readBytes] convenience.
++ *  - AutoCloseable: long-lived consumers (backup bundle, comic viewer)
++ *    hold the handle; short-lived ones use `use { }`.
++ */
++interface ZipArchive : AutoCloseable {
++
++    /** The backing file (canonical-path key for [ArchiveCache]). */
++    val file: File
++
++    /** All entries, in archive order (directories included, flag on the entry). */
++    val entries: List<ArchiveEntry>
++
++    /** Entry lookup: exact name first, then case-insensitive; null when absent. */
++    fun entry(name: String): ArchiveEntry?
++
++    /** All entry names (directories included) — convenience for filters. */
++    fun names(): Sequence<String> = entries.asSequence().map { it.name }
++
++    /**
++     * Stream an entry's uncompressed bytes. Throws [ArchiveEntryNotFoundException]
++     * when the entry is absent (exact AND case-insensitive lookup).
++     */
++    fun openStream(name: String): InputStream
++
++    /** Stream an entry into [out] without materialising it (book/font files). */
++    fun copyTo(name: String, out: OutputStream) {
++        openStream(name).use { it.copyTo(out) }
++    }
++
++    /** Read a whole entry (covers, OPF XML, small assets). Callers keep size in mind. */
++    fun readBytes(name: String): ByteArray = openStream(name).use { it.readBytes() }
++}
+diff --git a/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchives.kt b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchives.kt
+new file mode 100644
+index 00000000..10e59b83
+--- /dev/null
++++ b/android/core/archive/src/main/kotlin/com/koodoreader/core/archive/ZipArchives.kt
+@@ -0,0 +1,53 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.util.zip.ZipFile
++
++/**
++ * Entry points for opening zip archives. All previous naked
++ * `java.util.zip.ZipFile(file)` call sites go through here.
++ */
++object ZipArchives {
++
++    /**
++     * ZIP local-file-header magic `PK\x03\x04` — the check BackupBundle used
++     * to inline. Note this detects the LOCAL header; a zip with a prepended
++     * payload (self-extracting style) still fails it, same as before.
++     */
++    fun isZip(file: File): Boolean {
++        if (!file.isFile || file.length() < 4) return false
++        file.inputStream().use {
++            val b = ByteArray(4)
++            if (it.read(b) < 4) return false
++            return b[0] == 0x50.toByte() && b[1] == 0x4B.toByte() &&
++                b[2] == 0x03.toByte() && b[3] == 0x04.toByte()
++        }
++    }
++
++    /**
++     * Open [file] as a zip. Throws [ArchiveOpenException] when it is missing,
++     * not a zip, or its central directory is corrupt — never a raw IOException.
++     */
++    fun open(file: File): ZipArchive {
++        if (!file.isFile) throw ArchiveOpenException(file.path)
++        val zip = try {
++            ZipFile(file)
++        } catch (e: Exception) {
++            throw ArchiveOpenException(file.path, e)
++        }
++        return try {
++            JavaZipArchive(file, zip)
++        } catch (t: Throwable) {
++            runCatching { zip.close() }
++            throw ArchiveOpenException(file.path, t)
++        }
++    }
++
++    /** [open] for callers that treat unreadable archives as "no archive". */
++    fun openOrNull(file: File): ZipArchive? =
++        try {
++            open(file)
++        } catch (_: ArchiveException) {
++            null
++        }
++}
+diff --git a/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/ArchiveCacheTest.kt b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/ArchiveCacheTest.kt
+new file mode 100644
+index 00000000..a3f2edff
+--- /dev/null
++++ b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/ArchiveCacheTest.kt
+@@ -0,0 +1,133 @@
++package com.koodoreader.core.archive
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.assertThrows
++import org.junit.jupiter.api.io.TempDir
++import java.io.File
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.Executors
++import java.util.concurrent.TimeUnit
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertTrue
++
++class ArchiveCacheTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    private fun zip(name: String): File =
++        TestZips.write(File(dir, name), mapOf("x.txt" to TestZips.bytes(name)))
++
++    @Test
++    fun `repeated get reuses the same handle`() {
++        val f = zip("a.zip")
++        ArchiveCache().use { cache ->
++            val first = cache.get(f)
++            assertEquals(first, cache.get(f))
++            assertEquals(first, cache.get(f))
++            assertEquals(1, cache.size)
++        }
++    }
++
++    @Test
++    fun `distinct files get distinct handles`() {
++        ArchiveCache().use { cache ->
++            val a = cache.get(zip("b1.zip"))
++            val b = cache.get(zip("b2.zip"))
++            assertTrue(a !== b)
++            assertEquals(2, cache.size)
++        }
++    }
++
++    @Test
++    fun `lru eviction closes the least recently used handle`() {
++        val z1 = zip("c1.zip")
++        val z2 = zip("c2.zip")
++        val z3 = zip("c3.zip")
++        ArchiveCache(maxOpen = 2).use { cache ->
++            val h1 = cache.get(z1)
++            val h2 = cache.get(z2)
++            cache.get(z3) // evicts h1 (LRU)
++            assertEquals(2, cache.size)
++            // h1 was closed by eviction; reopening the same file yields a
++            // FRESH, working handle (the old object stays closed).
++            assertClosed(h1)
++            val h1b = cache.get(z1)
++            assertTrue(h1 !== h1b)
++            assertEquals("c1.zip", h1b.readBytes("x.txt").decodeToString())
++        }
++    }
++
++    @Test
++    fun `touching a handle protects it from eviction`() {
++        val z1 = zip("d1.zip")
++        val z2 = zip("d2.zip")
++        ArchiveCache(maxOpen = 2).use { cache ->
++            val h1 = cache.get(z1)
++            cache.get(z2)
++            cache.get(z1) // touch: z2 becomes the LRU now
++            cache.get(zip("d3.zip")) // evicts z2's handle, keeps h1
++            assertEquals("d1.zip", h1.readBytes("x.txt").decodeToString())
++        }
++    }
++
++    @Test
++    fun `close closes every pooled handle`() {
++        val cache = ArchiveCache()
++        val h1 = cache.get(zip("e1.zip"))
++        val h2 = cache.get(zip("e2.zip"))
++        cache.close()
++        assertClosed(h1)
++        assertClosed(h2)
++        assertEquals(0, cache.size)
++        // Second close is a no-op.
++        cache.close()
++    }
++
++    @Test
++    fun `get after close reopens a fresh handle`() {
++        val f = zip("f1.zip")
++        val cache = ArchiveCache()
++        val h1 = cache.get(f)
++        cache.close()
++        val h2 = cache.get(f)
++        assertTrue(h1 !== h2)
++        cache.close()
++    }
++
++    @Test
++    fun `concurrent get on the same file shares one handle`() {
++        val f = zip("g1.zip")
++        val cache = ArchiveCache()
++        val pool = Executors.newFixedThreadPool(8)
++        val ready = CountDownLatch(8)
++        val go = CountDownLatch(1)
++        val futures = (1..8).map {
++            pool.submit<ZipArchive> {
++                ready.countDown()
++                go.await()
++                cache.get(f)
++            }
++        }
++        assertTrue(ready.await(10, TimeUnit.SECONDS))
++        go.countDown()
++        val results = futures.map { it.get(10, TimeUnit.SECONDS) }
++        pool.shutdown()
++        assertTrue(results.all { it === results[0] })
++        assertEquals(1, cache.size)
++        cache.close()
++    }
++
++    @Test
++    fun `maxOpen below one is rejected`() {
++        val e = assertThrows<IllegalArgumentException> { ArchiveCache(maxOpen = 0) }
++        assertTrue(e.message!!.contains("maxOpen"))
++    }
++
++    /** A closed JavaZipArchive must refuse further work (ZipFile contract). */
++    private fun assertClosed(archive: ZipArchive) {
++        val e = assertThrows<IllegalStateException> { archive.readBytes("x.txt") }
++        assertTrue(e.message!!.contains("closed"))
++    }
++}
++
+diff --git a/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/JavaZipArchiveTest.kt b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/JavaZipArchiveTest.kt
+new file mode 100644
+index 00000000..9c8ce505
+--- /dev/null
++++ b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/JavaZipArchiveTest.kt
+@@ -0,0 +1,159 @@
++package com.koodoreader.core.archive
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.assertThrows
++import org.junit.jupiter.api.io.TempDir
++import java.io.ByteArrayOutputStream
++import java.io.File
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.Assertions.assertTrue
++
++class JavaZipArchiveTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    // ------------------------------------------------------------ open
++
++    @Test
++    fun `opens a valid zip and lists all entries in order`() {
++        val archive = ZipArchives.open(TestZips.sample(File(dir, "book.epub")))
++        archive.use {
++            assertEquals(
++                listOf(
++                    "META-INF/container.xml",
++                    "OEBPS/content.opf",
++                    "OEBPS/images/cover.png",
++                    "Images/Page1.PNG",
++                    "chapter1.txt",
++                ),
++                it.entries.map { e -> e.name },
++            )
++            assertFalse(it.entries.any { e -> e.isDirectory })
++        }
++    }
++
++    @Test
++    fun `reports entry sizes`() {
++        ZipArchives.open(TestZips.sample(File(dir, "a.zip"))).use {
++            assertEquals("hello world".length.toLong(), it.entry("chapter1.txt")?.sizeBytes)
++        }
++    }
++
++    @Test
++    fun `missing or non-zip file raises typed open exception`() {
++        assertThrows<ArchiveOpenException> { ZipArchives.open(File(dir, "absent.zip")) }
++        val text = File(dir, "text.zip").apply { writeText("definitely not a zip") }
++        val e = assertThrows<ArchiveOpenException> { ZipArchives.open(text) }
++        assertTrue(e.message!!.contains(text.path))
++    }
++
++    @Test
++    fun `truncated zip raises typed open exception`() {
++        val good = TestZips.sample(File(dir, "good.zip"))
++        val bytes = good.readBytes()
++        val truncated = File(dir, "truncated.zip")
++        truncated.writeBytes(bytes.copyOf(bytes.size / 2))
++        assertThrows<ArchiveOpenException> { ZipArchives.open(truncated) }
++    }
++
++    @Test
++    fun `openOrNull returns null instead of throwing`() {
++        val text = File(dir, "text2.zip").apply { writeText("nope") }
++        assertNull(ZipArchives.openOrNull(text))
++    }
++
++    // --------------------------------------------------------- lookup
++
++    @Test
++    fun `entry resolves exact name first`() {
++        ZipArchives.open(TestZips.sample(File(dir, "b.zip"))).use {
++            assertEquals("Images/Page1.PNG", it.entry("Images/Page1.PNG")?.name)
++        }
++    }
++
++    @Test
++    fun `entry falls back to case-insensitive match`() {
++        ZipArchives.open(TestZips.sample(File(dir, "c.zip"))).use {
++            // The archive only contains "Images/Page1.PNG" (capital I).
++            assertEquals("Images/Page1.PNG", it.entry("images/page1.png")?.name)
++            assertEquals("Images/Page1.PNG", it.entry("IMAGES/PAGE1.png")?.name)
++        }
++    }
++
++    @Test
++    fun `entry returns null for absent names`() {
++        ZipArchives.open(TestZips.sample(File(dir, "d.zip"))).use {
++            assertNull(it.entry("nope.txt"))
++            assertNull(it.entry("OEBPS/content.opfx"))
++        }
++    }
++
++    // --------------------------------------------------------- stream
++
++    @Test
++    fun `readBytes streams entry content`() {
++        ZipArchives.open(TestZips.sample(File(dir, "e.zip"))).use {
++            assertEquals("hello world", it.readBytes("chapter1.txt").decodeToString())
++        }
++    }
++
++    @Test
++    fun `readBytes honours case-insensitive fallback`() {
++        ZipArchives.open(TestZips.sample(File(dir, "f.zip"))).use {
++            assertEquals("page-one", it.readBytes("images/page1.png").decodeToString())
++        }
++    }
++
++    @Test
++    fun `openStream of absent entry throws typed error`() {
++        ZipArchives.open(TestZips.sample(File(dir, "g.zip"))).use {
++            assertThrows<ArchiveEntryNotFoundException> { it.openStream("nope.txt") }
++        }
++    }
++
++    @Test
++    fun `copyTo streams without materialising the entry`() {
++        ZipArchives.open(TestZips.sample(File(dir, "h.zip"))).use {
++            val out = ByteArrayOutputStream()
++            it.copyTo("chapter1.txt", out)
++            assertEquals("hello world", out.toString("UTF-8"))
++        }
++    }
++
++    // ----------------------------------------------------- zip magic
++
++    @Test
++    fun `isZip detects magic only`() {
++        val good = TestZips.sample(File(dir, "magic.zip"))
++        val bad = File(dir, "plain.txt").apply { writeText("plain text") }
++        val empty = File(dir, "empty.zip").apply { createNewFile() }
++        assertTrue(ZipArchives.isZip(good))
++        assertFalse(ZipArchives.isZip(bad))
++        assertFalse(ZipArchives.isZip(empty))
++        assertFalse(ZipArchives.isZip(File(dir, "ghost.zip")))
++    }
++
++    @Test
++    fun `moderately large entry streams end to end`() {
++        // ~2 MB of zeros: proves the stream path (no accidental full-entry
++        // buffering contract) without paying for a real decompression bomb.
++        val payload = ByteArray(2 * 1024 * 1024)
++        val zip = TestZips.write(File(dir, "big.zip"), mapOf("big.bin" to payload))
++        ZipArchives.open(zip).use {
++            var total = 0L
++            it.openStream("big.bin").use { input ->
++                val buf = ByteArray(8192)
++                while (true) {
++                    val n = input.read(buf)
++                    if (n < 0) break
++                    total += n
++                }
++            }
++            assertEquals(payload.size.toLong(), total)
++        }
++    }
++}
++
+diff --git a/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/SafeZipExtractorTest.kt b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/SafeZipExtractorTest.kt
+new file mode 100644
+index 00000000..27df77d9
+--- /dev/null
++++ b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/SafeZipExtractorTest.kt
+@@ -0,0 +1,150 @@
++package com.koodoreader.core.archive
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.assertThrows
++import org.junit.jupiter.api.io.TempDir
++import java.io.File
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertTrue
++
++class SafeZipExtractorTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    // ------------------------------------------------------- normal path
++
++    @Test
++    fun `extracts nested entries and skips directories`() {
++        val zip = TestZips.write(
++            File(dir, "book.zip"),
++            linkedMapOf(
++                "a/b/c.txt" to TestZips.bytes("deep"),
++                "top.txt" to TestZips.bytes("top"),
++                "dir/" to ByteArray(0), // directory entry
++            ),
++        )
++        val target = File(dir, "out")
++        ZipArchives.open(zip).use { archive ->
++            val written = SafeZipExtractor.extract(archive, target)
++            assertEquals(listOf("a${File.separator}b${File.separator}c.txt", "top.txt"),
++                written.map { it.relativeTo(target).path })
++            assertEquals("deep", File(target, "a/b/c.txt").readText())
++            assertEquals("top", File(target, "top.txt").readText())
++        }
++    }
++
++    @Test
++    fun `filter selects a subset of entries`() {
++        val zip = TestZips.write(
++            File(dir, "mixed.zip"),
++            linkedMapOf(
++                "images/cover.png" to byteArrayOf(1),
++                "text/opf.xml" to TestZips.bytes("<x/>"),
++            ),
++        )
++        val target = File(dir, "out2")
++        ZipArchives.open(zip).use { archive ->
++            val written = SafeZipExtractor.extract(archive, target) { e -> e.name.endsWith(".png") }
++            assertEquals(1, written.size)
++            assertTrue(written[0].path.endsWith("cover.png"))
++        }
++    }
++
++    // ------------------------------------------------------- zip slip
++
++    private fun assertSlipRejected(entryName: String) {
++        val zip = TestZips.write(File(dir, "slip-${entryName.hashCode()}.zip"), mapOf(entryName to TestZips.bytes("x")))
++        val target = File(dir, "slip-out-${entryName.hashCode()}")
++        val e = assertThrows<SafeZipExtractor.UnsafeEntryNameException> {
++            ZipArchives.open(zip).use { SafeZipExtractor.extract(it, target) }
++        }
++        assertTrue(e.message!!.contains(entryName))
++    }
++
++    @Test
++    fun `rejects dot-dot escape`() = assertSlipRejected("../evil.txt")
++
++    @Test
++    fun `rejects nested dot-dot escape`() = assertSlipRejected("a/b/../../../evil.txt")
++
++    @Test
++    fun `rejects windows dot-dot escape`() = assertSlipRejected("..\\evil.txt")
++
++    @Test
++    fun `rejects absolute unix path`() = assertSlipRejected("/etc/evil.txt")
++
++    @Test
++    fun `rejects absolute windows path`() = assertSlipRejected("\\evil.txt")
++
++    @Test
++    fun `rejects drive letter path`() = assertSlipRejected("C:\\evil.txt")
++
++    @Test
++    fun `rejects nul byte name`() = assertSlipRejected("evil\u0000.txt")
++
++    @Test
++    fun `rejects empty name`() = assertSlipRejected("")
++
++    @Test
++    fun `destinationOf containment holds for lookalike sibling dirs`() {
++        // "/target-evil" must not pass as inside "/target".
++        val root = File(dir, "target").canonicalFile
++        val sibling = File(root.parentFile, "target-evil")
++        val e = assertThrows<SafeZipExtractor.UnsafeEntryNameException> {
++            SafeZipExtractor.destinationOf(root, sibling.absolutePath)
++        }
++        assertTrue(e.message!!.contains("evil"))
++    }
++
++    // ---------------------------------------------------------- caps
++
++    @Test
++    fun `entry count cap is enforced`() {
++        val zip = TestZips.write(
++            File(dir, "many.zip"),
++            (1..5).associate { "f$it.txt" to TestZips.bytes("x") },
++        )
++        ZipArchives.open(zip).use {
++            val e = assertThrows<SafeZipExtractor.LimitExceededException> {
++                SafeZipExtractor.extract(it, File(dir, "cap-out"), SafeZipExtractor.Limits(maxEntries = 3))
++            }
++            assertTrue(e.message!!.contains("maxEntries"))
++        }
++    }
++
++    @Test
++    fun `total uncompressed cap is enforced`() {
++        val zip = TestZips.write(
++            File(dir, "fat.zip"),
++            mapOf(
++                "a.bin" to ByteArray(1000),
++                "b.bin" to ByteArray(1000),
++            ),
++        )
++        ZipArchives.open(zip).use {
++            assertThrows<SafeZipExtractor.LimitExceededException> {
++                SafeZipExtractor.extract(
++                    it,
++                    File(dir, "fat-out"),
++                    SafeZipExtractor.Limits(maxTotalUncompressedBytes = 1500),
++                )
++            }
++        }
++    }
++
++    @Test
++    fun `per entry cap is enforced`() {
++        val zip = TestZips.write(File(dir, "one.zip"), mapOf("big.bin" to ByteArray(1000)))
++        ZipArchives.open(zip).use {
++            assertThrows<SafeZipExtractor.LimitExceededException> {
++                SafeZipExtractor.extract(
++                    it,
++                    File(dir, "one-out"),
++                    SafeZipExtractor.Limits(maxEntryUncompressedBytes = 500),
++                )
++            }
++        }
++    }
++}
++
+diff --git a/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/TestZips.kt b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/TestZips.kt
+new file mode 100644
+index 00000000..b28bf621
+--- /dev/null
++++ b/android/core/archive/src/test/kotlin/com/koodoreader/core/archive/TestZips.kt
+@@ -0,0 +1,37 @@
++package com.koodoreader.core.archive
++
++import java.io.File
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++
++/** Programmatic zip fixtures for the archive tests (no binary resources). */
++internal object TestZips {
++
++    /** Build a zip at [path]; [entries] maps entry name → content bytes. */
++    fun write(path: File, entries: Map<String, ByteArray>): File {
++        path.parentFile?.mkdirs()
++        ZipOutputStream(path.outputStream()).use { zos ->
++            entries.forEach { (name, bytes) ->
++                zos.putNextEntry(ZipEntry(name))
++                if (bytes.isNotEmpty()) zos.write(bytes)
++                zos.closeEntry()
++            }
++        }
++        return path
++    }
++
++    fun bytes(s: String): ByteArray = s.toByteArray(Charsets.UTF_8)
++
++    /** The standard fixture used by lookup/stream tests. */
++    fun sample(path: File): File = write(
++        path,
++        linkedMapOf(
++            "META-INF/container.xml" to bytes("<container/>"),
++            "OEBPS/content.opf" to bytes("<package/>"),
++            "OEBPS/images/cover.png" to byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47),
++            "Images/Page1.PNG" to bytes("page-one"), // case-mangled package
++            "chapter1.txt" to bytes("hello world"),
++        ),
++    )
++}
++
+diff --git a/android/core/dbio/build.gradle b/android/core/dbio/build.gradle
+index 4aa7688c..0a1ce312 100644
+--- a/android/core/dbio/build.gradle
++++ b/android/core/dbio/build.gradle
+@@ -25,6 +25,10 @@ kotlin {
+ }
+ 
+ dependencies {
++    // R1: shared zip facade — BackupBundle reads desktop backup zips through
++    // ZipArchive (one held handle instead of reopen-per-accessor).
++    implementation project(':core:archive')
++
+     // NO runtime SQLite dependency: the JDBC engine below is JVM/test-only
+     // (sqlite-jdbc ships no Android natives — xerial#794). On device, the app
+     // installs a framework-SQLite factory via DesktopDbEngine at startup.
+diff --git a/android/core/dbio/src/main/kotlin/com/koodoreader/core/dbio/BackupBundle.kt b/android/core/dbio/src/main/kotlin/com/koodoreader/core/dbio/BackupBundle.kt
+index 315aaad9..0d967cf2 100644
+--- a/android/core/dbio/src/main/kotlin/com/koodoreader/core/dbio/BackupBundle.kt
++++ b/android/core/dbio/src/main/kotlin/com/koodoreader/core/dbio/BackupBundle.kt
+@@ -1,10 +1,11 @@
+ package com.koodoreader.core.dbio
+ 
++import com.koodoreader.core.archive.ZipArchive
++import com.koodoreader.core.archive.ZipArchives
+ import java.io.File
+ import java.io.FileOutputStream
+ import java.io.OutputStream
+ import java.util.zip.ZipEntry
+-import java.util.zip.ZipFile
+ import java.util.zip.ZipOutputStream
+ 
+ /**
+@@ -118,24 +119,26 @@ class BundleOpen internal constructor(
+     val bookFiles: List<BookFile>,
+     val fontFiles: List<FontFile>,
+     private val workDir: File?,
+-    private val zipFile: File?,
++    /**
++     * The OPEN archive handle (R1: one shared handle instead of reopening
++     * the zip on every accessor call). Null for directory bundles. Lifecycle
++     * is owned by [close] — callers must not close it.
++     */
++    private val zip: ZipArchive?,
+     private val coverRoot: File?,
+     private val bookRoot: File?,
+     private val fontRoot: File?,
+ ) : AutoCloseable {
+ 
+     override fun close() {
++        zip?.close()
+         workDir?.deleteRecursively()
+     }
+ 
+     /** Raw bytes of a bundled cover (desktop covers are small by design). */
+     fun coverBytes(name: String): ByteArray? {
+-        if (zipFile != null) {
+-            return ZipFile(zipFile).use { zf ->
+-                zf.getEntry("cover/$name")?.let {
+-                    zf.getInputStream(it).use { s -> s.readBytes() }
+-                }
+-            }
++        if (zip != null) {
++            return zip.entry("cover/$name")?.let { zip.readBytes(it.name) }
+         }
+         val f = coverRoot?.let { File(it, name) } ?: return null
+         return if (f.isFile) f.readBytes() else null
+@@ -143,12 +146,10 @@ class BundleOpen internal constructor(
+ 
+     /** Stream a bundled book file into [out] (never fully in memory). */
+     fun bookStream(name: String, out: OutputStream) {
+-        if (zipFile != null) {
+-            ZipFile(zipFile).use { zf ->
+-                val e = zf.getEntry("book/$name")
+-                    ?: throw DesktopDbException("no book entry: $name")
+-                zf.getInputStream(e).use { it.copyTo(out) }
+-            }
++        if (zip != null) {
++            val e = zip.entry("book/$name")
++                ?: throw DesktopDbException("no book entry: $name")
++            zip.copyTo(e.name, out)
+         } else {
+             val f = bookRoot?.let { File(it, name) }
+                 ?: throw DesktopDbException("no book dir; missing entry: $name")
+@@ -159,12 +160,10 @@ class BundleOpen internal constructor(
+ 
+     /** Stream a bundled font file into [out]. */
+     fun fontStream(name: String, out: OutputStream) {
+-        if (zipFile != null) {
+-            ZipFile(zipFile).use { zf ->
+-                val e = zf.getEntry("fonts/$name")
+-                    ?: throw DesktopDbException("no font entry: $name")
+-                zf.getInputStream(e).use { it.copyTo(out) }
+-            }
++        if (zip != null) {
++            val e = zip.entry("fonts/$name")
++                ?: throw DesktopDbException("no font entry: $name")
++            zip.copyTo(e.name, out)
+         } else {
+             val f = fontRoot?.let { File(it, name) }
+                 ?: throw DesktopDbException("no fonts dir; missing entry: $name")
+@@ -176,16 +175,8 @@ class BundleOpen internal constructor(
+ 
+ object BackupBundle {
+ 
+-    /** ZIP local-file header `PK\x03\x04`. */
+-    fun isZip(file: File): Boolean {
+-        if (!file.isFile || file.length() < 4) return false
+-        file.inputStream().use {
+-            val b = ByteArray(4)
+-            if (it.read(b) < 4) return false
+-            return b[0] == 0x50.toByte() && b[1] == 0x4B.toByte() &&
+-                b[2] == 0x03.toByte() && b[3] == 0x04.toByte()
+-        }
+-    }
++    /** ZIP local-file header `PK\x03\x04` (delegates to :core:archive). */
++    fun isZip(file: File): Boolean = ZipArchives.isZip(file)
+ 
+     /** Open a desktop backup: a ZIP file, or a directory with `config/` (+`cover/`+`book/`). */
+     fun open(source: File): BundleOpen {
+@@ -201,15 +192,17 @@ object BackupBundle {
+ 
+     private fun readZip(zip: File): BundleOpen {
+         val work = java.nio.file.Files.createTempDirectory("dbio-open").toFile()
+-        ZipFile(zip).use { zf ->
++        // R1: the archive handle stays open for the lifetime of the bundle —
++        // coverBytes / bookStream / fontStream reuse it instead of reopening
++        // the zip per call (the previous 3×-reopen pattern).
++        val archive = ZipArchives.open(zip)
++        try {
+             val dbFiles = linkedMapOf<String, File>()
+             var configJson: String? = null
+             val covers = mutableListOf<CoverFile>()
+             val books = mutableListOf<BookFile>()
+             val fonts = mutableListOf<FontFile>()
+-            val it = zf.entries()
+-            while (it.hasMoreElements()) {
+-                val entry = it.nextElement()
++            for (entry in archive.entries) {
+                 if (entry.isDirectory) continue
+                 val name = entry.name
+                 when {
+@@ -217,8 +210,8 @@ object BackupBundle {
+                         val base = name.removePrefix("config/").removeSuffix(".db")
+                         val target = File(work, base + ".db")
+                         target.parentFile?.mkdirs()
+-                        zf.getInputStream(entry).use { input ->
+-                            FileOutputStream(target).use { input.copyTo(it) }
++                        FileOutputStream(target).use { out ->
++                            archive.copyTo(name, out)
+                         }
+                         if (base.startsWith("temp-")) {
+                             dbFiles[base.removePrefix("temp-") + "@temp"] = target
+@@ -227,19 +220,19 @@ object BackupBundle {
+                         }
+                     }
+                     name == "config/config.json" -> {
+-                        configJson = zf.getInputStream(entry).use { it.readBytes().decodeToString() }
++                        configJson = archive.readBytes(name).decodeToString()
+                     }
+                     name.startsWith("cover/") -> {
+                         val rel = name.removePrefix("cover/")
+-                        covers.add(CoverFile(rel, entry.size))
++                        covers.add(CoverFile(rel, entry.sizeBytes))
+                     }
+                     name.startsWith("book/") -> {
+                         val rel = name.removePrefix("book/")
+-                        books.add(BookFile(rel, entry.size))
++                        books.add(BookFile(rel, entry.sizeBytes))
+                     }
+                     name.startsWith("fonts/") -> {
+                         val rel = name.removePrefix("fonts/")
+-                        fonts.add(FontFile(rel, entry.size))
++                        fonts.add(FontFile(rel, entry.sizeBytes))
+                     }
+                     else -> Unit
+                 }
+@@ -251,11 +244,16 @@ object BackupBundle {
+                 bookFiles = books,
+                 fontFiles = fonts,
+                 workDir = work,
+-                zipFile = zip,
++                zip = archive,
+                 coverRoot = null,
+                 bookRoot = null,
+                 fontRoot = null,
+             )
++        } catch (t: Throwable) {
++            // Never leak the handle when bundle construction fails.
++            runCatching { archive.close() }
++            runCatching { work.deleteRecursively() }
++            throw t
+         }
+     }
+ 
+@@ -284,7 +282,7 @@ object BackupBundle {
+             fontFiles = fontsDir.listFiles()
+                 .orEmpty().filter { it.isFile }.map { FontFile(it.name, it.length()) },
+             workDir = null,
+-            zipFile = null,
++            zip = null,
+             coverRoot = if (coversDir.isDirectory) coversDir else null,
+             bookRoot = if (booksDir.isDirectory) booksDir else null,
+             fontRoot = if (fontsDir.isDirectory) fontsDir else null,
+diff --git a/android/core/importer/build.gradle b/android/core/importer/build.gradle
+index 88c93621..5c7f5dce 100644
+--- a/android/core/importer/build.gradle
++++ b/android/core/importer/build.gradle
+@@ -22,7 +22,11 @@ kotlin {
+ }
+ 
+ dependencies {
+-    // Test only — this module has zero runtime dependencies.
++    // R1: shared zip facade (ZipArchive/ZipArchives) — the one place that
++    // touches java.util.zip for reads (EpubBook / ComicCover migrated).
++    implementation project(':core:archive')
++
++    // Test only — apart from :core:archive this module has no runtime deps.
+     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+ }
+diff --git a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
+index d6d18777..52e3d548 100644
+--- a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
++++ b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
+@@ -1,8 +1,9 @@
+ package com.koodoreader.core.importer
+ 
++import com.koodoreader.core.archive.ZipArchive
++import com.koodoreader.core.archive.ZipArchives
+ import java.io.File
+ import java.util.Locale
+-import java.util.zip.ZipFile
+ 
+ /**
+  * Comic (CBZ) cover extraction (P1 import) — parity with the desktop
+@@ -30,9 +31,8 @@ object ComicCover {
+ 
+     /** Extract cover + page count from a CBZ [file]. Returns null on failure. */
+     fun extract(file: File): Result? = runCatching {
+-        ZipFile(file).use { zip ->
+-            val images = zip.entries().asSequence()
+-                .map { it.name }
++        ZipArchives.openOrNull(file)?.use { archive ->
++            val images = archive.names()
+                 .filter { name ->
+                     // substringAfterLast returns the input unchanged when
+                     // there is no directory prefix (no missing-default here).
+@@ -43,7 +43,7 @@ object ComicCover {
+             if (images.isEmpty()) {
+                 Result(cover = null, pageCount = 0)
+             } else {
+-                val bytes = readEntryBytes(zip, images.first())
++                val bytes = readEntryBytes(archive, images.first())
+                 if (bytes == null) {
+                     Result(cover = null, pageCount = images.size)
+                 } else {
+@@ -63,10 +63,10 @@ object ComicCover {
+ 
+     private fun coverExt(entryName: String): String = extOf(entryName.substringAfterLast('/'))
+ 
+-    private fun readEntryBytes(zip: ZipFile, name: String): ByteArray? {
+-        zip.getEntry(name)?.let { e -> return zip.getInputStream(e).use { it.readBytes() } }
+-        val match = zip.entries().asSequence().firstOrNull { it.name.equals(name, ignoreCase = true) }
+-        return match?.let { zip.getInputStream(it).use { it.readBytes() } }
++    private fun readEntryBytes(archive: ZipArchive, name: String): ByteArray? {
++        // ZipArchive.entry() = exact match, then case-insensitive fallback
++        // (the shared policy this module used to hand-roll).
++        return archive.entry(name)?.let { archive.readBytes(it.name) }
+     }
+ 
+     /**
+diff --git a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubBook.kt b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubBook.kt
+index 4cc68cc9..7d2e3c77 100644
+--- a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubBook.kt
++++ b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubBook.kt
+@@ -1,8 +1,10 @@
+ package com.koodoreader.core.importer
+ 
++import com.koodoreader.core.archive.ArchiveException
++import com.koodoreader.core.archive.ZipArchive
++import com.koodoreader.core.archive.ZipArchives
+ import java.io.File
+ import java.util.Locale
+-import java.util.zip.ZipFile
+ 
+ /**
+  * A cover image extracted from a book archive. [extension] is the file
+@@ -29,8 +31,8 @@ data class EpubResult(val metadata: EpubMetadata, val cover: BookCover?)
+ 
+ /**
+  * EPUB metadata + cover extraction (P1 import) — a minimal, dependency-free
+- * reader of the OPF package, on a `java.util.zip.ZipFile` (the book file has
+- * already been copied into app storage by [ImportPipeline]).
++ * reader of the OPF package, over the :core:archive ZipArchive facade (the
++ * book file has already been copied into app storage by [ImportPipeline]).
+  *
+  * Parity notes vs the desktop engine (kookit `EpubRender` / `epub.js`):
+  *  - container: `META-INF/container.xml` → `<rootfile full-path="…">`;
+@@ -52,16 +54,16 @@ object EpubBook {
+     /** Throws [IllegalArgumentException] when [file] is not a readable EPUB zip. */
+     fun parse(file: File): EpubResult {
+         if (!file.isFile) throw IllegalArgumentException("EPUB file not found: ${file.path}")
+-        val zip = try {
+-            ZipFile(file)
+-        } catch (e: java.io.IOException) {
++        val archive = try {
++            ZipArchives.open(file)
++        } catch (e: ArchiveException) {
+             throw IllegalArgumentException("not a readable EPUB zip: ${file.path}", e)
+         }
+-        zip.use {
+-            val opfPath = opfPath(zip) ?: throw IllegalArgumentException(
++        archive.use {
++            val opfPath = opfPath(archive) ?: throw IllegalArgumentException(
+                 "EPUB without an OPF package document",
+             )
+-            val opfXml = readEntry(zip, opfPath)
++            val opfXml = readEntry(archive, opfPath)
+                 ?: throw IllegalArgumentException("OPF entry unreadable: $opfPath")
+ 
+             val metadata = metadataOf(opfXml)
+@@ -70,7 +72,7 @@ object EpubBook {
+                 ?.let { resolvePath(opfPath, it) }
+                 ?.takeIf { it.isNotEmpty() }
+                 ?.let { entryName ->
+-                    readEntryBytes(zip, entryName)?.let {
++                    readEntryBytes(archive, entryName)?.let {
+                         BookCover(it, coverExtension(entryName))
+                     }
+                 }
+@@ -80,29 +82,25 @@ object EpubBook {
+ 
+     // ---- package navigation ------------------------------------------------
+ 
+-    private fun opfPath(zip: ZipFile): String? {
+-        val container = readEntry(zip, CONTAINER_PATH)
++    private fun opfPath(archive: ZipArchive): String? {
++        val container = readEntry(archive, CONTAINER_PATH)
+         if (container != null) {
+             val fullPath = firstAttribute(container, "rootfile", "full-path")
+             if (fullPath != null && fullPath.isNotEmpty()) return fullPath
+         }
+         // Fallback (desktop-tolerant): first .opf entry in the archive.
+-        return zip.entries().asSequence()
+-            .map { it.name }
++        return archive.names()
+             .firstOrNull { it.endsWith(".opf", ignoreCase = true) }
+     }
+ 
+-    private fun readEntry(zip: ZipFile, name: String): String? =
+-        readEntryBytes(zip, name)?.toString(Charsets.UTF_8)
++    private fun readEntry(archive: ZipArchive, name: String): String? =
++        readEntryBytes(archive, name)?.toString(Charsets.UTF_8)
+ 
+-    private fun readEntryBytes(zip: ZipFile, name: String): ByteArray? {
++    private fun readEntryBytes(archive: ZipArchive, name: String): ByteArray? {
+         // Zip entry names are case-sensitive; some packages mangle case —
+-        // try the exact name first, then a case-insensitive scan (bounded:
+-        // archives in this app's size range stay cheap).
+-        zip.getEntry(name)?.let { e -> zip.getInputStream(e).use { return it.readBytes() } }
+-        val match = zip.entries().asSequence()
+-            .firstOrNull { it.name.equals(name, ignoreCase = true) }
+-        return match?.let { zip.getInputStream(it).use { it.readBytes() } }
++        // ZipArchive.entry() resolves exact first, then case-insensitively
++        // (the shared policy this module used to hand-roll).
++        return archive.entry(name)?.let { archive.readBytes(it.name) }
+     }
+ 
+     // ---- metadata ----------------------------------------------------------

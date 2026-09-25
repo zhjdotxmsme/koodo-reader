@@ -1,0 +1,151 @@
+diff --git a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
+index d6d18777..5e2a3b8b 100644
+--- a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
++++ b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/ComicCover.kt
+@@ -75,8 +75,12 @@ object ComicCover {
+      * runs numerically, the rest case-insensitively. Mirrors JS
+      * `localeCompare(x, y, undefined, { numeric: true, sensitivity: "base" })`
+      * for the ASCII book-file names this app handles.
++     *
++     * Public since P5-NATORD (t-mufbb7h2): engine/image delegates its
++     * `NaturalOrder` here so the comic page order and the cover/pageCount
++     * extraction can never drift apart (P5-CBZ ADR §10).
+      */
+-    internal fun naturalComparator(): Comparator<String> = Comparator { a, b ->
++    fun naturalComparator(): Comparator<String> = Comparator { a, b ->
+         var i = 0
+         var j = 0
+         while (i < a.length && j < b.length) {
+diff --git a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/NaturalOrder.kt b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/NaturalOrder.kt
+index 0e211a71..b9eab7de 100644
+--- a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/NaturalOrder.kt
++++ b/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/NaturalOrder.kt
+@@ -1,66 +1,24 @@
+ package com.koodoreader.engine.image
+ 
++import com.koodoreader.core.importer.ComicCover
++
+ /**
+  * 归档条目名的 natural（数字感知）排序，用于漫画页序。
+  *
+- * **为什么有一份副本**：P1 已把同一算法落在 `core:importer` 的
+- * `ComicCover.naturalComparator()`，但它是 `internal`（仅模块内可见），
+- * 本模块无法直接调用，而页序必须与封面抽取/`books.page` 完全一致
+- * （否则「封面 = 第 0 页」不成立）。
+- *
+- * 因此这里的实现**逐行对齐** P1 的算法，并由行为断言锁死两端一致：
+- * `ZipExtractorTest.comicCoverParity_*` 用同一个 CBZ 调
+- * `ComicCover.extract(file)`，断言其封面字节 == 本模块 `pages[0]` 的字节。
++ * **单一事实源（P5-NATORD, t-mufbb7h2）**：算法本体只存在于
++ * `core:importer` 的 [ComicCover.naturalComparator]（P5-CBZ ADR §10 待办
++ * 落地——该函数已提升为 public，engine:image 经既有
++ * `api(project(":core:importer"))` 依赖直接调用）。本对象退化为薄委托，
++ * 仅为四处调用点（Zip/SevenZ/Tar/Tree Extractor）与 `sorted` 便捷入口
++ * 保留原名；页序与封面抽取/`books.page` 因此不可能漂移。
+  *
+- * 待办（ADR §8）：P1 把 `ComicCover.naturalComparator()` 提升为 public 后，
+- * 删除本文件，`ZipExtractor` 改为直接引用，消除重复。
++ * 防漂移行为断言保留：`ZipExtractorTest.comicCoverParity_*` 用同一个 CBZ
++ * 调 `ComicCover.extract(file)`，断言其封面字节 == `pages[0]` 的字节。
+  */
+ object NaturalOrder : Comparator<String> {
+ 
+-    override fun compare(a: String, b: String): Int {
+-        var i = 0
+-        var j = 0
+-        while (i < a.length && j < b.length) {
+-            val ca = a[i]
+-            val cb = b[j]
+-            val da = ca.isDigit()
+-            val db = cb.isDigit()
+-            if (da && db) {
+-                val va = readInt(a, i)
+-                val vb = readInt(b, j)
+-                val cmp = va.value.compareTo(vb.value)
+-                if (cmp != 0) return cmp
+-                if (va.consumed != vb.consumed) {
+-                    // "07" vs "7"：数值相等，前导零更长者排前（与 P1 一致）
+-                    return vb.consumed.compareTo(va.consumed)
+-                }
+-                i += va.consumed
+-                j += vb.consumed
+-            } else if (da != db) {
+-                // 一侧是数字一侧是字母：数字在前（稳定选择，与 P1 一致）
+-                return if (da) -1 else 1
+-            } else {
+-                val cmp = Character.toLowerCase(ca).compareTo(Character.toLowerCase(cb))
+-                if (cmp != 0) return cmp
+-                i++
+-                j++
+-            }
+-        }
+-        return (a.length - i).compareTo(b.length - j)
+-    }
++    override fun compare(a: String, b: String): Int = ComicCover.naturalComparator().compare(a, b)
+ 
+     /** 便捷入口：返回按 natural 顺序排列的新列表。 */
+     fun sorted(names: Collection<String>): List<String> = names.sortedWith(this)
+-
+-    private class IntRun(val value: Long, val consumed: Int)
+-
+-    private fun readInt(s: String, from: Int): IntRun {
+-        var value = 0L
+-        var i = from
+-        while (i < s.length && s[i].isDigit()) {
+-            value = (value * 10 + (s[i] - '0')).coerceAtMost(Long.MAX_VALUE / 2)
+-            i++
+-        }
+-        return IntRun(value, i - from)
+-    }
+ }
+diff --git a/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/NaturalOrderTest.kt b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/NaturalOrderTest.kt
+new file mode 100644
+index 00000000..1cdefce1
+--- /dev/null
++++ b/android/engine/image/src/test/kotlin/com/koodoreader/engine/image/NaturalOrderTest.kt
+@@ -0,0 +1,45 @@
++package com.koodoreader.engine.image
++
++import com.koodoreader.core.importer.ComicCover
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.Assertions.assertEquals
++
++/**
++ * P5-NATORD 防漂移守卫：`NaturalOrder` 是 `ComicCover.naturalComparator`
++ * 的薄委托——本测试钉死这一契约，任何"重新内联一份算法"或"上游语义变更
++ * 未同步"都会在此失败（页序必须与封面抽取/`books.page` 一致，P5-CBZ ADR §10）。
++ */
++class NaturalOrderTest {
++
++    @Test
++    fun `delegates to ComicCover naturalComparator on representative names`() {
++        val samples = listOf(
++            "page1" to "page2",
++            "page2" to "page10",        // 数值序：2 < 10
++            "p07" to "p7",              // 前导零更长者排前
++            "10.jpg" to "a.jpg",        // 数字在字母前
++            "PageB" to "pageb",         // 大小写不敏感相等 → 长度决胜
++            "a10b" to "a9c",            // 10 > 9
++        )
++        for ((a, b) in samples) {
++            assertEquals(
++                ComicCover.naturalComparator().compare(a, b),
++                NaturalOrder.compare(a, b),
++                "NaturalOrder($a,$b) drifted from ComicCover.naturalComparator",
++            )
++        }
++    }
++
++    @Test
++    fun `sorted extension uses the delegated comparator`() {
++        val names = listOf("page10", "page2", "page1")
++        assertEquals(listOf("page1", "page2", "page10"), NaturalOrder.sorted(names))
++    }
++
++    @Test
++    fun `ordering stays numeric-aware end to end`() {
++        val sorted = NaturalOrder.sorted(listOf("img_9.png", "img_10.png", "img_07.png"))
++        // 7 < 9 < 10 数值序（前导零不改变数值）
++        assertEquals(listOf("img_07.png", "img_9.png", "img_10.png"), sorted)
++    }
++}

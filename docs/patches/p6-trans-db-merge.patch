@@ -1,0 +1,1144 @@
+diff --git a/android/core/data/build.gradle b/android/core/data/build.gradle
+index 41043af7..2cd5dc5a 100644
+--- a/android/core/data/build.gradle
++++ b/android/core/data/build.gradle
+@@ -50,4 +50,18 @@ dependencies {
+     api "androidx.room:room-runtime:$roomVersion"
+     api "androidx.room:room-ktx:$roomVersion"
+     ksp "androidx.room:room-compiler:$roomVersion"
++
++    // Test only: KoodoMigrationsTest replays migration DDL on real SQLite
++    // (sqlite-jdbc ships no Android natives — JVM/tests only, xerial#794).
++    testImplementation 'org.xerial:sqlite-jdbc:3.46.1.0'
++    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
++    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
++}
++
++tasks.withType(Test).configureEach {
++    useJUnitPlatform()
++    testLogging {
++        events 'passed', 'skipped', 'failed'
++        exceptionFormat 'full'
++    }
+ }
+diff --git a/android/core/data/schemas/com.koodoreader.core.data.KoodoDatabase/2.json b/android/core/data/schemas/com.koodoreader.core.data.KoodoDatabase/2.json
+new file mode 100644
+index 00000000..f25816de
+--- /dev/null
++++ b/android/core/data/schemas/com.koodoreader.core.data.KoodoDatabase/2.json
+@@ -0,0 +1,462 @@
++{
++  "formatVersion": 1,
++  "database": {
++    "version": 2,
++    "identityHash": "ef47a5849afca535c1c148a12cc45450",
++    "entities": [
++      {
++        "tableName": "books",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `name` TEXT, `author` TEXT, `description` TEXT, `md5` TEXT, `cover` TEXT, `format` TEXT, `publisher` TEXT, `size` INTEGER, `page` INTEGER, `path` TEXT, `charset` TEXT, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "name",
++            "columnName": "name",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "author",
++            "columnName": "author",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "description",
++            "columnName": "description",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "md5",
++            "columnName": "md5",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "cover",
++            "columnName": "cover",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "format",
++            "columnName": "format",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "publisher",
++            "columnName": "publisher",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "size",
++            "columnName": "size",
++            "affinity": "INTEGER",
++            "notNull": false
++          },
++          {
++            "fieldPath": "page",
++            "columnName": "page",
++            "affinity": "INTEGER",
++            "notNull": false
++          },
++          {
++            "fieldPath": "path",
++            "columnName": "path",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "charset",
++            "columnName": "charset",
++            "affinity": "TEXT",
++            "notNull": false
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [],
++        "foreignKeys": []
++      },
++      {
++        "tableName": "notes",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `bookKey` TEXT, `date` TEXT, `chapter` TEXT, `chapterIndex` INTEGER, `text` TEXT, `cfi` TEXT, `range` TEXT, `notes` TEXT, `percentage` TEXT, `color` INTEGER, `tag` TEXT, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "bookKey",
++            "columnName": "bookKey",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "date",
++            "columnName": "date",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "chapter",
++            "columnName": "chapter",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "chapterIndex",
++            "columnName": "chapterIndex",
++            "affinity": "INTEGER",
++            "notNull": false
++          },
++          {
++            "fieldPath": "text",
++            "columnName": "text",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "cfi",
++            "columnName": "cfi",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "range",
++            "columnName": "range",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "notes",
++            "columnName": "notes",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "percentage",
++            "columnName": "percentage",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "color",
++            "columnName": "color",
++            "affinity": "INTEGER",
++            "notNull": false
++          },
++          {
++            "fieldPath": "tag",
++            "columnName": "tag",
++            "affinity": "TEXT",
++            "notNull": false
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [],
++        "foreignKeys": []
++      },
++      {
++        "tableName": "bookmarks",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `bookKey` TEXT, `cfi` TEXT, `label` TEXT, `percentage` TEXT, `chapter` TEXT, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "bookKey",
++            "columnName": "bookKey",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "cfi",
++            "columnName": "cfi",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "label",
++            "columnName": "label",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "percentage",
++            "columnName": "percentage",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "chapter",
++            "columnName": "chapter",
++            "affinity": "TEXT",
++            "notNull": false
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [],
++        "foreignKeys": []
++      },
++      {
++        "tableName": "plugins",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `type` TEXT, `displayName` TEXT, `icon` TEXT, `version` TEXT, `config` TEXT, `autoValue` TEXT, `langList` TEXT, `voiceList` TEXT, `scriptSHA256` TEXT, `script` TEXT, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "type",
++            "columnName": "type",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "displayName",
++            "columnName": "displayName",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "icon",
++            "columnName": "icon",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "version",
++            "columnName": "version",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "config",
++            "columnName": "config",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "autoValue",
++            "columnName": "autoValue",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "langList",
++            "columnName": "langList",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "voiceList",
++            "columnName": "voiceList",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "scriptSHA256",
++            "columnName": "scriptSHA256",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "script",
++            "columnName": "script",
++            "affinity": "TEXT",
++            "notNull": false
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [],
++        "foreignKeys": []
++      },
++      {
++        "tableName": "words",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `bookKey` TEXT, `date` TEXT, `word` TEXT, `sentence` TEXT, `chapter` TEXT, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "bookKey",
++            "columnName": "bookKey",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "date",
++            "columnName": "date",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "word",
++            "columnName": "word",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "sentence",
++            "columnName": "sentence",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "chapter",
++            "columnName": "chapter",
++            "affinity": "TEXT",
++            "notNull": false
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [],
++        "foreignKeys": []
++      },
++      {
++        "tableName": "translation_history",
++        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `sourceText` TEXT NOT NULL, `translatedText` TEXT NOT NULL, `sourceLang` TEXT, `targetLang` TEXT NOT NULL, `provider` TEXT NOT NULL, `bookKey` TEXT, `cfi` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`key`))",
++        "fields": [
++          {
++            "fieldPath": "key",
++            "columnName": "key",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "sourceText",
++            "columnName": "sourceText",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "translatedText",
++            "columnName": "translatedText",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "sourceLang",
++            "columnName": "sourceLang",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "targetLang",
++            "columnName": "targetLang",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "provider",
++            "columnName": "provider",
++            "affinity": "TEXT",
++            "notNull": true
++          },
++          {
++            "fieldPath": "bookKey",
++            "columnName": "bookKey",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "cfi",
++            "columnName": "cfi",
++            "affinity": "TEXT",
++            "notNull": false
++          },
++          {
++            "fieldPath": "createdAt",
++            "columnName": "createdAt",
++            "affinity": "INTEGER",
++            "notNull": true
++          }
++        ],
++        "primaryKey": {
++          "autoGenerate": false,
++          "columnNames": [
++            "key"
++          ]
++        },
++        "indices": [
++          {
++            "name": "index_translation_history_createdAt",
++            "unique": false,
++            "columnNames": [
++              "createdAt"
++            ],
++            "orders": [],
++            "createSql": "CREATE INDEX IF NOT EXISTS `index_translation_history_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
++          },
++          {
++            "name": "index_translation_history_bookKey",
++            "unique": false,
++            "columnNames": [
++              "bookKey"
++            ],
++            "orders": [],
++            "createSql": "CREATE INDEX IF NOT EXISTS `index_translation_history_bookKey` ON `${TABLE_NAME}` (`bookKey`)"
++          },
++          {
++            "name": "index_translation_history_provider",
++            "unique": false,
++            "columnNames": [
++              "provider"
++            ],
++            "orders": [],
++            "createSql": "CREATE INDEX IF NOT EXISTS `index_translation_history_provider` ON `${TABLE_NAME}` (`provider`)"
++          }
++        ],
++        "foreignKeys": []
++      }
++    ],
++    "views": [],
++    "setupQueries": [
++      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
++      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ef47a5849afca535c1c148a12cc45450')"
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt
+index 5f0654e3..17cd57ef 100644
+--- a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt
++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabase.kt
+@@ -6,21 +6,27 @@ import com.koodoreader.core.data.dao.BookDao
+ import com.koodoreader.core.data.dao.BookmarkDao
+ import com.koodoreader.core.data.dao.NoteDao
+ import com.koodoreader.core.data.dao.PluginDao
++import com.koodoreader.core.data.dao.TranslationHistoryDao
+ import com.koodoreader.core.data.dao.WordDao
+ import com.koodoreader.core.data.entity.BookEntity
+ import com.koodoreader.core.data.entity.BookmarkEntity
+ import com.koodoreader.core.data.entity.NoteEntity
+ import com.koodoreader.core.data.entity.PluginEntity
++import com.koodoreader.core.data.entity.TranslationHistoryEntity
+ import com.koodoreader.core.data.entity.WordEntity
+ 
+ /**
+  * Native persistence root.
+  *
+  * One Room database holds the five desktop tables (books/notes/bookmarks/
+- * plugins/words). The desktop splits them into separate `.db` files plus
+- * `temp-*` session copies; on Android the temp copies are unnecessary (the
+- * desktop uses them as an editing scratch space synced back on save — the
+- * native client writes directly).
++ * plugins/words) plus the Android-owned `translation_history` (P6-TRANS-DB:
++ * merged from `:feature:translate`'s standalone database; the standalone file
++ * `koodo_translation_history.db` is no longer written — existing installs
++ * migrate the single-file `koodo.db` forward via
++ * [KoodoMigrations.MIGRATION_1_2]). The desktop splits the five tables into
++ * separate `.db` files plus `temp-*` session copies; on Android the temp
++ * copies are unnecessary (the desktop uses them as an editing scratch space
++ * synced back on save — the native client writes directly).
+  *
+  * Column names are frozen by `schema.lock` + `scripts/check-room-schema.js`
+  * (see module build.gradle for the type-affinity caveat on desktop import).
+@@ -32,8 +38,9 @@ import com.koodoreader.core.data.entity.WordEntity
+         BookmarkEntity::class,
+         PluginEntity::class,
+         WordEntity::class,
++        TranslationHistoryEntity::class,
+     ],
+-    version = 1,
++    version = 2,
+     exportSchema = true,
+ )
+ abstract class KoodoDatabase : RoomDatabase() {
+@@ -42,6 +49,7 @@ abstract class KoodoDatabase : RoomDatabase() {
+     abstract fun bookmarkDao(): BookmarkDao
+     abstract fun pluginDao(): PluginDao
+     abstract fun wordDao(): WordDao
++    abstract fun translationHistoryDao(): TranslationHistoryDao
+ 
+     companion object {
+         const val NAME = "koodo.db"
+diff --git a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabaseProvider.kt b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabaseProvider.kt
+index d564e5ee..4f9e3377 100644
+--- a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabaseProvider.kt
++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoDatabaseProvider.kt
+@@ -19,6 +19,8 @@ object KoodoDatabaseProvider {
+                 context.applicationContext,
+                 KoodoDatabase::class.java,
+                 KoodoDatabase.NAME,
+-            ).build().also { instance = it }
++            )
++                .addMigrations(*KoodoMigrations.ALL)
++                .build().also { instance = it }
+         }
+ }
+diff --git a/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoMigrations.kt b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoMigrations.kt
+new file mode 100644
+index 00000000..c30853bc
+--- /dev/null
++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/KoodoMigrations.kt
+@@ -0,0 +1,41 @@
++package com.koodoreader.core.data
++
++import androidx.room.migration.Migration
++import androidx.sqlite.db.SupportSQLiteDatabase
++
++/**
++ * KoodoDatabase schema migrations.
++ *
++ * `MIGRATION_1_2` (P6-TRANS-DB): adds the Android-owned
++ * `translation_history` table (merged from `:feature:translate`'s standalone
++ * `koodo_translation_history.db`). Purely additive — the five desktop tables
++ * are untouched, so v1 data survives verbatim. The SQL is EXACTLY what Room
++ * derives from [TranslationHistoryEntity] (verified against the exported
++ * `schemas/…/2.json` by `KoodoMigrationsTest`); keep the two in lock-step.
++ */
++object KoodoMigrations {
++
++    /** The CREATE statements of `MIGRATION_1_2`, in execution order. */
++    val MIGRATION_1_2_SQL: List<String> = listOf(
++        "CREATE TABLE IF NOT EXISTS `" +
++            "translation_history` (`key` TEXT NOT NULL, `sourceText` TEXT NOT NULL, " +
++            "`translatedText` TEXT NOT NULL, `sourceLang` TEXT, `targetLang` TEXT NOT NULL, " +
++            "`provider` TEXT NOT NULL, `bookKey` TEXT, `cfi` TEXT, `createdAt` INTEGER NOT NULL, " +
++            "PRIMARY KEY(`key`))",
++        "CREATE INDEX IF NOT EXISTS `index_translation_history_createdAt` " +
++            "ON `translation_history` (`createdAt`)",
++        "CREATE INDEX IF NOT EXISTS `index_translation_history_bookKey` " +
++            "ON `translation_history` (`bookKey`)",
++        "CREATE INDEX IF NOT EXISTS `index_translation_history_provider` " +
++            "ON `translation_history` (`provider`)",
++    )
++
++    val MIGRATION_1_2: Migration = object : Migration(1, 2) {
++        override fun migrate(db: SupportSQLiteDatabase) {
++            MIGRATION_1_2_SQL.forEach(db::execSQL)
++        }
++    }
++
++    /** All migrations, for `Room.databaseBuilder(...).addMigrations(...)`. */
++    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
++}
+diff --git a/android/core/data/src/main/kotlin/com/koodoreader/core/data/dao/TranslationHistoryDao.kt b/android/core/data/src/main/kotlin/com/koodoreader/core/data/dao/TranslationHistoryDao.kt
+new file mode 100644
+index 00000000..f7a04cd8
+--- /dev/null
++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/dao/TranslationHistoryDao.kt
+@@ -0,0 +1,50 @@
++package com.koodoreader.core.data.dao
++
++import androidx.room.Dao
++import androidx.room.Insert
++import androidx.room.OnConflictStrategy
++import androidx.room.Query
++import com.koodoreader.core.data.entity.TranslationHistoryEntity
++
++/**
++ * Room DAO for `translation_history` (moved here by P6-TRANS-DB; queries are
++ * byte-identical to the ones previously in `:feature:translate`).
++ */
++@Dao
++interface TranslationHistoryDao {
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsert(entry: TranslationHistoryEntity)
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertAll(entries: List<TranslationHistoryEntity>)
++
++    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT :limit")
++    suspend fun recent(limit: Int): List<TranslationHistoryEntity>
++
++    @Query(
++        "SELECT * FROM translation_history " +
++            "WHERE sourceText LIKE '%' || :query || '%' OR translatedText LIKE '%' || :query || '%' " +
++            "ORDER BY createdAt DESC LIMIT :limit",
++    )
++    suspend fun search(query: String, limit: Int): List<TranslationHistoryEntity>
++
++    @Query("SELECT * FROM translation_history WHERE `key` = :key LIMIT 1")
++    suspend fun findByKey(key: String): TranslationHistoryEntity?
++
++    @Query("SELECT * FROM translation_history WHERE bookKey = :bookKey ORDER BY createdAt DESC LIMIT :limit")
++    suspend fun forBook(bookKey: String, limit: Int): List<TranslationHistoryEntity>
++
++    /** Rows older than the newest [keep] entries — the pruning work list. */
++    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT -1 OFFSET :keep")
++    suspend fun beyondNewest(keep: Int): List<TranslationHistoryEntity>
++
++    @Query("DELETE FROM translation_history WHERE `key` = :key")
++    suspend fun deleteByKey(key: String)
++
++    @Query("DELETE FROM translation_history")
++    suspend fun deleteAll()
++
++    @Query("SELECT COUNT(*) FROM translation_history")
++    suspend fun count(): Long
++}
+diff --git a/android/core/data/src/main/kotlin/com/koodoreader/core/data/entity/TranslationHistoryEntity.kt b/android/core/data/src/main/kotlin/com/koodoreader/core/data/entity/TranslationHistoryEntity.kt
+new file mode 100644
+index 00000000..cda5983c
+--- /dev/null
++++ b/android/core/data/src/main/kotlin/com/koodoreader/core/data/entity/TranslationHistoryEntity.kt
+@@ -0,0 +1,37 @@
++package com.koodoreader.core.data.entity
++
++import androidx.room.ColumnInfo
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++
++/**
++ * Selection-translation history (`translation_history`).
++ *
++ * Android-owned table (no desktop `schema.lock` counterpart — the desktop
++ * keeps translation results in the plugin cache, not in SQLite). Merged from
++ * `:feature:translate` into `KoodoDatabase` by P6-TRANS-DB (t-mufbb7du) as a
++ * pure additive `CREATE TABLE` migration (version 1 → 2, see
++ * `KoodoMigrations.MIGRATION_1_2`); the three indices mirror the upstream
++ * query paths (recent / per-book / per-provider).
++ */
++@Entity(
++    tableName = "translation_history",
++    indices = [
++        Index(value = ["createdAt"]),
++        Index(value = ["bookKey"]),
++        Index(value = ["provider"]),
++    ],
++)
++data class TranslationHistoryEntity(
++    @PrimaryKey @ColumnInfo(name = "key") val key: String,
++    @ColumnInfo(name = "sourceText") val sourceText: String,
++    @ColumnInfo(name = "translatedText") val translatedText: String,
++    @ColumnInfo(name = "sourceLang") val sourceLang: String? = null,
++    @ColumnInfo(name = "targetLang") val targetLang: String,
++    /** [com.koodoreader.feature.translate.TranslationSourceId.pluginKey] — survives provider renames. */
++    @ColumnInfo(name = "provider") val provider: String,
++    @ColumnInfo(name = "bookKey") val bookKey: String? = null,
++    @ColumnInfo(name = "cfi") val cfi: String? = null,
++    @ColumnInfo(name = "createdAt") val createdAt: Long,
++)
+diff --git a/android/core/data/src/test/kotlin/com/koodoreader/core/data/KoodoMigrationsTest.kt b/android/core/data/src/test/kotlin/com/koodoreader/core/data/KoodoMigrationsTest.kt
+new file mode 100644
+index 00000000..b60d5d4f
+--- /dev/null
++++ b/android/core/data/src/test/kotlin/com/koodoreader/core/data/KoodoMigrationsTest.kt
+@@ -0,0 +1,175 @@
++package com.koodoreader.core.data
++
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.Test
++import java.sql.Connection
++import java.sql.DriverManager
++
++/**
++ * P6-TRANS-DB migration tests (acceptance [2]): replay `MIGRATION_1_2`'s DDL
++ * on real SQLite (sqlite-jdbc, in-memory) and verify —
++ *  - the `translation_history` table + 3 indices exist after the migration,
++ *  - v1 data in the pre-existing desktop tables survives verbatim,
++ *  - rows round-trip through the migrated table (empty / populated / bulk),
++ *  - the migrated schema matches Room's own expectation (columns + order as
++ *    exported in `schemas/com.koodoreader.core.data.KoodoDatabase/2.json`).
++ *
++ * Room's instrumented MigrationTestHelper needs a device; this test runs the
++ * same SQL on a plain JDBC connection instead (pure JVM, no Android SDK).
++ */
++class KoodoMigrationsTest {
++
++    /** Creates the v1 shape in [db]: the five desktop tables, no history table. */
++    private fun v1Shape(db: Connection) {
++        db.createStatement().use { st ->
++            st.execute(
++                "CREATE TABLE \"books\" (\"key\" TEXT NOT NULL, \"name\" TEXT, \"author\" TEXT, " +
++                    "\"description\" TEXT, \"md5\" TEXT, \"cover\" TEXT, \"format\" TEXT, " +
++                    "\"publisher\" TEXT, \"size\" INTEGER, \"page\" INTEGER, \"path\" TEXT, " +
++                    "\"charset\" TEXT, PRIMARY KEY(\"key\"))",
++            )
++            for (t in listOf("notes", "bookmarks", "plugins", "words")) {
++                st.execute("CREATE TABLE \"$t\" (\"key\" TEXT NOT NULL PRIMARY KEY, \"payload\" TEXT)")
++            }
++        }
++        db.createStatement().use { it.execute("PRAGMA user_version = 1") }
++    }
++
++    private fun Connection.applyMigration() {
++        KoodoMigrations.MIGRATION_1_2_SQL.forEach { sql ->
++            createStatement().use { it.execute(sql) }
++        }
++        createStatement().use { it.execute("PRAGMA user_version = 2") }
++    }
++
++    private fun Connection.exec(sql: String) {
++        createStatement().use { it.execute(sql) }
++    }
++
++    private fun Connection.queryLong(sql: String): Long =
++        createStatement().use { st ->
++            st.executeQuery(sql).use { rs ->
++                check(rs.next()) { "no row for: $sql" }
++                rs.getLong(1)
++            }
++        }
++
++    private fun Connection.insertHistory(key: String, i: Int) {
++        prepareStatement(
++            "INSERT INTO translation_history (`key`, sourceText, translatedText, sourceLang, " +
++                "targetLang, provider, bookKey, cfi, createdAt) VALUES (?,?,?,?,?,?,?,?,?)",
++        ).use { ps ->
++            ps.setString(1, key)
++            ps.setString(2, "hello $i")
++            ps.setString(3, "你好 $i")
++            ps.setString(4, "en")
++            ps.setString(5, "zh-CN")
++            ps.setString(6, "google")
++            ps.setString(7, "bk-$i")
++            ps.setString(8, "epubcfi(/6/4)")
++            ps.setLong(9, 1_700_000_000_000L + i)
++            ps.executeUpdate()
++        }
++    }
++
++    // ------------------------------------------------------------- tests
++
++    @Test
++    fun `empty v1 database migrates and gains a usable history table`() {
++        DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
++            v1Shape(db)
++            assertEquals(1L, db.queryLong("PRAGMA user_version"))
++            db.applyMigration()
++            assertEquals(2L, db.queryLong("PRAGMA user_version"))
++            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM translation_history"))
++            db.insertHistory("k1", 1)
++            assertEquals(1L, db.queryLong("SELECT COUNT(*) FROM translation_history"))
++        }
++    }
++
++    @Test
++    fun `v1 data survives the migration verbatim`() {
++        DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
++            v1Shape(db)
++            db.exec("INSERT INTO books (\"key\", name, md5) VALUES ('bk1', 'My Book', 'abc123')")
++            db.exec("INSERT INTO notes (\"key\", payload) VALUES ('n1', 'keep me')")
++
++            db.applyMigration()
++
++            db.createStatement().use { st ->
++                st.executeQuery("SELECT name, md5 FROM books WHERE \"key\" = 'bk1'").use { rs ->
++                    check(rs.next())
++                    assertEquals("My Book", rs.getString(1))
++                    assertEquals("abc123", rs.getString(2))
++                }
++                st.executeQuery("SELECT payload FROM notes WHERE \"key\" = 'n1'").use { rs ->
++                    check(rs.next())
++                    assertEquals("keep me", rs.getString(1))
++                }
++            }
++            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM translation_history"))
++        }
++    }
++
++    @Test
++    fun `migrated table round-trips rows with the entity column set`() {
++        DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
++            v1Shape(db)
++            db.applyMigration()
++            for (i in 1..500) db.insertHistory("k-$i", i)
++            assertEquals(500L, db.queryLong("SELECT COUNT(*) FROM translation_history"))
++            db.createStatement().use { st ->
++                st.executeQuery(
++                    "SELECT `key`, sourceText FROM translation_history " +
++                        "ORDER BY createdAt DESC LIMIT 1",
++                ).use { rs ->
++                    check(rs.next())
++                    assertEquals("k-500", rs.getString(1))
++                    assertEquals("hello 500", rs.getString(2))
++                }
++            }
++        }
++    }
++
++    @Test
++    fun `migrated schema matches the room entity definition`() {
++        DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
++            v1Shape(db)
++            db.applyMigration()
++            db.createStatement().use { st ->
++                st.executeQuery("PRAGMA table_info(translation_history)").use { rs ->
++                    val cols = mutableListOf<String>()
++                    var keyNotNull = false
++                    while (rs.next()) {
++                        cols.add(rs.getString("name"))
++                        if (rs.getString("name") == "key" && rs.getInt("notnull") == 1) keyNotNull = true
++                    }
++                    assertEquals(
++                        listOf(
++                            "key", "sourceText", "translatedText", "sourceLang",
++                            "targetLang", "provider", "bookKey", "cfi", "createdAt",
++                        ),
++                        cols,
++                    )
++                    assertTrue(keyNotNull, "`key` must be NOT NULL (Room PK)")
++                }
++            }
++            assertEquals(
++                3L,
++                db.queryLong(
++                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' " +
++                        "AND tbl_name = 'translation_history' AND name NOT LIKE 'sqlite_autoindex%'",
++                ),
++            )
++        }
++    }
++
++    @Test
++    fun `migration statements are ordered table-first then indices`() {
++        assertTrue(KoodoMigrations.MIGRATION_1_2_SQL.first().startsWith("CREATE TABLE"))
++        assertTrue(KoodoMigrations.MIGRATION_1_2_SQL.drop(1).all { it.startsWith("CREATE INDEX") })
++        assertFalse(KoodoMigrations.MIGRATION_1_2_SQL.isEmpty())
++    }
++}
+diff --git a/android/feature/translate/build.gradle b/android/feature/translate/build.gradle
+index 1fae8e6a..2200d58a 100644
+--- a/android/feature/translate/build.gradle
++++ b/android/feature/translate/build.gradle
+@@ -1,9 +1,9 @@
+ // feature/translate — P6: selection translation (Google / Microsoft / DeepL) + AI assistant.
+ //
+ // ANDROID LIBRARY module: it owns the Compose popup surface
+-// (TranslationPopupUi.kt), the EncryptedSharedPreferences-backed credential
+-// store (EncryptedSecretStore.kt) and the Room database for translation history
+-// (TranslationHistoryDatabase.kt).
++// (TranslationPopupUi.kt) and the EncryptedSharedPreferences-backed credential
++// store (EncryptedSecretStore.kt). Translation history persistence moved to
++// core/data (KoodoDatabase v2, table `translation_history`) — P6-TRANS-DB.
+ //
+ // Everything else in this module is deliberately **pure Kotlin** (no Android
+ // imports): provider request building / response parsing, the popup state
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt
+index 939434bc..ac45e035 100644
+--- a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt
++++ b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/HistoryRepository.kt
+@@ -1,92 +1,19 @@
+ package com.koodoreader.feature.translate
+ 
+-import androidx.room.ColumnInfo
+-import androidx.room.Dao
+-import androidx.room.Entity
+-import androidx.room.Index
+-import androidx.room.Insert
+-import androidx.room.OnConflictStrategy
+-import androidx.room.PrimaryKey
+-import androidx.room.Query
++import com.koodoreader.core.data.dao.TranslationHistoryDao
++import com.koodoreader.core.data.entity.TranslationHistoryEntity
+ import java.security.MessageDigest
+ import java.util.UUID
+ 
+-/**
+- * Selection-translation history (`translation_history`).
+- *
+- * Column naming follows the `core/data` convention (desktop `schema.lock` style:
+- * camelCase quoted columns) even though this table has no desktop counterpart —
+- * the desktop keeps translation results in the plugin cache, not in SQLite. The
+- * Room schema for this table is therefore Android-owned; when the entity is
+- * merged into `KoodoDatabase` (see docs/p6-translate-architecture.md) it is a
+- * pure `ALTER`-free additive migration.
+- */
+-@Entity(
+-    tableName = "translation_history",
+-    indices = [
+-        Index(value = ["createdAt"]),
+-        Index(value = ["bookKey"]),
+-        Index(value = ["provider"]),
+-    ],
+-)
+-data class TranslationHistoryEntity(
+-    @PrimaryKey @ColumnInfo(name = "key") val key: String,
+-    @ColumnInfo(name = "sourceText") val sourceText: String,
+-    @ColumnInfo(name = "translatedText") val translatedText: String,
+-    @ColumnInfo(name = "sourceLang") val sourceLang: String? = null,
+-    @ColumnInfo(name = "targetLang") val targetLang: String,
+-    /** [TranslationSourceId.pluginKey] — survives provider renames. */
+-    @ColumnInfo(name = "provider") val provider: String,
+-    @ColumnInfo(name = "bookKey") val bookKey: String? = null,
+-    @ColumnInfo(name = "cfi") val cfi: String? = null,
+-    @ColumnInfo(name = "createdAt") val createdAt: Long,
+-)
+-
+-@Dao
+-interface TranslationHistoryDao {
+-
+-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+-    suspend fun upsert(entry: TranslationHistoryEntity)
+-
+-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+-    suspend fun upsertAll(entries: List<TranslationHistoryEntity>)
+-
+-    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT :limit")
+-    suspend fun recent(limit: Int): List<TranslationHistoryEntity>
+-
+-    @Query(
+-        "SELECT * FROM translation_history " +
+-            "WHERE sourceText LIKE '%' || :query || '%' OR translatedText LIKE '%' || :query || '%' " +
+-            "ORDER BY createdAt DESC LIMIT :limit",
+-    )
+-    suspend fun search(query: String, limit: Int): List<TranslationHistoryEntity>
+-
+-    @Query("SELECT * FROM translation_history WHERE `key` = :key LIMIT 1")
+-    suspend fun findByKey(key: String): TranslationHistoryEntity?
+-
+-    @Query("SELECT * FROM translation_history WHERE bookKey = :bookKey ORDER BY createdAt DESC LIMIT :limit")
+-    suspend fun forBook(bookKey: String, limit: Int): List<TranslationHistoryEntity>
+-
+-    /** Rows older than the newest [keep] entries — the pruning work list. */
+-    @Query("SELECT * FROM translation_history ORDER BY createdAt DESC LIMIT -1 OFFSET :keep")
+-    suspend fun beyondNewest(keep: Int): List<TranslationHistoryEntity>
+-
+-    @Query("DELETE FROM translation_history WHERE `key` = :key")
+-    suspend fun deleteByKey(key: String)
+-
+-    @Query("DELETE FROM translation_history")
+-    suspend fun deleteAll()
+-
+-    @Query("SELECT COUNT(*) FROM translation_history")
+-    suspend fun count(): Long
+-}
+-
+ /**
+  * History persistence + retrieval on top of [TranslationHistoryDao].
+  *
+- * Pure Kotlin (the DAO is injected), so the whole behaviour — dedupe key,
+- * ordering, search matching, retention — is unit-tested against a fake DAO
+- * without Room, the Android SDK or a device.
++ * P6-TRANS-DB: the entity + Room DAO live in `core/data`
++ * (`KoodoDatabase.version = 2`, table `translation_history`); the standalone
++ * `TranslationHistoryDatabase` is gone. This repository stays pure Kotlin
++ * (the DAO is injected), so the whole behaviour — dedupe key, ordering,
++ * search matching, retention — is unit-tested against a fake DAO without
++ * Room, the Android SDK or a device.
+  */
+ class TranslationHistoryRepository(
+     private val dao: TranslationHistoryDao,
+diff --git a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt b/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt
+deleted file mode 100644
+index ee7ba504..00000000
+--- a/android/feature/translate/src/main/kotlin/com/koodoreader/feature/translate/TranslationHistoryDatabase.kt
++++ /dev/null
+@@ -1,40 +0,0 @@
+-package com.koodoreader.feature.translate
+-
+-import android.content.Context
+-import androidx.room.Database
+-import androidx.room.Room
+-import androidx.room.RoomDatabase
+-
+-/**
+- * Room database holding [TranslationHistoryEntity].
+- *
+- * Design note (see docs/p6-translate-architecture.md §5): the table lives in its
+- * own database file so `:feature:translate` stays self-contained and does not
+- * require editing `core/data`'s `KoodoDatabase` (P6 is not allowed to touch the
+- * P1 data layer). Because `KoodoDatabase` is a Room database with a fixed entity
+- * list, merging this table into it is an additive `@Database(entities = [...,
+- * TranslationHistoryEntity::class], version = n + 1)` change plus a
+- * `Migration(n, n + 1)` containing the same `CREATE TABLE` Room derives here —
+- * the DAO compiles against either database.
+- */
+-@Database(entities = [TranslationHistoryEntity::class], version = 1, exportSchema = false)
+-abstract class TranslationHistoryDatabase : RoomDatabase() {
+-
+-    abstract fun historyDao(): TranslationHistoryDao
+-
+-    companion object {
+-        const val NAME = "koodo_translation_history.db"
+-
+-        @Volatile
+-        private var instance: TranslationHistoryDatabase? = null
+-
+-        fun get(context: Context): TranslationHistoryDatabase =
+-            instance ?: synchronized(this) {
+-                instance ?: Room.databaseBuilder(
+-                    context.applicationContext,
+-                    TranslationHistoryDatabase::class.java,
+-                    NAME,
+-                ).build().also { instance = it }
+-            }
+-    }
+-}
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt
+index ca7a2344..a0e3e5d8 100644
+--- a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/HistoryRepositoryTest.kt
+@@ -1,5 +1,8 @@
+ package com.koodoreader.feature.translate
+ 
++import com.koodoreader.core.data.dao.TranslationHistoryDao
++import com.koodoreader.core.data.entity.TranslationHistoryEntity
++
+ import kotlinx.coroutines.runBlocking
+ import org.junit.Assert.assertEquals
+ import org.junit.Assert.assertFalse
+diff --git a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt
+index 5a25af44..e68a2596 100644
+--- a/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt
++++ b/android/feature/translate/src/test/kotlin/com/koodoreader/feature/translate/TranslationTestSupport.kt
+@@ -1,5 +1,8 @@
+ package com.koodoreader.feature.translate
+ 
++import com.koodoreader.core.data.dao.TranslationHistoryDao
++import com.koodoreader.core.data.entity.TranslationHistoryEntity
++
+ /**
+  * Shared test doubles. Kept in the test source set so the production sources stay
+  * dependency-free (no test library leaks into the app).
+diff --git a/scripts/check-room-schema.js b/scripts/check-room-schema.js
+index 496e8c87..237d66a0 100644
+--- a/scripts/check-room-schema.js
++++ b/scripts/check-room-schema.js
+@@ -25,6 +25,13 @@ const ENTITY_DIR = path.join(
+ );
+ const TABLES = ['books', 'notes', 'bookmarks', 'plugins', 'words'];
+ 
++// Android-owned tables (no desktop schema.lock counterpart — the desktop
++// keeps this data elsewhere, e.g. translation results in the plugin cache).
++// They are checked for EXISTENCE and parse validity only; column sets are
++// owned by the Room entity + exported schema JSON, not by schema.lock.
++// P6-TRANS-DB added `translation_history` (KoodoDatabase version 1 → 2).
++const ANDROID_OWNED_TABLES = ['translation_history'];
++
+ function fail(msg) {
+   console.error(`[check-room-schema] ${msg}`);
+   process.exit(2);
+@@ -96,21 +103,40 @@ function main() {
+     }
+   }
+ 
+-  // Extra entities are allowed to exist only if they are not one of the five
+-  // frozen tables — flag unknown table names so additions are deliberate.
++  // Extra entities are allowed to exist only if they are (a) one of the
++  // Android-owned tables or (b) none of the five frozen tables — unknown
++  // table names are flagged so additions are deliberate.
+   for (const table of entities.keys()) {
++    if (ANDROID_OWNED_TABLES.includes(table)) {
++      if (verbose) {
++        console.log(
++          `[check-room-schema] ${table}: Android-owned, ` +
++            `${entities.get(table).columns.length} columns OK`,
++        );
++      }
++      continue;
++    }
+     if (!TABLES.includes(table)) {
+       problems.push(`unknown @Entity table "${table}" (not in schema.lock tables: ${TABLES.join(', ')})`);
+     }
+   }
+ 
++  for (const table of ANDROID_OWNED_TABLES) {
++    if (!entities.has(table)) {
++      problems.push(`android-owned table "${table}" has no @Entity in ${path.relative(ROOT, ENTITY_DIR)}`);
++    }
++  }
++
+   if (problems.length > 0) {
+     console.error('[check-room-schema] MISMATCH:');
+     for (const p of problems) console.error(`  - ${p}`);
+     console.error('[check-room-schema] fix the entity or regenerate schema.lock deliberately.');
+     process.exit(2);
+   }
+-  console.log(`[check-room-schema] OK — ${TABLES.length} tables aligned with schema.lock`);
++  console.log(
++    `[check-room-schema] OK — ${TABLES.length} tables aligned with schema.lock, ` +
++      `${ANDROID_OWNED_TABLES.length} android-owned table(s) present`,
++  );
+ }
+ 
+ if (require.main === module) main();

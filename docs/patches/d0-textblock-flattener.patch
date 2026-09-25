@@ -1,0 +1,1057 @@
+diff --git a/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlFlattener.kt b/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlFlattener.kt
+new file mode 100644
+index 00000000..3c3dcbb2
+--- /dev/null
++++ b/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlFlattener.kt
+@@ -0,0 +1,230 @@
++package com.koodoreader.engine.layout
++
++/**
++ * XHTML/HTML → [TextBlock] flattener (D0, ADR-007 — see
++ * `docs/adr/ADR-007-textblock-flattener.md`).
++ *
++ * This is the "P2 后续卡" that [BlockModel]'s KDoc reserved: the EPUB parse
++ * layer (and the future FB2/DOCX/HTML/MHTML converters, P5.5) run their
++ * markup through here to get the flattened block model the layout engine
++ * paginates — the DOM-equivalent layer the Kotlin side cannot get from a
++ * browser.
++ *
++ * Semantics:
++ *  - **Block elements** (`p div section article aside header footer main
++ *    h1..h6 li blockquote pre dt dd td th figcaption hr br`) start a new
++ *    [TextBlock]; nested/adjacent blocks each get their own.
++ *  - **Inline elements** (`b strong i em u s span a sup sub small code mark
++ *    cite q abbr kbd samp var del ins`) stay inside their block: markup is
++ *    dropped, text content flows on (the flattened model is deliberately
++ *    markup-free).
++ *  - **Hidden content** (`script style head title template`, comments,
++ *    doctype) is dropped.
++ *  - **CFI fidelity**: `elementIndex` = the source element's 1-based index
++ *    among its siblings (every element consumes a sibling slot, even the
++ *    ones that produce no text); `elementId` comes from the `id` attribute;
++ *    `sourceOffsets` (via [TextBlock.of]) map collapsed characters back to
++ *    the block's raw source text.
++ *  - **Tolerance**: malformed markup never throws — the tokenizer recovers
++ *    (see [HtmlTokenizer]) and orphan text becomes its own block inheriting
++ *    the enclosing block's index/id. Worst case is linear text, exactly the
++ *    "降级到线性文本" the card requires.
++ */
++interface HtmlFlattener {
++
++    /**
++     * Flatten one spine item's markup.
++     *
++     * @param html the raw XHTML/HTML source of the spine item
++     * @param spineIndex the spine position (becomes [SpineItem.index])
++     * @param href the spine item's href (becomes [SpineItem.href])
++     * @param title optional spine title (e.g. from the OPF manifest)
++     */
++    fun flatten(html: String, spineIndex: Int = 0, href: String = "", title: String? = null): SpineItem
++
++    companion object {
++        /** Shared default instance (stateless — the tokenizer is per-call). */
++        val DEFAULT: HtmlFlattener = DefaultHtmlFlattener()
++    }
++}
++
++/**
++ * The stock implementation. Stateless; one [HtmlTokenizer] per [flatten] call.
++ */
++class DefaultHtmlFlattener : HtmlFlattener {
++
++    override fun flatten(html: String, spineIndex: Int, href: String, title: String?): SpineItem =
++        SpineItem(index = spineIndex, href = href, title = title, blocks = blocks(html))
++
++    /** Flatten markup to blocks (no spine wrapper). */
++    fun blocks(html: String): List<TextBlock> {
++        val out = ArrayList<TextBlock>()
++        val tokenizer = HtmlTokenizer(html)
++
++        // The block under construction; null = between blocks (container
++        // context). Orphan text after a stray close tag reuses the last
++        // block's index/id ("linear degradation").
++        var open: PendingBlock? = null
++        var lastIndex = 0
++        var lastId: String? = null
++        var lastStyle = ParagraphStyle.DEFAULT
++
++        fun flush() {
++            val pending = open ?: return
++            open = null
++            // Whitespace-only raw text collapses to nothing — no line, no block.
++            if (TextBlock.collapse(pending.raw.toString()).first.isEmpty()) return
++            out.add(
++                TextBlock.of(
++                    text = pending.raw.toString(),
++                    elementIndex = pending.elementIndex,
++                    elementId = pending.elementId,
++                    style = pending.style,
++                ),
++            )
++        }
++
++        fun startBlock(index: Int, id: String?, style: ParagraphStyle) {
++            flush()
++            open = PendingBlock(index, id, style)
++        }
++
++        // Sibling counter stack — every element consumes a slot in its
++        // parent's child list (1-based), which is what CFI addressing uses.
++        val siblingCounters = IntArray(64)
++        var depth = 0
++
++        // Elements whose ENTIRE subtree is hidden. `script`/`style` never
++        // reach this loop (the tokenizer swallows content + close tag); for
++        // `head`/`title`/`template` we skip tokens here until the matching
++        // close tag.
++        val dropWithContent: Set<String> = setOf("head", "title", "template")
++        var skipping: String? = null
++
++        while (tokenizer.hasNext()) {
++            when (val token = tokenizer.next()) {
++                is HtmlTokenizer.Token.Text -> {
++                    if (skipping != null) continue
++                    val pending = open
++                    if (pending != null) {
++                        pending.raw.append(HtmlTokenizer.decodeEntities(token.raw))
++                    } else if (token.raw.isNotBlank()) {
++                        // Orphan text (before any block / after a stray
++                        // close): degrade to a linear block with the last
++                        // block element's identity.
++                        startBlock(lastIndex, lastId, lastStyle)
++                        open?.raw?.append(HtmlTokenizer.decodeEntities(token.raw))
++                    }
++                }
++
++                is HtmlTokenizer.Token.Open -> {
++                    val name = token.name
++                    if (skipping != null) continue
++                    if (!token.selfClosing && name in dropWithContent) {
++                        skipping = name
++                        continue
++                    }
++
++                    if (depth < siblingCounters.size - 1) depth++
++                    val siblingIndex = ++siblingCounters[depth]
++
++                    if (name in VOID_ELEMENTS) {
++                        when (name) {
++                            "br" -> flush() // hard line break = block boundary
++                            "hr" -> flush() // thematic break: separator, no content
++                            // img / link / meta / input / … — no text
++                        }
++                        depth-- // void elements do not open a scope
++                        continue
++                    }
++
++                    if (name in BLOCK_ELEMENTS) {
++                        val style = styleFor(name)
++                        val id = token.attrs["id"]
++                        startBlock(siblingIndex, id, style)
++                        lastIndex = siblingIndex
++                        lastId = id
++                        lastStyle = style
++                    }
++                    // Inline / container elements: keep scanning; their text
++                    // lands in the current (or next) block.
++                    if (token.selfClosing) depth-- // <div/> — no scope held
++                }
++
++                is HtmlTokenizer.Token.Close -> {
++                    val name = token.name
++                    if (skipping != null) {
++                        if (name == skipping) skipping = null
++                        continue
++                    }
++                    if (name in BLOCK_ELEMENTS || name in CONTAINER_ELEMENTS) {
++                        flush()
++                    }
++                    // Every non-void Open pushed one scope (inline included);
++                    // match it on close so the sibling counters stay aligned.
++                    // Extra/mismatched closes bottom out at the root.
++                    if (depth > 0) depth--
++                }
++
++                null -> Unit // unreachable behind hasNext()
++            }
++        }
++        flush()
++        return out
++    }
++
++    private class PendingBlock(
++        val elementIndex: Int,
++        val elementId: String?,
++        val style: ParagraphStyle,
++    ) {
++        val raw = StringBuilder()
++    }
++
++    companion object {
++
++        /** Elements that start a text block (own [TextBlock]). */
++        val BLOCK_ELEMENTS: Set<String> = setOf(
++            "p", "h1", "h2", "h3", "h4", "h5", "h6",
++            "blockquote", "pre", "li", "dt", "dd",
++            "td", "th", "figcaption",
++            // Sectioning/div elements start blocks only when they carry
++            // direct text; they are listed here so `<div>a</div>` yields a
++            // block, while pure wrappers produce nothing (empty blocks are
++            // dropped).
++            "div", "section", "article", "aside", "header", "footer", "main", "caption",
++        )
++
++        /** Elements that only group children (no block of their own). */
++        val CONTAINER_ELEMENTS: Set<String> = setOf(
++            "html", "body", "ul", "ol", "dl", "table", "thead", "tbody", "tfoot", "tr", "figure",
++        )
++
++        /** No closing tag, no scope. */
++        private val VOID_ELEMENTS: Set<String> = setOf(
++            "br", "hr", "img", "area", "base", "col", "embed", "input",
++            "link", "meta", "source", "track", "wbr",
++        )
++
++        /**
++         * Paragraph-style presets per block tag — the same approximations the
++         * desktop stylesheet applies for a paginated view.
++         */
++        private fun styleFor(tag: String): ParagraphStyle = when (tag) {
++            "h1" -> ParagraphStyle(fontSizeScale = 1.5f, spaceBeforePx = 12f, spaceAfterPx = 8f)
++            "h2" -> ParagraphStyle(fontSizeScale = 1.35f, spaceBeforePx = 10f, spaceAfterPx = 6f)
++            "h3" -> ParagraphStyle(fontSizeScale = 1.2f, spaceBeforePx = 10f, spaceAfterPx = 6f)
++            "h4" -> ParagraphStyle(fontSizeScale = 1.1f, spaceBeforePx = 8f, spaceAfterPx = 4f)
++            "h5" -> ParagraphStyle(fontSizeScale = 1.0f, spaceBeforePx = 8f, spaceAfterPx = 4f)
++            "h6" -> ParagraphStyle(fontSizeScale = 0.95f, spaceBeforePx = 8f, spaceAfterPx = 4f)
++            "blockquote" -> ParagraphStyle(textIndentEm = 1f, spaceBeforePx = 6f, spaceAfterPx = 6f)
++            "pre" -> ParagraphStyle(fontSizeScale = 0.9f, lineHeightMultiple = 1.2f)
++            "li" -> ParagraphStyle(textIndentEm = 0.5f)
++            "dd" -> ParagraphStyle(textIndentEm = 1f)
++            "figcaption" -> ParagraphStyle(fontSizeScale = 0.9f, spaceBeforePx = 2f)
++            "th" -> ParagraphStyle(spaceAfterPx = 2f)
++            "td" -> ParagraphStyle(spaceAfterPx = 2f)
++            else -> ParagraphStyle.DEFAULT
++        }
++    }
++}
+diff --git a/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlTokenizer.kt b/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlTokenizer.kt
+new file mode 100644
+index 00000000..bde94138
+--- /dev/null
++++ b/android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/HtmlTokenizer.kt
+@@ -0,0 +1,267 @@
++package com.koodoreader.engine.layout
++
++/**
++ * Tolerant HTML tokenizer for the block flattener (D0, ADR-007).
++ *
++ * Design goals, in priority order:
++ *  1. **Never throw** — malformed input degrades to text or is dropped, the
++ *     scan always terminates (FB2/DOCX/HTML producers in the wild emit
++ *     broken markup; a crash here kills the whole book).
++ *  2. HTML5-ish recovery — `<` followed by a non-letter is literal text;
++ *     comments / doctype / CDATA are skipped; a tag open whose name runs to
++ *     EOF without `>` is dropped (browsers drop it too); `script`/`style`
++ *     consume raw text until their (case-insensitive) close tag.
++ *  3. Attribute values may contain `>` and `<` when quoted (`title="a>b"`).
++ *
++ * Entities are NOT decoded here — the flattener decodes them in text nodes
++ * and attribute values, so an escaped `&lt;p&gt;` in the source never turns
++ * into markup.
++ */
++internal class HtmlTokenizer(private val src: String) {
++
++    internal sealed class Token {
++        /** Raw text (entities still encoded). */
++        class Text(val raw: String) : Token()
++
++        /** Start tag; [attrs] keys lowercased; [selfClosing] from a trailing `/`. */
++        class Open(val name: String, val attrs: Map<String, String>, val selfClosing: Boolean) : Token()
++
++        /** End tag (name lowercased). */
++        class Close(val name: String) : Token()
++    }
++
++    private var pos = 0
++
++    /** Elements whose content is raw text, consumed verbatim until their close tag. */
++    private var rawTextUntil: String? = null
++
++    fun hasNext(): Boolean = pos < src.length
++
++    /**
++     * Next token, or null at EOF. Text between tags is coalesced into a
++     * single Text token per contiguous run.
++     */
++    fun next(): Token? {
++        if (pos >= src.length) return null
++
++        if (rawTextUntil != null) {
++            consumeRawText()
++            if (pos >= src.length) return null
++        }
++
++        if (src[pos] != '<') return textToken()
++
++        // Positions: '<' at pos.
++        val rest = src.length - pos
++        if (rest == 1) { // lone '<' at EOF — literal text
++            pos = src.length
++            return Token.Text("<")
++        }
++        val c1 = src[pos + 1]
++
++        if (c1 == '!') {
++            return when {
++                src.startsWith("<!--", pos) -> { skipComment(); next() }
++                else -> { skipBang() } // doctype / <![CDATA[ ... ]]> — dropped
++            }
++        }
++        if (c1 == '?') { // processing instruction — skip to '>'
++            skipUntil('>')
++            return next()
++        }
++        if (c1 == '/') return closeTag()
++        if (c1.isLetter()) return openTag()
++
++        // '<' not starting a tag — literal text.
++        pos++
++        return Token.Text("<")
++    }
++
++    /** Text up to the next '<' (or EOF); empty runs are skipped internally. */
++    private fun textToken(): Token {
++        val start = pos
++        while (pos < src.length && src[pos] != '<') pos++
++        return Token.Text(src.substring(start, pos))
++    }
++
++    private fun skipComment() {
++        val end = src.indexOf("-->", pos + 4)
++        pos = if (end < 0) src.length else end + 3
++    }
++
++    /** `<!DOCTYPE …>` / `<![CDATA[…]]>` and other bogus-markup forms. */
++    private fun skipBang(): Token? {
++        if (src.startsWith("<![CDATA[", pos)) {
++            val end = src.indexOf("]]>", pos + 9)
++            val stop = if (end < 0) src.length else end + 3
++            val content = src.substring(pos + 9, if (end < 0) src.length else end)
++            pos = stop
++            // CDATA is character data by definition — emit as text.
++            return if (content.isEmpty()) next() else Token.Text(content)
++        }
++        skipUntil('>')
++        return next()
++    }
++
++    private fun skipUntil(ch: Char) {
++        val end = src.indexOf(ch, pos)
++        pos = if (end < 0) src.length else end + 1
++    }
++
++    private fun closeTag(): Token? {
++        var i = pos + 2
++        val start = i
++        while (i < src.length && (src[i].isLetterOrDigit() || src[i] == '-' || src[i] == ':')) i++
++        val name = src.substring(start, i)
++        // Skip anything up to '>' (tolerates `</p >`, `</p attr>` junk).
++        val end = src.indexOf('>', i)
++        pos = if (end < 0) src.length else end + 1
++        if (name.isEmpty()) return next() // `</>` / `</ >` — drop, continue
++        return Token.Close(name.lowercase())
++    }
++
++    private fun openTag(): Token {
++        var i = pos + 1
++        val nameStart = i
++        while (i < src.length && (src[i].isLetterOrDigit() || src[i] == '-' || src[i] == ':')) i++
++        val name = src.substring(nameStart, i).lowercase()
++
++        val attrs = HashMap<String, String>()
++        var selfClosing = false
++        while (i < src.length) {
++            // Skip whitespace between attributes.
++            while (i < src.length && src[i].isWhitespace()) i++
++            if (i >= src.length) break // unterminated tag — dropped by caller contract below
++            when {
++                src[i] == '>' -> { i++; pos = i; return finish(name, attrs, selfClosing) }
++                src[i] == '/' -> {
++                    // '/>' — self-closing. A bare '/' before '>' too.
++                    var j = i + 1
++                    while (j < src.length && src[j].isWhitespace()) j++
++                    if (j < src.length && src[j] == '>') {
++                        selfClosing = true
++                        pos = j + 1
++                        return finish(name, attrs, true)
++                    }
++                    i++ // stray '/' inside the tag — ignore
++                }
++                else -> i = readAttribute(i, attrs)
++            }
++        }
++        // EOF inside an unterminated tag: HTML5 drops the whole token.
++        pos = src.length
++        return finish(name, attrs, false)
++    }
++
++    /** Reads one `name[=value]` attribute at [i]; returns the next scan index. */
++    private fun readAttribute(i: Int, attrs: HashMap<String, String>): Int {
++        var j = i
++        val nameStart = j
++        while (j < src.length && src[j] != '=' && src[j] != '>' && src[j] != '/' &&
++            !src[j].isWhitespace()
++        ) {
++            j++
++        }
++        val key = src.substring(nameStart, j).lowercase()
++        // Skip whitespace before '='.
++        var k = j
++        while (k < src.length && src[k].isWhitespace()) k++
++        if (k >= src.length || src[k] != '=') {
++            if (key.isNotEmpty()) attrs.putIfAbsent(key, "")
++            return if (j == i) i + 1 else j // always make progress
++        }
++        k++ // past '='
++        while (k < src.length && src[k].isWhitespace()) k++
++        val value: String
++        if (k < src.length && (src[k] == '"' || src[k] == '\'')) {
++            val quote = src[k]
++            k++
++            val vStart = k
++            while (k < src.length && src[k] != quote) k++
++            value = src.substring(vStart, k.coerceAtMost(src.length))
++            if (k < src.length) k++ // past quote
++        } else {
++            val vStart = k
++            while (k < src.length && !src[k].isWhitespace() && src[k] != '>') k++
++            value = src.substring(vStart, k)
++        }
++        if (key.isNotEmpty()) attrs.putIfAbsent(key, decodeEntities(value))
++        return k
++    }
++
++    /** Consume raw `script`/`style` content up to the pending close tag. */
++    private fun consumeRawText() {
++        val close = rawTextUntil!!.lowercase()
++        rawTextUntil = null
++        val needle = "</$close"
++        var search = pos
++        while (true) {
++            val hit = src.indexOf(needle, search, ignoreCase = true)
++            if (hit < 0) {
++                pos = src.length
++                return
++            }
++            // The char after the name must be whitespace, '/' or '>' — else
++            // it's a longer tag name (`</scriptx`), keep searching.
++            val after = hit + needle.length
++            val nextCh = src.getOrNull(after)
++            if (nextCh == null || nextCh.isWhitespace() || nextCh == '/' || nextCh == '>') {
++                // Position just past the close tag's '>'.
++                val end = src.indexOf('>', after)
++                pos = if (end < 0) src.length else end + 1
++                return
++            }
++            search = hit + 1
++        }
++    }
++
++    private fun finish(name: String, attrs: Map<String, String>, selfClosing: Boolean): Token {
++        if (!selfClosing && (name == "script" || name == "style")) {
++            rawTextUntil = name
++        }
++        return Token.Open(name, attrs, selfClosing)
++    }
++
++    companion object {
++        private val NAMED = mapOf(
++            "lt" to "<", "gt" to ">", "amp" to "&", "quot" to "\"", "apos" to "'",
++            "nbsp" to "\u00A0", "copy" to "\u00A9", "reg" to "\u00AE", "trade" to "\u2122",
++            "hellip" to "\u2026", "mdash" to "\u2014", "ndash" to "\u2013",
++            "lsquo" to "\u2018", "rsquo" to "\u2019", "ldquo" to "\u201C", "rdquo" to "\u201D",
++            "bull" to "\u2022", "middot" to "\u00B7", "deg" to "\u00B0",
++            "laquo" to "\u00AB", "raquo" to "\u00BB", "times" to "\u00D7", "divide" to "\u00F7",
++            "euro" to "\u20AC", "pound" to "\u00A3", "yen" to "\u00A5", "cent" to "\u00A2",
++            "sect" to "\u00A7", "para" to "\u00B6", "plusmn" to "\u00B1", "micro" to "\u00B5",
++        )
++
++        private val ENTITY_RE = Regex("&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);?")
++
++        /**
++         * Decode HTML entities in text / attribute values. Unknown or broken
++         * entities pass through literally (browser-tolerant); a trailing
++         * semicolon is optional after a valid named/numeric reference.
++         */
++        fun decodeEntities(s: String): String {
++            if (!s.contains('&')) return s
++            return ENTITY_RE.replace(s) { m ->
++                val body = m.groupValues[1]
++                when {
++                    body.startsWith("#x") || body.startsWith("#X") ->
++                        body.substring(2).toIntOrNull(16)?.toCharOrNull()?.toString() ?: m.value
++                    body.startsWith("#") ->
++                        body.substring(1).toIntOrNull()?.toCharOrNull()?.toString() ?: m.value
++                    else -> NAMED[body.lowercase()] ?: m.value
++                }
++            }
++        }
++
++        private fun Int.toCharOrNull(): Char? {
++            // Reject out-of-range / surrogate-only code points; keep it simple:
++            // map to the char when representable, else U+FFFD like browsers.
++            if (this < 0) return null
++            if (this > 0xFFFF) return '\uFFFD'
++            val ch = this.toChar()
++            return if (Character.isHighSurrogate(ch) || Character.isLowSurrogate(ch)) '\uFFFD' else ch
++        }
++    }
++}
+diff --git a/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerMalformedTest.kt b/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerMalformedTest.kt
+new file mode 100644
+index 00000000..864d9d78
+--- /dev/null
++++ b/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerMalformedTest.kt
+@@ -0,0 +1,173 @@
++package com.koodoreader.engine.layout
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertTrue
++
++/**
++ * Malformed-input tolerance (card acceptance [3]): 20+ corrupt inputs — none
++ * may throw, and every one must degrade to sane linear text blocks.
++ */
++class HtmlFlattenerMalformedTest {
++
++    private val flattener = DefaultHtmlFlattener()
++
++    /** Runs [html] through the flattener; returns texts (crash = test failure). */
++    private fun texts(html: String): List<String> = flattener.blocks(html).map { it.text }
++
++    @Test
++    fun `empty input yields no blocks`() {
++        assertEquals(0, texts("").size)
++    }
++
++    @Test
++    fun `plain text without tags becomes one linear block`() {
++        assertEquals(listOf("plain text"), texts("plain text"))
++    }
++
++    @Test
++    fun `bare less-than at eof is literal`() {
++        assertEquals(listOf("<"), texts("<"))
++    }
++
++    @Test
++    fun `comparison looks like text not markup`() {
++        assertEquals(listOf("a < b"), texts("a < b"))
++    }
++
++    @Test
++    fun `digit after less-than stays literal`() {
++        assertEquals(listOf("5 <6 books"), texts("5 <6 books"))
++    }
++
++    @Test
++    fun `unclosed paragraph still yields its text`() {
++        assertEquals(listOf("unclosed"), texts("<p>unclosed"))
++    }
++
++    @Test
++    fun `unclosed div with text degrades to a block`() {
++        assertEquals(listOf("a"), texts("<div><p>a"))
++    }
++
++    @Test
++    fun `paragraph auto-closes on nested paragraph`() {
++        val bs = flattener.blocks("<div><p>a<p>b")
++        assertEquals(listOf("a", "b"), bs.map { it.text })
++    }
++
++    @Test
++    fun `stray close tag before text degrades linearly`() {
++        assertTrue(texts("</p>orphan</div>").joinToString(" ").contains("orphan"))
++    }
++
++    @Test
++    fun `mismatched close splits instead of crashing`() {
++        val t = texts("<p>a</div>b</p>")
++        assertEquals(listOf("a", "b"), t)
++    }
++
++    @Test
++    fun `attribute with no value does not break the tag`() {
++        assertEquals(listOf("c"), texts("<p hidden>c</p>"))
++    }
++
++    @Test
++    fun `unquoted attribute value is accepted`() {
++        val b = flattener.blocks("<p id=unq>x</p>").single()
++        assertEquals("unq", b.elementId)
++        assertEquals("x", b.text)
++    }
++
++    @Test
++    fun `mangled quote soup does not crash`() {
++        assertTrue(texts("<p \"a\">x</p>").contains("x"))
++    }
++
++    @Test
++    fun `unterminated comment swallows the rest`() {
++        // Text BEFORE the comment survives; the comment and everything after
++        // (no `-->` terminator) is dropped.
++        assertEquals(listOf("keep"), texts("keep<!--comment"))
++    }
++
++    @Test
++    fun `unterminated comment swallows tags inside it`() {
++        assertEquals(listOf("keep"), texts("keep<!-- <p>no</p>"))
++    }
++
++    @Test
++    fun `unterminated script swallows the rest`() {
++        assertEquals(0, texts("<script>alert(1)</scr").size)
++    }
++
++    @Test
++    fun `unterminated style swallows the rest`() {
++        assertEquals(0, texts("<style>p{}</sty").size)
++    }
++
++    @Test
++    fun `unterminated tag at eof is dropped`() {
++        assertEquals(listOf("safe"), texts("<p>safe</p><div"))
++    }
++
++    @Test
++    fun `tag soup garbage stays text`() {
++        val t = texts("<<<>>>")
++        assertTrue(t.joinToString("").contains("<"))
++    }
++
++    @Test
++    fun `broken numeric entity stays literal`() {
++        assertEquals(listOf("&#"), texts("&#"))
++    }
++
++    @Test
++    fun `hex entity with bad digits stays literal`() {
++        assertEquals(listOf("&#xZZ;"), texts("&#xZZ;"))
++    }
++
++    @Test
++    fun `legacy uppercase amp entity decodes like browsers`() {
++        // HTML5 named references are case-insensitive; &AMP; is legacy-valid.
++        assertEquals(listOf("&"), texts("&AMP;"))
++    }
++
++    @Test
++    fun `deeply nested divs flatten without stack overflow`() {
++        val depth = 500
++        val html = "<div>".repeat(depth) + "core" + "</div>".repeat(depth)
++        assertEquals(listOf("core"), texts(html))
++    }
++
++    @Test
++    fun `newline and tab soup collapses`() {
++        assertEquals(listOf("a b c"), texts("<p>a\n\t b\r\nc</p>"))
++    }
++
++    @Test
++    fun `close tag with junk attributes is tolerated`() {
++        assertEquals(listOf("x"), texts("<p>x</p weird>"))
++    }
++
++    @Test
++    fun `entity at eof without semicolon degrades`() {
++        assertTrue(texts("amp &copy").joinToString("").isNotEmpty())
++    }
++
++    @Test
++    fun `null-ish control characters do not crash`() {
++        val html = "<p>a\u0000b</p>"
++        assertTrue(texts(html).single().contains("a"))
++    }
++
++    @Test
++    fun `thousand broken tags still terminate fast`() {
++        // One unterminated <p tag running to EOF (browser behaviour: the
++        // whole token is dropped), terminated, then real text.
++        val html = "<p <p <p ".repeat(1000) + ">end"
++        assertEquals(listOf("end"), texts(html))
++    }
++}
++
++
+diff --git a/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerTest.kt b/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerTest.kt
+new file mode 100644
+index 00000000..82ba73da
+--- /dev/null
++++ b/android/engine/layout/src/test/kotlin/com/koodoreader/engine/layout/HtmlFlattenerTest.kt
+@@ -0,0 +1,271 @@
++package com.koodoreader.engine.layout
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertTrue
++
++/**
++ * Functional coverage for the D0 flattener: block elements (≥8 kinds),
++ * inline elements (≥5 kinds), CFI identity (elementIndex/elementId),
++ * whitespace/entity behaviour, style presets.
++ */
++class HtmlFlattenerTest {
++
++    private val flattener = DefaultHtmlFlattener()
++
++    private fun blocks(html: String): List<TextBlock> = flattener.blocks(html)
++
++    private fun texts(html: String): List<String> = blocks(html).map { it.text }
++
++    // -------------------------------------------------------------- basics
++
++    @Test
++    fun `single paragraph yields one block with sibling index 1`() {
++        val bs = blocks("<p>Hello</p>")
++        assertEquals(1, bs.size)
++        assertEquals("Hello", bs[0].text)
++        assertEquals(1, bs[0].elementIndex)
++    }
++
++    @Test
++    fun `adjacent paragraphs get consecutive sibling indices`() {
++        val bs = blocks("<p>a</p><p>b</p>")
++        assertEquals(listOf("a", "b"), bs.map { it.text })
++        assertEquals(listOf(1, 2), bs.map { it.elementIndex })
++    }
++
++    @Test
++    fun `nested paragraphs count siblings within their container`() {
++        val bs = blocks("<div><p>a</p><p>b</p></div>")
++        assertEquals(listOf("a", "b"), bs.map { it.text })
++        assertEquals(listOf(1, 2), bs.map { it.elementIndex })
++    }
++
++    @Test
++    fun `flatten returns a spine item with index href title`() {
++        val item = flattener.flatten("<p>x</p>", spineIndex = 3, href = "ch1.xhtml", title = "One")
++        assertEquals(3, item.index)
++        assertEquals("ch1.xhtml", item.href)
++        assertEquals("One", item.title)
++        assertEquals(1, item.blocks.size)
++    }
++
++    // ----------------------------------------------------- block elements
++
++    @Test
++    fun `headings h1 to h6 each yield a block with descending font scale`() {
++        val bs = blocks("<h1>1</h1><h2>2</h2><h3>3</h3><h4>4</h4><h5>5</h5><h6>6</h6>")
++        assertEquals(6, bs.size)
++        assertEquals(listOf("1", "2", "3", "4", "5", "6"), bs.map { it.text })
++        val scales = bs.map { it.style.fontSizeScale }
++        assertEquals(scales, scales.sortedDescending())
++        assertTrue(scales.first() > 1f && scales.last() < 1.01f)
++    }
++
++    @Test
++    fun `section and article wrappers still yield their text`() {
++        assertEquals(listOf("a", "b"), texts("<section>a</section><article>b</article>"))
++    }
++
++    @Test
++    fun `list items become indented blocks`() {
++        val bs = blocks("<ul><li>x</li><li>y</li></ul>")
++        assertEquals(listOf("x", "y"), bs.map { it.text })
++        assertTrue(bs.all { it.style.textIndentEm > 0f })
++    }
++
++    @Test
++    fun `ordered list items are handled the same`() {
++        assertEquals(listOf("one", "two"), texts("<ol><li>one</li><li>two</li></ol>"))
++    }
++
++    @Test
++    fun `blockquote carries an indent and spacing`() {
++        val b = blocks("<blockquote>quoted</blockquote>").single()
++        assertTrue(b.style.textIndentEm > 0f && b.style.spaceBeforePx > 0f)
++    }
++
++    @Test
++    fun `pre blocks keep a tighter line height preset`() {
++        val b = blocks("<pre>code()</pre>").single()
++        assertEquals("code()", b.text)
++        assertTrue(b.style.lineHeightMultiple!! < 1.5f)
++    }
++
++    @Test
++    fun `table cells become blocks`() {
++        assertEquals(listOf("a", "b", "c"), texts("<table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table>"))
++    }
++
++    @Test
++    fun `th cells become blocks too`() {
++        assertEquals(listOf("H"), texts("<table><tr><th>H</th></tr></table>"))
++    }
++
++    @Test
++    fun `definition lists map dt and dd`() {
++        assertEquals(listOf("term", "def"), texts("<dl><dt>term</dt><dd>def</dd></dl>"))
++    }
++
++    @Test
++    fun `figcaption becomes a block`() {
++        assertEquals(listOf("cap"), texts("<figure><img src='x'/><figcaption>cap</figcaption></figure>"))
++    }
++
++    @Test
++    fun `header footer aside main are block containers`() {
++        assertEquals(listOf("h", "f", "a", "m"), texts("<header>h</header><footer>f</footer><aside>a</aside><main>m</main>"))
++    }
++
++    // ---------------------------------------------------- inline elements
++
++    @Test
++    fun `inline markup is dropped but text flows into the block`() {
++        val html = "<p><b>B</b><strong>S</strong><i>I</i><em>E</em><u>U</u>" +
++            "<span>sp</span><a href='x'>A</a><sup>sup</sup><sub>sub</sub>" +
++            "<code>c</code><small>sm</small><mark>m</mark></p>"
++        // No whitespace between the tags: the text concatenates as-is.
++        assertEquals("BSIEUspAsupsubcsmm", blocks(html).single().text)
++    }
++
++    @Test
++    fun `br forces a block boundary`() {
++        val bs = blocks("<p>line1<br/>line2</p>")
++        assertEquals(listOf("line1", "line2"), bs.map { it.text })
++    }
++
++    @Test
++    fun `br pair creates an empty middle block that is dropped`() {
++        assertEquals(listOf("a", "b"), texts("<p>a<br><br>b</p>"))
++    }
++
++    @Test
++    fun `whitespace collapses across inline boundaries`() {
++        assertEquals("a b c", blocks("<p>a <b> b</b>  c</p>").single().text)
++    }
++
++    @Test
++    fun `nbsp survives collapsing`() {
++        assertEquals("a\u00A0b", blocks("<p>a&nbsp;b</p>").single().text)
++    }
++
++    // ------------------------------------------------------- entities
++
++    @Test
++    fun `named numeric and hex entities decode`() {
++        val expected = "<a>&\"'" + "\u00A9\u2026\u2014"
++        assertEquals(expected, blocks("<p>&lt;a&gt;&amp;&quot;&apos;&#169;&#x2026;&#8212;</p>").single().text)
++    }
++
++    @Test
++    fun `unknown entities stay literal`() {
++        assertEquals("&unknown; &nope;", blocks("<p>&unknown; &nope;</p>").single().text)
++    }
++
++    @Test
++    fun `broken numeric entities stay literal`() {
++        assertEquals("&#zz; &#xGG;", blocks("<p>&#zz; &#xGG;</p>").single().text)
++    }
++
++    // ------------------------------------------------- hidden content
++
++    @Test
++    fun `script and style content is dropped`() {
++        assertEquals(listOf("text"), texts("<script>var x = '<p>no</p>';</script><style>p{}</style><p>text</p>"))
++    }
++
++    @Test
++    fun `head title and template are dropped`() {
++        assertEquals(listOf("body"), texts("<head><title>t</title></head><template>x</template><p>body</p>"))
++    }
++
++    @Test
++    fun `comments and doctype are dropped`() {
++        assertEquals(listOf("x"), texts("<!DOCTYPE html><!-- note --><p>x</p>"))
++    }
++
++    @Test
++    fun `cdata content is treated as text`() {
++        assertEquals(listOf("raw <b> not markup"), texts("<![CDATA[raw <b> not markup]]>"))
++    }
++
++    // -------------------------------------------------- CFI identity
++
++    @Test
++    fun `element id is captured as the cfi assertion`() {
++        val b = blocks("<p id='ch1-para2'>x</p>").single()
++        assertEquals("ch1-para2", b.elementId)
++    }
++
++    @Test
++    fun `void elements consume a sibling slot for cfi fidelity`() {
++        val bs = blocks("<div><img src='i.png'/><p>a</p></div>")
++        assertEquals(1, bs.size)
++        // img took slot 1, p took slot 2 — matching the CFI element step.
++        assertEquals(2, bs[0].elementIndex)
++    }
++
++    @Test
++    fun `sourceOffsets survive inline boundaries`() {
++        // A whitespace run spanning the inline boundary must collapse to one
++        // space AND keep the mapping to the raw source.
++        val b = blocks("<p>a  <b>b</b></p>").single()
++        assertEquals("a b", b.text)
++        val offsets = b.sourceOffsets
++        assertTrue(offsets != null && offsets.size == 3)
++        assertEquals(listOf(0, 1, 3), offsets!!.toList())
++    }
++
++    // --------------------------------------------------- misc shapes
++
++    @Test
++    fun `empty and whitespace-only blocks are dropped`() {
++        assertEquals(0, blocks("<p></p><p>   </p><div>\n\t</div>").size)
++    }
++
++    @Test
++    fun `full xhtml document wrapper is transparent`() {
++        val html = "<html><head><title>T</title></head><body><h1>C</h1><p>x</p></body></html>"
++        assertEquals(listOf("C", "x"), texts(html))
++    }
++
++    @Test
++    fun `uppercase and mixed case tags are recognised`() {
++        assertEquals(listOf("a", "b"), texts("<P>a</P><DiV>b</DiV>"))
++    }
++
++    @Test
++    fun `bogus tag-like names produce no phantom text`() {
++        // "<Br-TagImpossible/>" parses as an unknown self-closing element —
++        // not a `<br>`, not text.
++        assertEquals(listOf("a"), texts("<p>a</p><Br-TagImpossible/>"))
++    }
++
++    @Test
++    fun `attribute values may contain gt and lt when quoted`() {
++        val b = blocks("<p title='a>b'>x</p>").single()
++        assertEquals("x", b.text)
++    }
++
++    @Test
++    fun `self closing block does not hold a scope`() {
++        assertEquals(listOf("a"), texts("<div/><p>a</p>"))
++    }
++
++    @Test
++    fun `deep nesting flattens linearly`() {
++        val depth = 50
++        val html = "<div>".repeat(depth) + "deep" + "</div>".repeat(depth)
++        val bs = blocks(html)
++        assertEquals(listOf("deep"), bs.map { it.text })
++    }
++
++    @Test
++    fun `large text block stays in one piece`() {
++        val big = "word ".repeat(20_000)
++        val bs = blocks("<p>$big</p>")
++        assertEquals(1, bs.size)
++        assertTrue(bs[0].text.length > 90_000)
++    }
++}
++
+diff --git a/docs/adr/ADR-007-textblock-flattener.md b/docs/adr/ADR-007-textblock-flattener.md
+new file mode 100644
+index 00000000..0fa70f26
+--- /dev/null
++++ b/docs/adr/ADR-007-textblock-flattener.md
+@@ -0,0 +1,86 @@
++# ADR-007: XHTML/HTML → TextBlock flattener (D0)
++
++- **Status**: accepted (2026-09-24)
++- **Card**: D0 — 「[P2 排版后置] XHTML/HTML→TextBlock 扁平化器」(t-mufbaotg-g1abhm), P5.5 hard prerequisite
++- **Depends on**: ADR-002 (CFI compat), engine/layout BlockModel
++
++## Context
++
++The native engine paginates a **flattened block model** ([BlockModel]/
++`TextBlock`), not a DOM — the browser-side DOM walk of the desktop engine
++(kookit `layoutUtil.ts`) is impossible in Kotlin. `BlockModel.kt`'s KDoc
++reserved the conversion step for "the EPUB parse layer (P2, a later card)".
++Without it, every HTML-bearing format (EPUB spine items, and the P5.5
++converters FB2 body / DOCX WordprocessingML / HTML / MHTML) would have to
++hand-roll its own markup-to-blocks mapping — ADR-006 estimated that gap at
++5–8 additional person-days of duplicated work.
++
++## Decision
++
++A single flattener lives in `:engine:layout`:
++
++- `HtmlFlattener` — interface (`flatten(html, spineIndex, href, title): SpineItem`)
++- `DefaultHtmlFlattener` — the stock implementation, on a tolerant tokenizer
++  (`HtmlTokenizer`)
++
++### Semantics
++
++1. **Block elements** (`p, h1..h6, blockquote, pre, li, dt, dd, td, th,
++   figcaption, div, section, article, aside, header, footer, main, caption`)
++   start a new `TextBlock`; empty/whitespace-only blocks are dropped.
++2. **Inline elements** (`b strong i em u s span a sup sub small code mark
++   cite q abbr kbd samp var del ins …`) keep their text inside the block;
++   markup is dropped (the flattened model is deliberately markup-free, the
++   same approximation the desktop paginated view makes).
++3. **Hidden subtrees** (`script style head title template`, comments,
++   doctype, CDATA boundaries) produce nothing — except CDATA, which is
++   character data by definition and degrades to text.
++4. **`<br>` = block boundary** (preserves verse/poetry lines); **`<hr>` =
++   separator** (flush, no output). Void elements (`img link meta …`) consume
++   a CFI sibling slot but produce no block.
++5. **CFI fidelity (ADR-002)**: `elementIndex` = the source element's 1-based
++   index among its siblings — *every* element consumes a slot, including
++   ones that produce no text, so a CFI element step computed on the source
++   document addresses the same block; `elementId` is the `id` attribute;
++   `TextBlock.of`'s `sourceOffsets` keep collapsed characters resolvable to
++   the block's raw source text.
++
++### Tolerance contract
++
++The tokenizer never throws and always terminates: `<` followed by a
++non-letter is literal text; comments/doctype/CDATA are bounded scans;
++`script`/`style` consume raw text up to a case-insensitive close tag
++(unterminated → to EOF); an unterminated tag at EOF is dropped (HTML5
++behaviour); attribute values may contain quoted `>`/`<`. Entities decode in
++text and attribute values only (an escaped `&lt;p&gt;` never becomes
++markup); unknown/broken entities stay literal. 25+ corrupt-input tests
++pin this down (`HtmlFlattenerMalformedTest`).
++
++### Style approximation
++
++Headings, `blockquote`, `pre`, `li`, `dd`, `figcaption`, `th/td` map to
++`ParagraphStyle` presets (font scale / indent / spacing) — the same
++coarse approximation the desktop stylesheet applies for a paginated view.
++No CSS cascade is honoured; the P5.5 converters may pre-resolve critical
++book CSS before flattening if a real book demands it (extension point:
++`HtmlFlattener` is an interface).
++
++## Alternatives considered
++
++- **Jsoup / kotlinx-html parser** — would add the first third-party runtime
++  dependency to the pure-JVM engine modules; the tokenizer we need is ~250
++  lines and tolerance rules are app-specific. Rejected (dependency budget).
++- **Regex line-splitting** (like the WebView island does for TXT) — loses
++  CFI element steps and block semantics entirely. Rejected.
++- **Full DOM + CSS cascade** — required for a rendering-perfect engine, but
++  the flattened model's contract (BlockModel KDoc) explicitly scopes it out;
++  same trade-off the desktop already makes for pagination.
++
++## Consequences
++
++- P5.5 (FB2/DOCX/HTML/MHTML) convert their intermediate markup through this
++  one entry point — no per-format flattening code.
++- Block-level visual fidelity is approximate (no CSS, no float/table
++  layout) — consistent with the desktop paginated view; reflow-perfect
++  fidelity remains the WebView island's job until P8 retires it.
++- `engine/image`'s comic path and `core/archive` (R1) are unaffected.

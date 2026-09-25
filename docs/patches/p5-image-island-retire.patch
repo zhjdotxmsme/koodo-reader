@@ -1,0 +1,548 @@
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 0cb24cc3..b83bebe9 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -146,6 +146,17 @@
+             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
+             android:theme="@style/Theme.KoodoReader" />
+ 
++        <!--
++          P5-CBZ-5: native comic viewer for VIEW/SEND intents of CBZ/CBT/CB7
++          (MainActivity copies the payload into cache and hands over the file
++          path). Not exported — only our own routing starts it.
++        -->
++        <activity
++            android:name=".imagehost.ComicViewerActivity"
++            android:exported="false"
++            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
++            android:theme="@style/Theme.KoodoReader" />
++
+         <activity-alias
+             android:name=".LauncherAlias"
+             android:targetActivity="${nativeLauncher}"
+diff --git a/android/app/src/main/java/com/koodoreader/reader/MainActivity.kt b/android/app/src/main/java/com/koodoreader/reader/MainActivity.kt
+index 7bbd0e82..00840088 100644
+--- a/android/app/src/main/java/com/koodoreader/reader/MainActivity.kt
++++ b/android/app/src/main/java/com/koodoreader/reader/MainActivity.kt
+@@ -21,6 +21,10 @@ import android.webkit.WebView
+ import android.webkit.WebViewClient
+ import android.widget.Toast
+ import com.koodoreader.core.importer.BookRules
++import com.koodoreader.reader.imagehost.ComicViewerActivity
++import com.koodoreader.reader.shell.IntentRoutePolicy
++import com.koodoreader.reader.shell.LibraryViewModel
++import com.koodoreader.reader.shell.NativeShellActivity
+ import org.json.JSONArray
+ import org.json.JSONObject
+ import java.io.File
+@@ -238,26 +242,54 @@ class MainActivity : Activity() {
+ 
+     /**
+      * Act on a VIEW/SEND intent carrying a book (file manager / share sheet).
+-     * The stream is copied into the app cache and exposed through the loopback
+-     * server, then handed to the web app's import pipeline via the
+-     * `__koodoNative.openLocalFile` hook (see src/utils/android/nativeBridge.js).
++     * P8-F1: the payload is routed by [IntentRoutePolicy] — native readers
++     * first (comics → [ComicViewerActivity]; PDF → import + native shell),
++     * with the web island as the fallback for everything else.
+      */
+     private fun handleIntent(intent: Intent?) {
+         if (intent == null) return
+         if (intent.action == Intent.ACTION_SEND) {
+             val stream = getParcelableUri(intent, Intent.EXTRA_STREAM)
+-            if (stream != null) queueBook(stream, intent.type)
++            if (stream != null) routeIntent(stream, intent.type)
+             return
+         }
+         val data = intent.data ?: return
+         val scheme = data.scheme?.lowercase() ?: return
+         when (scheme) {
+-            "content", "file" -> queueBook(data, intent.type)
++            "content", "file" -> routeIntent(data, intent.type)
+             // App scheme (koodo-reader://) and plain web links: nothing to import.
+             else -> Unit
+         }
+     }
+ 
++    /**
++     * P8-F1 分流入口：漫画 → 原生漫画屏；PDF → 导入管线 + 原生壳（书进书架，
++     * 在 READER 路由由 NativePdfScreen 承接）；其余 → 兜底岛（fallback only）。
++     */
++    private fun routeIntent(uri: Uri, mimeType: String?) {
++        val displayName = uri.lastPathSegment
++        when (IntentRoutePolicy.decide(mimeType, displayName)) {
++            IntentRoutePolicy.Route.NATIVE_COMIC -> queueBook(uri, mimeType)
++            IntentRoutePolicy.Route.NATIVE_PDF -> importToNativeShell(uri)
++            IntentRoutePolicy.Route.ISLAND -> queueBook(uri, mimeType)
++        }
++    }
++
++    /**
++     * PDF：走既有导入管线进 Room（LibraryViewModel.importFiles →
++     * ImportPipeline），随后打开原生壳——书在书架可见，READER 路由由
++     * NativePdfScreen 承接。打开即读书（深链）在宿主改造卡挂账。
++     */
++    private fun importToNativeShell(uri: Uri) {
++        runCatching {
++            // MainActivity 是裸 Activity（非 ViewModelStoreOwner）；导入是
++            // 一次性操作（AndroidViewModel 自持 application 上下文，与 UI
++            // 生命周期解耦），直接构造即可。
++            LibraryViewModel(application).importFiles(listOf(uri))
++            startActivity(Intent(this, NativeShellActivity::class.java))
++        }.onFailure { Log.w(TAG, "native pdf import failed: $uri", it) }
++    }
++
+     /**
+      * Copy the incoming document into the cache and remember it for delivery.
+      * The copy runs off the UI thread (a large book must not risk an ANR); the
+@@ -286,6 +318,14 @@ class MainActivity : Activity() {
+                     }
+                     return@runOnUiThread
+                 }
++                // P5-CBZ-5 / P8-F1：原生可读的漫画容器（CBZ/CBT/CB7）不再
++                // 绕道兜底岛，直接落原生漫画屏；其余格式维持兜底岛投喂。
++                if (IntentRoutePolicy.decide(mimeType, copied.name) ==
++                    IntentRoutePolicy.Route.NATIVE_COMIC
++                ) {
++                    startActivity(ComicViewerActivity.intent(this, copied))
++                    return@runOnUiThread
++                }
+                 val exposedPath = assetServer.exposeFile("$BOOKS_PREFIX/${copied.name}", copied)
+                 pendingBook = PendingBook("${assetServer.baseUrl()}/$exposedPath", copied.name)
+                 deliverPendingBook()
+diff --git a/android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerActivity.kt b/android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerActivity.kt
+new file mode 100644
+index 00000000..9823f8b8
+--- /dev/null
++++ b/android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerActivity.kt
+@@ -0,0 +1,152 @@
++package com.koodoreader.reader.imagehost
++
++import android.content.Intent
++import android.graphics.BitmapFactory
++import android.os.Bundle
++import android.widget.FrameLayout
++import android.widget.TextView
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.asImageBitmap
++import androidx.compose.ui.graphics.ImageBitmap
++import com.koodoreader.reader.shell.I18nState
++import com.koodoreader.reader.shell.LocalI18n
++import com.koodoreader.engine.image.ArchiveExtractors
++import com.koodoreader.engine.image.ComicPage
++import com.koodoreader.engine.image.ComicViewerModel
++import com.koodoreader.engine.image.DefaultPageLoader
++import com.koodoreader.reader.imagehost.ComicViewerHost
++import com.koodoreader.reader.shell.KoodoShellTheme
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.withContext
++import java.io.File
++import java.util.concurrent.Executors
++
++/**
++ * 漫画原生阅读入口（P5-CBZ-5, t-mufbaovl）：VIEW/SEND intent 的
++ * CBZ/CBT/CB7 原生路由落点。文件由 MainActivity 复制到 cache 后以
++ * `EXTRA_FILE` 传入（content:// 的读授权只对调用方进程有效，必须落盘）。
++ *
++ * 页面加载/翻页落点/缩放全部在 engine:image 纯 Kotlin 侧
++ * （[ComicViewerModel] + [DefaultPageLoader] + [ComicViewerHost]）；
++ * 这里只做：打开归档 → 位图解码回调（inSampleSize 降采样）→ 组装宿主。
++ */
++class ComicViewerActivity : ComponentActivity() {
++
++    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val decodeExecutor = Executors.newSingleThreadExecutor { r ->
++        Thread(r, "comic-decode").apply { isDaemon = true }
++    }
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        val file = intent.getStringExtra(EXTRA_FILE)?.let(::File)
++        if (file == null || !file.isFile) {
++            finishWithError("The comic file is unavailable.")
++            return
++        }
++
++        val i18n = I18nState.create(this)
++        setContent {
++            CompositionLocalProvider(LocalI18n provides i18n) {
++                KoodoShellTheme {
++                    Surface(modifier = Modifier.fillMaxSize()) {
++                        ComicViewerScreen(file) { finish() }
++                    }
++                }
++            }
++        }
++    }
++
++    @Composable
++    private fun ComicViewerScreen(file: File, onClose: () -> Unit) {
++        val model = remember(file) {
++            runCatching {
++                ComicViewerModel(
++                    DefaultPageLoader(ArchiveExtractors.open(file), executor = decodeExecutor),
++                )
++            }.getOrNull()
++        }
++        if (model == null) {
++            // 打不开（损坏/加密/不支持的过滤器如 BCJ2）：给可执行的提示。
++            Surface(modifier = Modifier.fillMaxSize()) {
++                Text(
++                    "This comic archive cannot be opened natively.\n" +
++                        "Import it from inside the app to use the web viewer.",
++                    modifier = Modifier.fillMaxSize(),
++                )
++            }
++            return
++        }
++        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            ComicViewerHost(
++                model = model,
++                decoder = ComicPageDecoder { page, targetWidth ->
++                    decodePage(page, targetWidth)
++                },
++                ioScope = ioScope,
++                modifier = Modifier.fillMaxSize(),
++                onUiToggle = { }, // 工具栏属于后续卡；当前无 chrome 可切换
++                onExitRequested = onClose,
++            )
++        }
++    }
++
++    /**
++     * `ComicPage.bytes` → 屏幕位图：按目标宽度算 inSampleSize 降采样，
++     * 避免 4K 彩页直接占满堆（ComicViewerHost KDoc 的要求）。
++     */
++    private suspend fun decodePage(page: ComicPage, targetWidth: Int): ImageBitmap? =
++        withContext(Dispatchers.Default) {
++            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
++            BitmapFactory.decodeByteArray(page.bytes, 0, page.bytes.size, bounds)
++            var sample = 1
++            var width = bounds.outWidth
++            if (width > targetWidth) {
++                while (width / 2 >= targetWidth) {
++                    sample *= 2
++                    width /= 2
++                }
++            }
++            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
++            BitmapFactory.decodeByteArray(page.bytes, 0, page.bytes.size, opts)?.asImageBitmap()
++        }
++
++    private fun finishWithError(message: String) {
++        val layout = FrameLayout(this)
++        val text = TextView(this).apply {
++            this.text = message
++            setPadding(48, 48, 48, 48)
++        }
++        layout.addView(text)
++        setContentView(layout)
++        // 给用户一瞬看到提示，然后回到发起方。
++        android.os.Handler(mainLooper).postDelayed({ finish() }, 2500)
++    }
++
++    override fun onDestroy() {
++        ioScope.cancel()
++        decodeExecutor.shutdown()
++        super.onDestroy()
++    }
++
++    companion object {
++        const val EXTRA_FILE = "comic_file"
++
++        /** 工厂入口：MainActivity 路由用（带文件直接跳原生漫画屏）。 */
++        fun intent(context: android.content.Context, file: File): Intent =
++            Intent(context, ComicViewerActivity::class.java)
++                .putExtra(EXTRA_FILE, file.absolutePath)
++    }
++}
+diff --git a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/host/ComicViewerHost.kt b/android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerHost.kt
+similarity index 86%
+rename from android/engine/image/src/main/kotlin/com/koodoreader/engine/image/host/ComicViewerHost.kt
+rename to android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerHost.kt
+index 08be8482..aca69491 100644
+--- a/android/engine/image/src/main/kotlin/com/koodoreader/engine/image/host/ComicViewerHost.kt
++++ b/android/app/src/main/java/com/koodoreader/reader/imagehost/ComicViewerHost.kt
+@@ -1,28 +1,17 @@
+-package com.koodoreader.engine.image.host
++package com.koodoreader.reader.imagehost
+ 
+ /*
+  * ============================================================================
+- * Compose 宿主骨架（单图/双页 + 缩放平移）—— **移植模板，不参与本模块编译**
++ * Compose 宿主（单图/双页 + 缩放平移）—— 自 engine/image 的移植模板落位（P5-CBZ-5）
+  * ============================================================================
+- * 本文件被 `engine/image/build.gradle` 的
+- *   sourceSets.main.kotlin.exclude 'com/koodoreader/engine/image/host/**'
+- * 排除：androidx.compose.* 以 AAR 发布，纯 JVM 模块无法解析，而正是「纯 JVM」
+- * 让 :engine:image 的排版/窗口/缩放逻辑能在无 Android SDK 的机器上跑单测。
+- * 这与 :engine:pdf → `engine/pdfhost`（宿主在 :app）的既有分工一致。
++ * 原 `engine/image/.../host/ComicViewerHost.kt`（纯 JVM 模块不参与编译的模板）
++ * 按 docs/patches/p5-image.patch §3 的步骤 1 移入 :app，包名调整为
++ * com.koodoreader.reader.imagehost。:app 已有 compose 依赖（activity-compose /
++ * material3 / foundation），由 :app:compileDebugKotlin 门禁编译验证。
+  *
+- * 移植步骤（详见 docs/patches/p5-image.patch §3）：
+- *   1. 把本文件移到 app/src/main/java/com/koodoreader/app/reader/imagehost/；
+- *   2. :app 已有 compose 依赖（activity-compose / material3 / foundation）；
+- *   3. 用 `rememberComicViewerModel(bookFile)` 打开归档：
+- *        val extractor = remember { ArchiveExtractors.open(File(path)) }
+- *        val loader = remember { DefaultPageLoader(extractor, executor = ioExecutor) }
+- *        val model = remember { ComicViewerModel(loader) }
+- *      CBR/7z 的 support != READY 时**不要**走到这里：路由回兜底岛
+- *      （ArchiveKind.support，见 ADR §4）；
+- *   4. 退出时 `DisposableEffect { onDispose { model.close() } }` 释放归档句柄。
+- *
+- * 本文件里的逻辑边界很薄：所有决策（翻页落点/窗口/缩放夹取）都在
++ * 逻辑边界依旧很薄：所有决策（翻页落点/窗口/缩放夹取）都在
+  * engine:image 的纯 Kotlin 侧，宿主只负责「快照 → UI + 手势回灌」。
++ * 入口：ComicViewerActivity（VIEW/SEND intent 的 CBZ/CBT/CB7 原生路由）。
+  */
+ 
+ import androidx.compose.foundation.Image
+diff --git a/android/app/src/main/java/com/koodoreader/reader/shell/IntentRoutePolicy.kt b/android/app/src/main/java/com/koodoreader/reader/shell/IntentRoutePolicy.kt
+new file mode 100644
+index 00000000..78599153
+--- /dev/null
++++ b/android/app/src/main/java/com/koodoreader/reader/shell/IntentRoutePolicy.kt
+@@ -0,0 +1,72 @@
++package com.koodoreader.reader.shell
++
++/**
++ * VIEW/SEND intent 的 mime-type/文件名 → 路由决策（P5-CBZ-5 + P8-F1 共用）。
++ *
++ * 纯 JVM、无 Android 类型：MainActivity 的 `handleIntent` 在把 intent 载荷
++ * 复制进 cache 之后用它决定走原生还是兜底岛；路由表由 `ArchiveKind.support`
++ * （CBZ/CBT/CB7 = READY）与原生 Reader 的落地情况共同决定——CBR 明确不原生
++ * （UnRAR 许可 + .so 16KB 对齐，ADR-006/P5-CBZ ADR §4.2），其余格式按
++ * P8-F1 的 mime 表路由，兜底岛只是 fallback。
++ *
++ * 判定顺序（与文件管理器的真实行为一致）：
++ *  1. 扩展名（`.cbz` 之类）—— 最可靠；
++ *  2. mime-type —— 文件管理器常给 `application/octet-stream` 或空；
++ *  3. 两者都无法识别 → ISLAND（兜底岛有全套格式解析）。
++ */
++object IntentRoutePolicy {
++
++    /** intent 载荷的落点。 */
++    enum class Route {
++        /** 原生漫画屏（engine/image：CBZ / CBT / CB7）→ [ComicViewerActivity]。 */
++        NATIVE_COMIC,
++
++        /**
++         * 原生 PDF（engine/pdf + NativePdfScreen，经导入管线 + 原生壳 READER 路由）。
++         */
++        NATIVE_PDF,
++
++        /**
++         * 兜底岛 WebView（CBR、EPUB/TXT/MD/MOBI 等原生 reader 屏未落地前，
++         * 以及一切无法识别的载荷）。EPUB 原生 reader 屏落地后按表迁出。
++         */
++        ISLAND,
++    }
++
++    /** engine:image 原生可读的漫画容器扩展名（小写，不含点）。 */
++    private val NATIVE_COMIC_EXTS = setOf("cbz", "cbt", "cb7")
++
++    /** engine:image 原生可读的漫画容器 mime-type（小写）。 */
++    private val NATIVE_COMIC_MIMES = setOf(
++        "application/x-cbz",
++        "application/x-cbt",
++        "application/x-cb7",
++        "application/vnd.comicbook+zip", // CBZ 的另一常见注册名
++        "application/vnd.comicbook-rar", // 注意：RAR 容器 mime 不代表可原生读 → 见下方拦截
++    )
++
++    /** 明确不原生的容器（UnRAR 许可 + .so 16KB 对齐）——即使 mime 看起来像也不走原生。 */
++    private val ISLAND_ONLY_EXTS = setOf("cbr")
++
++    /** 原生 PDF 屏已就绪（P3），扩展名 + mime 都认。 */
++    private val NATIVE_PDF_EXTS = setOf("pdf")
++    private val NATIVE_PDF_MIMES = setOf("application/pdf")
++
++    fun decide(mimeType: String?, fileName: String?): Route {
++        val name = fileName.orEmpty().lowercase()
++        val ext = name.substringAfterLast('.', "")
++
++        if (ext in ISLAND_ONLY_EXTS) return Route.ISLAND
++        if (ext in NATIVE_COMIC_EXTS) return Route.NATIVE_COMIC
++        if (ext in NATIVE_PDF_EXTS) return Route.NATIVE_PDF
++
++        val mime = mimeType.orEmpty().lowercase().substringBefore(';').trim()
++        // RAR 容器的 mime（application/vnd.comicbook-rar / application/x-rar-compressed）
++        // 一律兜底岛：容器是 RAR，engine 解不了。
++        if (mime.contains("rar")) return Route.ISLAND
++        if (mime in NATIVE_COMIC_MIMES) return Route.NATIVE_COMIC
++        if (mime in NATIVE_PDF_MIMES) return Route.NATIVE_PDF
++
++        return Route.ISLAND
++    }
++}
+diff --git a/android/app/src/test/java/com/koodoreader/reader/shell/IntentRoutePolicyTest.kt b/android/app/src/test/java/com/koodoreader/reader/shell/IntentRoutePolicyTest.kt
+new file mode 100644
+index 00000000..e0254728
+--- /dev/null
++++ b/android/app/src/test/java/com/koodoreader/reader/shell/IntentRoutePolicyTest.kt
+@@ -0,0 +1,132 @@
++package com.koodoreader.reader.shell
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++/**
++ * P5-CBZ-5 + P8-F1 路由表测试（卡内验收 [3]：≥8 用例；本套件 14 项覆盖
++ * 扩展名 / mime / octet-stream / CBR 拦截 / 未知回退 / 大小写与参数容差）。
++ */
++class IntentRoutePolicyTest {
++
++    private fun decide(mime: String?, name: String) = IntentRoutePolicy.decide(mime, name)
++
++    // ---------------------------------------------------- 原生漫画（扩展名）
++
++    @Test
++    fun `cbz by extension routes native`() =
++        assertEquals(IntentRoutePolicy.Route.NATIVE_COMIC, decide(null, "Book.cbz"))
++
++    @Test
++    fun `cbt by extension routes native`() =
++        assertEquals(IntentRoutePolicy.Route.NATIVE_COMIC, decide(null, "book.cbt"))
++
++    @Test
++    fun `cb7 by extension routes native`() =
++        assertEquals(IntentRoutePolicy.Route.NATIVE_COMIC, decide(null, "book.CB7"))
++
++    @Test
++    fun `extension wins over an unusable mime`() {
++        // 文件管理器常见：mime 给 octet-stream，扩展名才是真身
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide("application/octet-stream", "manga.cbz"),
++        )
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide(null, "manga.cbz"),
++        )
++    }
++
++    @Test
++    fun `extension is case-insensitive`() {
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide("application/octet-stream", "MANGA.CBZ"),
++        )
++    }
++
++    // ---------------------------------------------------- 原生漫画（mime）
++
++    @Test
++    fun `cbz mime routes native even with a meaningless name`() {
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide("application/x-cbz", "download"),
++        )
++    }
++
++    @Test
++    fun `comicbook+zip mime routes native`() {
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide("application/vnd.comicbook+zip", "file"),
++        )
++    }
++
++    @Test
++    fun `mime parameters are stripped before matching`() {
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_COMIC,
++            decide("application/x-cbz; charset=binary", "file"),
++        )
++    }
++
++    // ------------------------------------------------ CBR / RAR 拦截
++
++    @Test
++    fun `cbr extension routes island even with a comic mime`() {
++        assertEquals(
++            IntentRoutePolicy.Route.ISLAND,
++            decide("application/vnd.comicbook-rar", "book.cbr"),
++        )
++    }
++
++    @Test
++    fun `rar mime routes island`() {
++        assertEquals(
++            IntentRoutePolicy.Route.ISLAND,
++            decide("application/x-rar-compressed", "book"),
++        )
++    }
++
++    // ------------------------------------------------ 原生 PDF（P8-F1）
++
++    @Test
++    fun `pdf by extension routes native pdf`() {
++        assertEquals(IntentRoutePolicy.Route.NATIVE_PDF, decide(null, "doc.pdf"))
++    }
++
++    @Test
++    fun `pdf mime routes native pdf`() {
++        assertEquals(
++            IntentRoutePolicy.Route.NATIVE_PDF,
++            decide("application/pdf", "download"),
++        )
++    }
++
++    // ------------------------------------------------ 兜底岛回退
++
++    @Test
++    fun `epub routes island (native reader 屏未落地前维持兜底)`() {
++        assertEquals(IntentRoutePolicy.Route.ISLAND, decide("application/epub+zip", "a.epub"))
++    }
++
++    @Test
++    fun `txt md mobi azw3 route island for now`() {
++        for (name in listOf("a.txt", "b.md", "c.mobi", "d.azw3")) {
++            assertEquals(IntentRoutePolicy.Route.ISLAND, decide(null, name))
++        }
++    }
++
++    @Test
++    fun `unknown mime and extension routes island as fallback`() {
++        assertEquals(IntentRoutePolicy.Route.ISLAND, decide(null, "file.xyz"))
++        assertEquals(IntentRoutePolicy.Route.ISLAND, decide("text/plain", "notes.txt"))
++    }
++
++    @Test
++    fun `null mime and no extension routes island`() {
++        assertEquals(IntentRoutePolicy.Route.ISLAND, decide(null, "noext"))
++    }
++}
+diff --git a/docs/p5-image-engine-adr.md b/docs/p5-image-engine-adr.md
+index 882d9649..ed315169 100644
+--- a/docs/p5-image-engine-adr.md
++++ b/docs/p5-image-engine-adr.md
+@@ -146,6 +146,13 @@ seek(4) → 加载 7；卸载 0               驻留 {1..7}   ← 7 页上限，
+ | 5 | 契约守卫 `nativeBridge.js` / `folderBridge.js` / `androidBuild.test.js` | 兜底岛↔原生壳兼容层 | **P8 前不得删除**（ADR-003 §1） | `node scripts/check-import-rules.js`、`yarn test` | — |
+ | 6 | `target=webview` 构建变体 | 纯 WebView 包 | **永久保留**（ADR-001） | `-Ptarget=webview` 出包 | — |
+ 
++> **P5-CBZ-5 / P8-F1 状态更新（2026-09-25）**：第 1、2 行的「路由切换」已完成——
++> `MainActivity.handleIntent → IntentRoutePolicy.decide(mime, name)` 数据驱动分流
++> （CBZ/CBT/CB7 → `ComicViewerActivity` 原生屏；CBR/RAR 显式拦截走兜底岛；PDF →
++> 导入管线 + 原生壳 `NativePdfScreen`；其余格式兜底岛 fallback）。路由表 = 单一
++> `IntentRoutePolicy`（16 项 JVM 单测钉死）。真机回归仍未做（无设备），第 2 行的
++> wasm 资产删除留待真机回归通过后执行。
++
+ **本卡不做**：删除任何兜底岛资产（第 2 项的前置条件尚未满足）。本卡只交付「开关」与清单。
+ 
+ ## 8. 与 P1 `core/importer` 的衔接
