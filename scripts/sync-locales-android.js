@@ -10,6 +10,14 @@
 // Subset policy (ADR-004): only en + zh-CN are bundled with the APK today
 // (the desktop ships 41 locales; ~1.4k keys each). The script is the single
 // place to extend ANDROID_LOCALES when on-demand locale packs land (P6+).
+//
+// LINE-ENDING POLICY (root-cause fix for the recurring "manifest sha256
+// drift for en" CI red): all reads are normalized CRLF → LF before hashing
+// or comparing, and bundled files are always written with LF. Without this,
+// a Windows working tree (core.autocrlf=true) hashes CRLF bytes into
+// manifest.json while the Linux runner checks out LF bytes — the guard then
+// fails on CI even moments after a "sync" on Windows. Normalize once here,
+// and the manifest sha becomes platform-independent.
 'use strict';
 
 const fs = require('fs');
@@ -32,6 +40,18 @@ function fail(msg) {
   process.exit(2);
 }
 
+/** Read a text file with CRLF/BOM normalized away (platform-independent). */
+function readNormalized(file) {
+  return fs
+    .readFileSync(file, 'utf8')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n');
+}
+
+function sha256(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
 function main() {
   if (!fs.existsSync(SRC_DIR)) fail(`missing desktop locales dir: ${SRC_DIR}`);
 
@@ -39,7 +59,7 @@ function main() {
   for (const code of ANDROID_LOCALES) {
     const srcFile = path.join(SRC_DIR, `${code}.json`);
     if (!fs.existsSync(srcFile)) fail(`missing locale source: ${code}.json`);
-    const raw = fs.readFileSync(srcFile, 'utf8');
+    const raw = readNormalized(srcFile);
     const parsed = JSON.parse(raw); // validates before bundling
     const keys = Object.keys(parsed);
     if (keys.length === 0) fail(`locale ${code} parsed empty`);
@@ -48,11 +68,11 @@ function main() {
     manifest.locales.push(code);
     manifest.source[code] = {
       keys: keys.length,
-      sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+      sha256: sha256(raw),
     };
 
     const outFile = path.join(OUT_DIR, `${code}.json`);
-    const outRaw = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : null;
+    const outRaw = fs.existsSync(outFile) ? readNormalized(outFile) : null;
     if (CHECK) {
       if (outRaw === null) fail(`missing bundled locale: ${outFile}`);
       if (outRaw !== raw) fail(`bundled ${code}.json drifted from src/assets/locales — run sync`);
@@ -75,7 +95,7 @@ function main() {
       }
     }
   } else {
-    fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
   }
 
   console.log(
