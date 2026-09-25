@@ -1389,5 +1389,12 @@
   "Pitch": "Pitch",
   "Volume": "Volume",
   "Done": "Done",
-  "Text to speech": "Text to speech"
+  "Text to speech": "Text to speech",
+  "No dictionary installed": "No dictionary installed",
+  "Default dictionary": "Default dictionary",
+  "Set default": "Set default",
+  "Move up": "Move up",
+  "Move down": "Move down",
+  "Bundled": "Bundled",
+  "Imported": "Imported"
 }

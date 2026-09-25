@@ -59,6 +59,7 @@ fun LibraryScreen(
     onOpenBackup: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
     onOpenStats: () -> Unit = {},
+    onOpenDictionary: () -> Unit = {},
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val books by viewModel.libraryBooks.collectAsStateWithLifecycle()
@@ -152,6 +153,10 @@ fun LibraryScreen(
                             DropdownMenuItem(
                                 text = { Text(t("Reading Stats")) },
                                 onClick = { onOpenStats(); menuOpen = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Dictionary")) },
+                                onClick = { onOpenDictionary(); menuOpen = false },
                             )
                             DropdownMenuItem(
                                 text = { Text("${t("Language")}: ${languageLabel(i18nLanguage)}") },

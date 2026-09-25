@@ -113,7 +113,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
 | P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
 | P5.5 FB2/DOCX/HTML/MHTML | 单独立项评估 | ✅ 评估 + ADR-006（**仅文档**） | n/a | n/a | ❌ 4 个 include 是幽灵工程（已注释） |
-| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 接线（§11）+ **统计入口**（§14）已做 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | 🟡 **统计已可达**；TTS/词典/翻译 的屏幕仍未挂载（`scripts/check-p6-entries.js` 把它们连同"为什么没挂"一起列为 pending） |
+| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 接线（§11）+ **统计/词典入口**（§14/§15）已做 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | 🟡 **统计、词典已可达**；TTS/翻译 的屏幕仍未挂载（`scripts/check-p6-entries.js` 把它们连同"为什么没挂"一起列为 pending） |
 | P7 本地备份 | zip 导入导出、数据导入导出（无云同步） | ✅ `BackupScreen` + `core:dbio` | ✅ | 22（3 失败） | ✅ |
 | P8 收尾 | 兜底岛下线、体积优化、Crash、Macrobenchmark | ✅ crash + benchmarks + 4 个 patch；体积已实测 | ✅ | crash 15 | 🟡 默认构建**仍打包兜底岛**（等 P8-F1 intent 路由迁移）；`:benchmarks` 需真机 |
 
@@ -136,7 +136,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | # | 缺口 | 影响 | 阻断条件 |
 |---|---|---|---|
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
-| 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计已接（§14）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）；词典/翻译的屏幕、以及 TTS 的启动 UI 仍未挂载——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
+| 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计 + 词典已接（§14/§15）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）、OCR 下载层已修（§13）；翻译的弹窗与 TTS 的启动 UI 仍待接——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
 | 5 | ~~OCR 下载适配层~~ | **已修（见 §13）**：`ModuleInstallClient` 对本模块不可用（ML Kit options 不是 `OptionalModuleApi`），改为「manifest 预下载 + 探针重试」实现，两个被 quarantine 的文件重新参与编译 | — |
@@ -326,7 +326,7 @@ TTS 的**接线**已完成（§11），统计的**入口**已完成（§14）。
 | 档 | 模块 | 状态 |
 |---|---|---|
 | 低 | 统计(`feature:stats`) | ✅ **已接**（§14：`StatsRoute` + 书库菜单项 + 导航路由） |
-| 低 | 词典(`feature:dictionary`) | ⏳ 未接：需要 app 侧 `DictRepository(filesDir)` 状态装配 + SAF 导入 `.mdx/.mdd`；云端目录还缺 `dicts/manifest.json` 资产与 HTTP `OnDemandDownloader` 实现 |
+| 低 | 词典(`feature:dictionary`) | ✅ **已接**（§15：`DictionaryRoute` + SAF 导入 `.mdx/.mdd` + 启停/排序/默认；云端目录未挂，无下载区） |
 | 低 | 简繁(`core:locale`) | ⏳ 无屏幕可挂：它的接入点是**阅读器文本管线**（OpenCC 转换），不是独立页面 |
 | 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate` 的 `TranslationPopup`) | ⏳ 需要阅读器内叠加 UI，依赖 gap 1 的 reader host |
 | 高 | TTS(`feature:tts` 的 `TtsControlSheet`) | ⏳ 需要可朗读的文本阅读器（gap 1）；manifest/通知/服务**已就绪**（§11） |
@@ -355,7 +355,7 @@ release 形态最大单项。三条路线中，**用户选择维持现状**：�
 | # | 缺口 | 状态 |
 |---|---|---|
 | 1 | EPUB 原生阅读器 | 未做：8–12 周，切分见上 |
-| 2 | P6 模块入口 | 🟡 进行中：**统计已可达**（§14）+ TTS 接线（§11）+ OCR 下载层（§13）；词典/翻译/TTS 屏幕待接（门禁里带原因） |
+| 2 | P6 模块入口 | 🟡 进行中：**统计 + 词典已可达**（§14/§15）+ TTS 接线（§11）+ OCR 下载层（§13）；翻译弹窗/TTS 启动 UI 待接（门禁里带原因） |
 | 3 | `engine:toc` JSON | ✅ 已修（§8） |
 | 4 | 46 个失败测试 | ✅ 已修（§8） |
 | 5 | OCR 下载适配层 | ✅ 已修（§13，用户选定「跟随 Play 服务按需下载」） |
@@ -452,6 +452,39 @@ node scripts/check-elf-16kb.js <apk>                   → 4 个 .so 全 PASS
 ```
 
 **真机未验证**（按用户要求跳过）：统计页面的实际渲染、菜单项点击后的导航都只到「可编译 + 门禁」层。
+
+---
+
+## 15 · 缺口修复进展（第七轮：词典入口）
+
+缺口 2 的第二个切片：**词典管理现在可达**（`feature:dictionary` 的 `DictManagementScreen`）。
+
+| 项 | 内容 |
+|---|---|
+| 存储 | `DictRepository(context.filesDir)` —— 目录布局与桌面 `dict/<id>.<ext>` + `dict-index.json` 完全一致，桌面词典目录可直接搬过来 |
+| 导入 | SAF 多选（`OpenMultipleDocuments`，`*/*`：provider 把 `.mdx/.mdd` 报成 octet-stream，收窄过滤会把它们置灰）→ 暂存到 `cacheDir/dict-import/` → `installFromFile`（`.mdx` 会自动带上同名 `.mdd`）→ 清缓存 |
+| 纯逻辑抽出来可测 | `DictionaryImport`：文件名净化（分隔符/穿越一律变 `_`，全符号名回退 `dictionary`）、`.mdd` 伴生判定、**伴生文件先装**的顺序、暂存路径 |
+| 管理 | 启用/停用、设为默认、上移/下移、删除 —— 全部走仓库的同步 API，在 IO 线程执行后刷新状态 |
+| i18n | 新增 7 个桌面 key（`No dictionary installed` / `Default dictionary` / `Set default` / `Move up` / `Move down` / `Bundled` / `Imported`）到 en + zh-CN 并跑同步 |
+| 导航 | `ShellRoutes.DICTIONARY` + 书库菜单「Dictionary」 |
+
+**明确不伪造的一项**：**云端词典下载区不挂载**。`DictManagementState.cloudDicts` 传空列表，屏幕只在非空时才渲染下载区（`DictManagementScreen:121`），所以不会出现「有按钮但点不动」。原因：云端目录需要桌面 `dicts/manifest.json` 资产 + 一个 HTTP `OnDemandDownloader` 实现，模块目前都没有；补这两样之后只需把 `DictDownloadManager` 接进 `DictionaryRoute`。
+
+新增测试 `DictionaryImportTest` 6 项（净化、伴生判定、安装顺序、暂存目录不越界、目录自建）。
+
+验证：
+
+```
+node scripts/check-p6-entries.js                       → OK（**2 wired** / 2 pending + 原因 / 2 no-ui）
+gradle -p android --continue test                      → BUILD SUCCESSFUL
+                                                        1201 唯一测试 / 0 失败 / 1534 次执行 / 22 module 全绿
+gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（debug 37.13 MB，未变）
+node scripts/sync-locales-android.js --check           → OK（en 1398 / zh-CN 1408 keys）
+8 个 JS 守卫                                           → 全部 exit 0
+```
+
+**真机未验证**（按用户要求跳过）：词典导入的实际 SAF 交互、`.mdx` 解析与词典行渲染只到「可编译 + JVM 单测 + 门禁」层。
+
 
 
 

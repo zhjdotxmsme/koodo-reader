@@ -49,8 +49,9 @@ const MATRIX = [
   {
     module: 'feature/dictionary',
     screen: 'DictManagementScreen',
-    state: 'pending',
-    reason: 'needs the app-owned DictRepository + a SAF import flow for .mdx/.mdd packs',
+    state: 'wired',
+    hostFile: 'shell/DictionaryRoute.kt',
+    hostEntry: 'DictionaryRoute',
   },
   {
     module: 'feature/tts',

@@ -17,6 +17,7 @@ object ShellRoutes {
     const val BACKUP = "backup"
     const val TRASH = "trash"
     const val STATS = "stats"
+    const val DICTIONARY = "dictionary"
 
     fun reader(bookKey: String): String = "reader/${Uri.encode(bookKey)}"
 }
@@ -31,6 +32,7 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
                 onOpenBackup = { navController.navigate(ShellRoutes.BACKUP) },
                 onOpenTrash = { navController.navigate(ShellRoutes.TRASH) },
                 onOpenStats = { navController.navigate(ShellRoutes.STATS) },
+                onOpenDictionary = { navController.navigate(ShellRoutes.DICTIONARY) },
             )
         }
         composable(ShellRoutes.BACKUP) {
@@ -44,6 +46,11 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
         // nav entry closes.
         composable(ShellRoutes.STATS) {
             StatsRoute(onBack = { navController.popBackStack() })
+        }
+        // P6 dictionary manager: local .mdx/.mdd import + enable/order/default.
+        // The cloud catalogue is intentionally not mounted (see DictionaryRoute).
+        composable(ShellRoutes.DICTIONARY) {
+            DictionaryRoute(onBack = { navController.popBackStack() })
         }
         composable(
             route = ShellRoutes.READER,
