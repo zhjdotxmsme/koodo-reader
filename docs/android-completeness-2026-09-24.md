@@ -138,7 +138,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
 | 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计 + 词典已接（§14/§15）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）、OCR 下载层已修（§13）；翻译的弹窗与 TTS 的启动 UI 仍待接——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
-| 4 | ~~46 个失败测试~~ | **已全绿**：1155 个唯一测试 / 0 失败 / 22 module 全绿（见 §8） | — |
+| 4 | ~~46 个失败测试~~ | **已全绿**：1201 个唯一测试 / 0 失败 / 22 module 全绿（逐轮计数见 §8→§15） | — |
 | 5 | ~~OCR 下载适配层~~ | **已修（见 §13）**：`ModuleInstallClient` 对本模块不可用（ML Kit options 不是 `OptionalModuleApi`），改为「manifest 预下载 + 探针重试」实现，两个被 quarantine 的文件重新参与编译 | — |
 | 6 | ~~CB7（7z）~~ 已修 / CBR（rar） | CB7 可原生读；CBR 仍不可 | CB7 已接 commons-compress（见 §9）；**CBR 按 ADR-002 明确不做原生**（无纯 JVM 可用 RAR5 解压器，继续走兜底岛） |
 | 7 | MOBI HUFF/CDIC | 部分老 mobi 读不了 | `engine:mobi` 明确未实现压缩 17480 |
