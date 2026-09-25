@@ -1406,5 +1406,11 @@
   "Move up": "上移",
   "Move down": "下移",
   "Bundled": "内置",
-  "Imported": "已导入"
+  "Imported": "已导入",
+  "Index this page": "索引本页",
+  "Index all pages": "索引全部页",
+  "Indexed pages": "已索引页",
+  "Recognizing": "识别中",
+  "OCR model unavailable": "OCR 模型不可用",
+  "Clear OCR index": "清除 OCR 索引"
 }

@@ -69,6 +69,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.koodoreader.engine.pdf.OutlineResolver
 import com.koodoreader.engine.pdf.PdfSearchEngine
+import com.koodoreader.feature.ocr.OcrScript
 import com.koodoreader.reader.pdfhost.PdfJsHostBridge
 import com.koodoreader.reader.pdfhost.PdfRendererSnapshot
 import java.io.File
@@ -124,6 +125,7 @@ fun NativePdfScreen(
 
     var showOutline by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showOcr by remember { mutableStateOf(false) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // One engine WebView per book URL; the controller tears the document down on
@@ -150,12 +152,31 @@ fun NativePdfScreen(
     }
     val state = controller.state
 
+    // OCR (P6): the scanned-page index. Script comes from the UI language because
+    // `books` has no language column (documented in the completeness report §16).
+    val i18n = LocalI18n.current
+    val i18nLanguage by i18n.language.collectAsState()
+    val ocrController = remember(bridge, pdfFile, i18nLanguage) {
+        PdfOcrController(
+            context = context.applicationContext,
+            bookKey = pdfFile.nameWithoutExtension,
+            script = OcrScript.forLanguageTag(i18nLanguage),
+            raster = { page ->
+                controller.rasterForOcr(page)?.let(PdfOcrController::pageImage)
+            },
+            scope = scope,
+        )
+    }
+
     LaunchedEffect(controller) { controller.open() }
     DisposableEffect(controller) {
         onDispose {
             controller.close()
             assets.release(pdfFile)
         }
+    }
+    DisposableEffect(ocrController) {
+        onDispose { ocrController.close() }
     }
 
     state.error?.let { message ->
@@ -209,6 +230,17 @@ fun NativePdfScreen(
                     }
                     IconButton(onClick = { showSearch = true }, enabled = state.pageCount > 0) {
                         Icon(Icons.Filled.Search, contentDescription = t("Search in book"))
+                    }
+                    IconButton(
+                        onClick = {
+                            ocrController.refresh()
+                            showOcr = true
+                        },
+                        enabled = state.pageCount > 0,
+                    ) {
+                        // Text glyph on purpose: material-icons-core has no OCR icon
+                        // and material-icons-extended would add ~20 MB of classes.
+                        Text(t("OCR"), style = MaterialTheme.typography.labelMedium)
                     }
                     IconButton(
                         onClick = {
@@ -325,6 +357,24 @@ fun NativePdfScreen(
             onCycle = controller::cycleHit,
             onJump = controller::jumpToHit,
             onDismiss = { showSearch = false },
+        )
+    }
+
+    if (showOcr) {
+        PdfOcrDialog(
+            state = ocrController.state,
+            currentPage = state.page,
+            pageCount = state.pageCount,
+            onIndexPage = { page -> ocrController.index(page..page) },
+            onIndexAll = { ocrController.index(1..state.pageCount) },
+            onCancel = ocrController::cancel,
+            onSearch = ocrController::search,
+            onForget = ocrController::forget,
+            onJump = { page ->
+                controller.goTo(page)
+                showOcr = false
+            },
+            onDismiss = { showOcr = false },
         )
     }
 }

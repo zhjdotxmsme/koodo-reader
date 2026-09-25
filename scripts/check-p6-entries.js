@@ -70,12 +70,30 @@ const MATRIX = [
 /** Modules that deliberately have no screen to mount, with the real integration point. */
 const NO_UI = [
   {
-    module: 'feature/ocr',
-    integrationPoint: 'reader page scan + PdfHostBridge host (feature/ocr ships no composable)',
-  },
-  {
     module: 'core/locale',
     integrationPoint: 'reader text pipeline (OpenCC conversion), not a screen',
+  },
+];
+
+/**
+ * Modules whose P6 surface is not a screen but a pipeline inside a reader. Each
+ * one is checked as a reachability chain, because "the class exists" is exactly
+ * the state this guard exists to reject:
+ *
+ *   module symbol  →  integration file  →  host file  →  nav graph
+ *
+ * (e.g. feature/ocr's `OcrSearchRepository` is used by `PdfOcrController`, which
+ * the PDF screen constructs, which the reader route dispatches.)
+ */
+const INTEGRATIONS = [
+  {
+    module: 'feature/ocr',
+    symbol: 'OcrSearchRepository',
+    integrationFile: 'shell/PdfOcrController.kt',
+    integrationEntry: 'PdfOcrController',
+    hostFile: 'shell/NativePdfScreen.kt',
+    hostEntry: 'NativePdfScreen',
+    note: 'scanned-page OCR: raster → recognize → index → search inside the PDF reader',
   },
 ];
 
@@ -187,6 +205,43 @@ function main() {
     console.log(`  [no-ui]   ${entry.module} — ${entry.integrationPoint}`);
   }
 
+  console.log('\nPipeline integrations (reader-hosted, not screens):');
+  for (const entry of INTEGRATIONS) {
+    const moduleDir = path.join(ANDROID, ...entry.module.split('/'));
+    const moduleText = readDirKt(path.join(moduleDir, 'src', 'main'))
+      .map((f) => fs.readFileSync(f, 'utf8'))
+      .join('\n');
+    check(
+      `${entry.module} still declares ${entry.symbol}`,
+      new RegExp(`\\b(class|interface|object)\\s+${entry.symbol}\\b`).test(moduleText),
+    );
+
+    const appFile = (relative) =>
+      path.join(APP_SRC, 'com', 'koodoreader', 'reader', ...relative.split('/'));
+    const integrationPath = appFile(entry.integrationFile);
+    const integrationSource = fs.existsSync(integrationPath)
+      ? fs.readFileSync(integrationPath, 'utf8')
+      : null;
+    check(`${entry.integrationFile} exists`, integrationSource !== null, integrationPath);
+    check(
+      `${entry.integrationFile} uses ${entry.symbol}`,
+      integrationSource !== null && new RegExp(`\\b${entry.symbol}\\b`).test(integrationSource),
+    );
+
+    const hostPath = appFile(entry.hostFile);
+    const hostSource = fs.existsSync(hostPath) ? fs.readFileSync(hostPath, 'utf8') : null;
+    check(`${entry.hostFile} exists`, hostSource !== null, hostPath);
+    check(
+      `${entry.hostFile} constructs ${entry.integrationEntry}`,
+      hostSource !== null && new RegExp(`\\b${entry.integrationEntry}\\s*\\(`).test(hostSource),
+    );
+    check(
+      `${entry.hostEntry} is dispatched from the nav graph`,
+      new RegExp(`\\b${entry.hostEntry}\\s*\\(`).test(navGraph),
+    );
+    console.log(`  [pipeline] ${entry.module} → ${entry.integrationFile} → ${entry.hostFile} — ${entry.note}`);
+  }
+
   if (failures.length > 0) {
     console.error(`\n[check-p6-entries] ${failures.length} check(s) FAILED`);
     for (const f of failures) console.error(`  - ${f}`);
@@ -194,7 +249,7 @@ function main() {
   }
   console.log(
     `\n[check-p6-entries] OK — P6 surfaces: ${wired} wired, ${pending} pending (reasons above), ` +
-    `${NO_UI.length} with no screen`,
+    `${INTEGRATIONS.length} pipeline integration(s), ${NO_UI.length} with no integration yet`,
   );
 }
 

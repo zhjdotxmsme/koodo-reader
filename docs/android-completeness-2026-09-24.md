@@ -113,7 +113,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | P5 TXT/MD | 编码探测 + Markdown 子集 | 🟡 `engine:text` | ✅ | 71 | ❌ 未接线 |
 | P5 CBZ/CBR/CBT/CB7 | 懒加载图片阅读器 | 🟡 `engine:image`（CBZ/CBT/CB7 实装，**CBR 不原生**） | ✅ | 78 | ❌ 未接线 |
 | P5.5 FB2/DOCX/HTML/MHTML | 单独立项评估 | ✅ 评估 + ADR-006（**仅文档**） | n/a | n/a | ❌ 4 个 include 是幽灵工程（已注释） |
-| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 接线（§11）+ **统计/词典入口**（§14/§15）已做 | ✅ | 6 模块 289 全绿；locale 51（4 失败） | 🟡 **统计、词典已可达**；TTS/翻译 的屏幕仍未挂载（`scripts/check-p6-entries.js` 把它们连同"为什么没挂"一起列为 pending） |
+| P6 阅读增强 | TTS / 词典 / 翻译·AI / 段落·速读·阅读尺 / 统计 / OCR | 🟡 6 个 feature module + `core:locale` 全部交付；TTS 接线（§11）+ 统计/词典入口（§14/§15）+ **PDF 扫页 OCR 管线**（§16） | ✅ | 6 模块 289 全绿；locale 51（4 失败） | 🟡 **统计、词典、OCR 已可达**；TTS/翻译 的屏幕仍未挂载（`scripts/check-p6-entries.js` 把它们连同"为什么没挂"一起列为 pending） |
 | P7 本地备份 | zip 导入导出、数据导入导出（无云同步） | ✅ `BackupScreen` + `core:dbio` | ✅ | 22（3 失败） | ✅ |
 | P8 收尾 | 兜底岛下线、体积优化、Crash、Macrobenchmark | ✅ crash + benchmarks + 4 个 patch；体积已实测 | ✅ | crash 15 | 🟡 默认构建**仍打包兜底岛**（等 P8-F1 intent 路由迁移）；`:benchmarks` 需真机 |
 
@@ -136,7 +136,7 @@ gradle -p android --continue test     → BUILD FAILED（6 个 module 的既有�
 | # | 缺口 | 影响 | 阻断条件 |
 |---|---|---|---|
 | 1 | **EPUB 原生阅读器未接线** | P2（8–12 周的主力阶段）在 UI 上等于没做；EPUB 仍走兜底岛 | 需要 reader host：`:engine:layout` 接管排版 + `NativeReaderScreen` 接入 `ShellNavHost` + 与 CFI 存储打通 |
-| 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计 + 词典已接（§14/§15）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）、OCR 下载层已修（§13）；翻译的弹窗与 TTS 的启动 UI 仍待接——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
+| 2 | **P6 六个模块无入口** | 交付了但用户摸不到 | **统计 + 词典 + OCR 已接（§14/§15/§16）**；TTS 的 manifest/`<queries>`/通知/图标/i18n 已补（§11）；翻译的弹窗与 TTS 的启动 UI 仍待接——`scripts/check-p6-entries.js` 把剩余 backlog 与原因做成门禁 |
 | 3 | ~~`engine:toc` ReadingPosition JSON 非法~~ | **已修**（见 §8） | — |
 | 4 | ~~46 个失败测试~~ | **已全绿**：1201 个唯一测试 / 0 失败 / 22 module 全绿（逐轮计数见 §8→§15） | — |
 | 5 | ~~OCR 下载适配层~~ | **已修（见 §13）**：`ModuleInstallClient` 对本模块不可用（ML Kit options 不是 `OptionalModuleApi`），改为「manifest 预下载 + 探针重试」实现，两个被 quarantine 的文件重新参与编译 | — |
@@ -330,7 +330,7 @@ TTS 的**接线**已完成（§11），统计的**入口**已完成（§14）。
 | 低 | 简繁(`core:locale`) | ⏳ 无屏幕可挂：它的接入点是**阅读器文本管线**（OpenCC 转换），不是独立页面 |
 | 中 | 段落/速读/阅读尺（`engine:layout` 相关）、翻译(`feature:translate` 的 `TranslationPopup`) | ⏳ 需要阅读器内叠加 UI，依赖 gap 1 的 reader host |
 | 高 | TTS(`feature:tts` 的 `TtsControlSheet`) | ⏳ 需要可朗读的文本阅读器（gap 1）；manifest/通知/服务**已就绪**（§11） |
-| 高 | OCR(`feature:ocr`) | ⏳ 无屏幕：接入点是「扫页 → 识别 → 索引检索」，挂在 PDF/阅读器宿主上；下载层已修（§13） |
+| 高 | OCR(`feature:ocr`) | ✅ **管线已接**（§16：栅格 → 识别 → 索引 → 检索，挂在 PDF 阅读器上；下载层见 §13） |
 
 ### #5 OCR 下载适配层 —— 已修（用户选定「跟随 Play 服务按需下载」）
 
@@ -355,7 +355,7 @@ release 形态最大单项。三条路线中，**用户选择维持现状**：�
 | # | 缺口 | 状态 |
 |---|---|---|
 | 1 | EPUB 原生阅读器 | 未做：8–12 周，切分见上 |
-| 2 | P6 模块入口 | 🟡 进行中：**统计 + 词典已可达**（§14/§15）+ TTS 接线（§11）+ OCR 下载层（§13）；翻译弹窗/TTS 启动 UI 待接（门禁里带原因） |
+| 2 | P6 模块入口 | 🟡 进行中：**统计 + 词典 + OCR 管线已可达**（§14/§15/§16）+ TTS 接线（§11）+ OCR 下载层（§13）；翻译弹窗/TTS 启动 UI 待接（门禁里带原因） |
 | 3 | `engine:toc` JSON | ✅ 已修（§8） |
 | 4 | 46 个失败测试 | ✅ 已修（§8） |
 | 5 | OCR 下载适配层 | ✅ 已修（§13，用户选定「跟随 Play 服务按需下载」） |
@@ -484,6 +484,55 @@ node scripts/sync-locales-android.js --check           → OK（en 1398 / zh-CN 
 ```
 
 **真机未验证**（按用户要求跳过）：词典导入的实际 SAF 交互、`.mdx` 解析与词典行渲染只到「可编译 + JVM 单测 + 门禁」层。
+
+---
+
+## 16 · 缺口修复进展（第八轮：OCR 接入已跑通的 PDF 阅读器）
+
+缺口 2 的高风险档：**扫描版 PDF 的 OCR 现在可用**（`feature:ocr` ⇄ P3 阅读器）。这是 §12/§14 里记的接入点——"扫页 → 识别 → 索引 → 检索"，挂在阅读器上而不是独立页面。
+
+链路（每一步都是已交付件，本轮只补胶水）：
+
+```
+PdfReaderController.rasterForOcr(page, 1600px)   ← pdf.js renderPage（比屏幕栅格更清晰）
+        ↓ Bitmap → MlKitPageImage
+PdfOcrIndexer.run(pages, raster)                 ← 纯 Kotlin 的索引循环（进度/失败/提前停止）
+        ↓
+OcrSearchRepository.indexPage(request, image)    ← 模块自带：按需装模型 → ML Kit 识别 → 归一化 → CJK 分词 → Room 索引
+        ↓ query
+OcrSearchRepository.search(q, bookKey)           ← 打分（0.75·token 覆盖 + 0.25·整串命中）+ 片段
+        ↓ 点击结果
+PdfReaderController.goTo(page)                   ← 跳页
+```
+
+UI：PDF 工具栏新增 **OCR** 入口（文字字形，`material-icons-core` 没有 OCR 图标，extended 会加 ~20MB 类）→ 弹窗含「索引本页 / 索引全部页 / 取消 / 清除 OCR 索引」+ 已索引页码 + 逐页进度条 + 检索框与结果列表。6 个新 key（`Index this page` / `Index all pages` / `Indexed pages` / `Recognizing` / `OCR model unavailable` / `Clear OCR index`）已加入 en + zh-CN 并同步。
+
+**设计取舍（都写进代码注释与本文档，未藏在行为里）**：
+
+1. **只做显式索引，不自动扫**：桌面是边读边自动 OCR；这里改为用户点「索引」才跑。理由是耗电/发热与隐私（识别文本会落盘到 Room），代价是首次检索前需要手动索引——按需索引整本 900 页时约数十秒~分钟级，进度条可见且可取消。
+2. **脚本语言取 UI 语言**：`books` 表没有语言列，`OcrScript.forLanguageTag(UI 语言)` 是唯一可得信号。**Latin 界面读中文扫描件必须先切语言**——这是真实限制，不是可以靠猜补上的东西（要根治需给书籍加语言列或在设置里给 OCR 语言开关）。
+3. **OCR 检索与 pdf.js 文本检索分成两个入口**：扫描件没有文本层，这是 OCR 存在的理由；合并成一个"搜索"会让两条完全不同的数据源互相遮蔽。
+4. **模型装不上就整轮停**：`MlKitOcrInstaller` 的探针失败 → `OcrIndexReceipt.ModelUnavailable` → 索引循环带原因提前结束（不让 500 页跑一遍同样的失败），弹窗显示「OCR 模型不可用: <原因>」。离线/无 GMS 设备属该路线的已知代价（§13）。
+5. **逐页进度是确定的，字节进度仍是空的**：ML Kit 不暴露模型字节进度（§5.2.1），所以"装模型"阶段只能是不确定进度，"识别"阶段是页级确定进度。
+
+新增单测 `PdfOcrIndexerTest` 8 项：按序索引与进度单调、空页计为 empty、栅格失败只丢该页、识别异常只丢该页、**模型不可用提前停止且后续页零调用**、已装模型不重复下载、空范围是 no-op、索引结果能被同一仓库检出。
+
+门禁升级：`scripts/check-p6-entries.js` 新增 **pipeline integration** 检查（三跳可达：模块符号 → 集成文件 → 宿主文件 → nav graph），`feature/ocr` 由 `no-ui` 升级为已接管线。负例验证：把宿主里的 `PdfOcrController(` 改名 → exit 1 并指出「宿主没有构造集成件」。
+
+验证：
+
+```
+node scripts/check-p6-entries.js                       → OK（2 wired / 2 pending / **1 pipeline** / 1 no-ui）+ 负例 exit 1
+gradle -p android :app:testDebugUnitTest               → 40/40（新增 PdfOcrIndexerTest 8）
+gradle -p android --continue test                      → BUILD SUCCESSFUL
+                                                        1209 唯一测试 / 0 失败 / 1558 次执行 / 22 module 全绿
+gradle -p android :app:assembleDebug -Ptarget=native   → BUILD SUCCESSFUL（debug 37.13 MB，未变）
+node scripts/check-elf-16kb.js <apk>                   → 4 个 .so 全 PASS（OCR 仍不引入 `.so`）
+node scripts/sync-locales-android.js --check           → OK（en 1404 / zh-CN 1414 keys）
+```
+
+**真机未验证**（按用户要求跳过）：ML Kit 识别的实际准确率、模型下载联网路径、大文档索引耗时都未在设备上跑过——只到「可编译 + 8 项索引循环单测 + 门禁链」这一层。
+
 
 
 

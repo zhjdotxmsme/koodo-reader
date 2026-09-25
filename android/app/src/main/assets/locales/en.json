@@ -1396,5 +1396,11 @@
   "Move up": "Move up",
   "Move down": "Move down",
   "Bundled": "Bundled",
-  "Imported": "Imported"
+  "Imported": "Imported",
+  "Index this page": "Index this page",
+  "Index all pages": "Index all pages",
+  "Indexed pages": "Indexed pages",
+  "Recognizing": "Recognizing",
+  "OCR model unavailable": "OCR model unavailable",
+  "Clear OCR index": "Clear OCR index"
 }

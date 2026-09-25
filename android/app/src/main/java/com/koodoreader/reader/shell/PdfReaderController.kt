@@ -1,5 +1,6 @@
 package com.koodoreader.reader.shell
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -295,6 +296,22 @@ class PdfReaderController(
     fun dismissError() {
         state = state.copy(error = null)
     }
+
+    /**
+     * Rasterise [page] for OCR at a fixed, larger width than the on-screen pass.
+     *
+     * Runs on IO because it blocks on a pdf.js round trip; the caller (the OCR
+     * pass) then hands the bitmap to `feature:ocr`. Returns null when the engine
+     * refuses the page — the indexer counts it as a failed page rather than
+     * aborting the pass.
+     */
+    suspend fun rasterForOcr(page: Int, widthPx: Int = PdfOcrController.RASTER_WIDTH_PX): Bitmap? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = bridge.renderPage(page, widthPx)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
 
     companion object {
         const val SNAPSHOT_DIR = "pdf-shots"
