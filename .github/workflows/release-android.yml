@@ -82,6 +82,9 @@ jobs:
       - name: Check bundled locales match src/assets/locales (i18n bridge guard)
         run: node scripts/sync-locales-android.js --check
 
+      - name: Check P6 locale packs, OpenCC seed and doc hash table (locale guard)
+        run: node scripts/check-locales.mjs
+
       - name: Check TTS manifest wiring matches the feature module (P6 guard)
         run: node scripts/check-tts-manifest.js
 

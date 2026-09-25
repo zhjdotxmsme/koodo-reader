@@ -72,6 +72,21 @@ function read(file) {
   return fs.readFileSync(file, 'utf8');
 }
 
+/**
+ * Read with CRLF/BOM normalised away — the SAME rule
+ * `scripts/sync-locales-android.js` hashes with.
+ *
+ * Without this, part A compares a Windows checkout (desktop sources CRLF) with
+ * bundled assets written by the sync script (LF) and reports drift that does not
+ * exist; that mismatch is why this guard was never wired into CI while parts
+ * B–D (the P6 locale/OpenCC drift it exists for) stayed unenforced.
+ */
+function readNormalized(file) {
+  return read(file)
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n');
+}
+
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
@@ -111,7 +126,7 @@ function checkSources(bundled) {
     .sort();
 
   for (const code of codes) {
-    const raw = read(path.join(SRC_DIR, `${code}.json`));
+    const raw = readNormalized(path.join(SRC_DIR, `${code}.json`));
     let parsed;
     try {
       parsed = JSON.parse(raw); // same validation the sync script performs
@@ -147,11 +162,11 @@ function checkBundledAssets(bundled, sources) {
       fail(`missing bundled locale: ${path.relative(ROOT, outFile)} — run sync-locales-android.js`);
       continue;
     }
-    const bundledRaw = read(outFile);
+    const bundledRaw = readNormalized(outFile);
     if (bundledRaw !== source.raw) {
       fail(`bundled ${code}.json drifted from src/assets/locales — run sync-locales-android.js`);
     } else {
-      ok(`bundled ${code}.json: byte-identical, ${source.keys} keys`);
+      ok(`bundled ${code}.json: identical after EOL normalisation, ${source.keys} keys`);
     }
   }
 

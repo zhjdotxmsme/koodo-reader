@@ -85,7 +85,18 @@ interface LocalePackDownloader {
 /** SHA-256 helper (no dependency). */
 object Sha256 {
 
-    fun hex(text: String): String = hex(text.toByteArray(StandardCharsets.UTF_8))
+    /**
+     * Canonical pack hash: over the LF-normalised text, BOM stripped.
+     *
+     * Why not the raw bytes: the desktop locale sources are the pack origin, and
+     * git stores them with LF — `core.autocrlf=true` rewrites only the working
+     * tree, so a Windows checkout hashes CRLF bytes while CI/Linux hashes LF. The
+     * same locale would then have two hashes and the download manifest in
+     * docs/p6-zh-locale-design.md could match only one platform. That table is
+     * what `scripts/check-locales.mjs` part C compares against, so both sides
+     * normalise.
+     */
+    fun hex(text: String): String = hex(canonicalBytes(text))
 
     fun hex(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
@@ -95,6 +106,12 @@ object Sha256 {
             sb.append(HEX[v ushr 4]).append(HEX[v and 0x0F])
         }
         return sb.toString()
+    }
+
+    /** BOM-stripped, CRLF→LF bytes — the rule the manifest table is generated with. */
+    fun canonicalBytes(text: String): ByteArray {
+        val withoutBom = if (text.startsWith('\uFEFF')) text.substring(1) else text
+        return withoutBom.replace("\r\n", "\n").toByteArray(StandardCharsets.UTF_8)
     }
 
     private const val HEX = "0123456789abcdef"

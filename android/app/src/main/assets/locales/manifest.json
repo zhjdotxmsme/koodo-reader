@@ -6,12 +6,12 @@
   "source": {
     "en": {
       "keys": 1405,
-      "sha256": "1c09479a5864e52ec358a6862c3d54c78b96e9f3f1f928d22899f052ce5353b4"
+      "sha256": "c1eea10d36f42292559dd85a982afb2419e5b8736927b7d25b1ba043fca1986e"
     },
     "zh-CN": {
       "keys": 1415,
-      "sha256": "2c35587a1105e354023405df18c1763c0a59fdca1acb28965c4448074a213c4f"
+      "sha256": "bae35c81f3f535c22d614f8ae9a6566fb0bb00d60a89a2f6c5f84a3b411f91b2"
     }
   },
-  "syncedAt": "2026-09-25T00:33:23.394Z"
+  "syncedAt": "2026-09-25T04:02:49.179Z"
 }

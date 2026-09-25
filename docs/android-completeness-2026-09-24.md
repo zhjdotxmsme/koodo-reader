@@ -623,6 +623,31 @@ node scripts/check-phantom-tests.js   → OK — 120 个测试类 / 23 个模块
 
 本轮**未处理**（注册它需要确认它是否与 `:app` 现有实现重复、能否编译；删除它又会丢 P2 的设计令牌源码）——这是产品/架构决定，已记在此处并在门禁里以 WARNING 形式长期可见。
 
+### 18.2 同一类问题再现：写好了却没人运行的守卫（`check-locales.mjs`）
+
+顺着"沉默失效"这条线排查 `scripts/*` 与 CI 的差集，发现 **`check-locales.mjs` 从未被 CI 调用**。它不是可有可无的脚本：Part B/C/D 覆盖 `core:locale` 模块形状、39 个按需 locale 列表与桌面 41 − 打包 2 的一致性、**`docs/p6-zh-locale-design.md` 的 39 条 sha256 下载清单**、以及 OpenCC 种子可逆性。
+
+因为没人跑，它下面压着两个真实缺陷：
+
+1. **哈希规则依赖平台**：`sync-locales-android.js` 早已把 CRLF→LF 归一后再比较（否则 CI 恒红），而 `check-locales.mjs` 的 Part A 直接比较原始文本、`core:locale` 的 `Sha256.hex(text)` 直接哈希原始字节。git 以 LF 存储桌面 locale（`core.autocrlf=true` 只改工作区），于是**同一个 locale 在 Windows 与 Linux 上有两个哈希**——那张"下载清单"只能匹配一边，运行时校验必然在其中一端失败。（自查证：文档表里 `am` 的哈希等于 Windows 工作区 CRLF 字节的哈希。）
+2. **下载清单已过期**：39 条 sha256 与实际源文件不符（脚本自报 39 处漂移）。
+
+修复：
+- `check-locales.mjs` Part A 采用与同步脚本相同的 BOM/CRLF 归一（它头部早就声称"same semantics"，现在才是真的）；
+- `core:locale` 的 `Sha256.hex(text)` 改为对**归一化后的字节**做哈希，并暴露 `canonicalBytes`；新增 `Sha256CanonicalisationTest`（CRLF==LF、BOM 不影响、真改动仍改变哈希）；
+- `docs/p6-zh-locale-design.md` 的 39 行 pack 表用 `--print-pack-table` 按新规则重生成，并写明规则与原因；
+- `check-locales.mjs` 接入 CI（native workflow，紧跟 `sync-locales-android.js --check`）。
+
+验证：
+
+```
+node scripts/check-locales.mjs   → OK（41 desktop locales / 2 bundled / 39 on demand / seed + doc table verified）
+gradle -p android :core:locale:test → BUILD SUCCESSFUL
+```
+
+顺带说明为什么这批修复值得做：这类"守卫存在但没接线"和 §18 的"测试存在但没执行"是同一个失败模式——**校验的价值只有在真的跑起来时才存在**。
+
+
 
 
 
