@@ -170,6 +170,9 @@ jobs:
           # the moment it is registered in settings.gradle.
           gradle test --no-daemon --console=plain
 
+      - name: Check every @Test class actually produced results (phantom-test guard)
+        run: node scripts/check-phantom-tests.js
+
       - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
         run: node scripts/build-android.js --target webview,native --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
 

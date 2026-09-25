@@ -593,6 +593,37 @@ Git Bash 下 --dry-run                        → SIGSEGV（Git-Bash/Win 环境�
 - **P1-DEVICE**：`bash scripts/ci-macro-benchmark.sh`（4 项指标，脚本已就绪且语法通过）→ 回填 `docs/android-baseline.json` 的 `device.*` → ADR-010。
 - **P1-IMPORT**：真机 1000 本复测（`dumpsys meminfo` 峰值 + logcat 无 FATAL）→ ADR-011 + 设备 CSV。JVM 侧的数字（§17.3）可作为对照基线，但**不能当作设备指标**。
 
+---
+
+## 18 · 系统性防线：把"幽灵测试"变成机器可查（第十轮）
+
+§17.2 的 `ImportPipelineTest` 不是孤立事故，而是一类**沉默失效**：一个类看起来在提供覆盖，实际一条结果都没产出。同类还有两种形态：测试方法写成 `@Test suspend fun`（JUnit 5 无法调用）、模块压根没注册进 `settings.gradle`（整个模块不参与构建）。
+
+于是新增 `scripts/check-phantom-tests.js`（CI 放在 `gradle test` **之后**，因为要读 `build/test-results`）：
+
+- 对每个带 `src/test` 的模块，解析**类体内**真正声明了 `@Test` 的类（按花括号配平，避免把测试文件里的辅助类如 `AnnotationStore` 误报）；
+- 与 `build/test-results/**/TEST-*.xml` 比对；`@Nested` 内部类会生成 `Outer$Inner.xml` 而没有 `Outer.xml`，因此"跑过"按 `$` 前缀匹配（否则 `LinkRouterTest` 会被误报）；
+- 未注册进 `settings.gradle` 的模块单独 WARNING（注册还是删除是主线程决定，不让它把 CI 挂掉）。
+
+当前结果与负例验证：
+
+```
+node scripts/check-phantom-tests.js   → OK — 120 个测试类 / 23 个模块全部产出结果
+                                        WARNING core/designsystem（不在 settings.gradle 内）
+负例（临时加一个 @Test suspend fun 类） → exit 1 并点名该类的模块与原因
+```
+
+### 18.1 连带发现：`core/designsystem` 整个模块不在构建里
+
+`android/core/designsystem/` 有生产源码 + 4 个测试类（`ThemePresetTest`/`TypographyTokensTest`/`FontCatalogEntryTest`/`AppearanceCodecTest`）与 `DesignSystemSelfCheck`，但：
+
+- `android/settings.gradle` 里**没有** `include ':core:designsystem'`；
+- 没有任何模块 `implementation project(':core:designsystem')`（只有两处注释提到它）；
+- 因此它**从不编译、从不测试**——P2 卡「主题/字体/行距/边距/背景（core/designsystem 原生轨）」标为 done，而实际生效的是 `:app/shell/Theme.kt` + `FontCatalog/FontManager` 这一套。
+
+本轮**未处理**（注册它需要确认它是否与 `:app` 现有实现重复、能否编译；删除它又会丢 P2 的设计令牌源码）——这是产品/架构决定，已记在此处并在门禁里以 WARNING 形式长期可见。
+
+
 
 
 
