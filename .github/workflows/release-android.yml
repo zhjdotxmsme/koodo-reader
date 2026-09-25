@@ -13,7 +13,8 @@
 #   - GitHub UI: Actions 标签页 -> "Build/release-android" -> Run workflow
 #   - tag: git tag v2.4.4 && git push origin v2.4.4(APK 会附到该 Release)
 #
-# 产物: android/app/build/outputs/apk/<abi>/app-debug-<abi>.apk(默认 arm64-v8a + armeabi-v7a)
+# 产物: android/app/build/outputs/apk/<abi>/app-debug-<abi>.apk(arm64-v8a；2018 年后
+#       的手机均为 64 位。armeabi-v7a/32 位不再出包——当前 APK 内零 .so，双 ABI 本无差异)
 
 name: Build/release-android
 
@@ -25,7 +26,7 @@ on:
 
 jobs:
   android-apk:
-    name: Build installable debug APKs (arm64-v8a + armeabi-v7a)
+    name: Build installable debug APK (arm64-v8a)
     runs-on: ubuntu-22.04
     env:
       ANDROID_API_LEVEL: 34
@@ -179,8 +180,8 @@ jobs:
       - name: Smoke the P7 backup zip against the desktop sql.js reader
         run: node scripts/smoke-zip-restore.js
 
-      - name: Verify all features are packaged, then build per-ABI debug APKs (self-signed, installable)
-        run: node scripts/build-android.js --target webview,native --debug --abi arm64-v8a,armeabi-v7a --audit --verbose
+      - name: Verify all features are packaged, then build the arm64-v8a debug APK (self-signed, installable)
+        run: node scripts/build-android.js --target webview,native --debug --abi arm64-v8a --audit --verbose
 
       - name: "16 KB page-size guard (every .so inside every built APK)"
         shell: bash
@@ -229,5 +230,5 @@ jobs:
           gh release delete "$GITHUB_REF_NAME" --yes >/dev/null 2>&1 || true
           gh release create "$GITHUB_REF_NAME" \
             --title "Koodo Reader $GITHUB_REF_NAME (Android)" \
-            --notes "Koodo Reader Android — self-signed debug APKs, dual-track (docs/android-native-migration.md): *-native*.apk = P1 native shell (bookshelf, SAF import, desktop .db backup bridge); the plain .apk = WebView full-feature track. arm64-v8a + armeabi-v7a. Install directly on a device (allow unknown sources)." \
+            --notes "Koodo Reader Android — self-signed debug APK, arm64-v8a (64-bit; covers essentially all devices since 2018), dual-track (docs/android-native-migration.md): *-native*.apk = native shell (bookshelf, SAF import, desktop .db backup bridge); the plain .apk = WebView full-feature track. Install directly on a device (allow unknown sources)." \
             out/*.apk
