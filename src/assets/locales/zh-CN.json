@@ -1412,5 +1412,6 @@
   "Indexed pages": "已索引页",
   "Recognizing": "识别中",
   "OCR model unavailable": "OCR 模型不可用",
-  "Clear OCR index": "清除 OCR 索引"
+  "Clear OCR index": "清除 OCR 索引",
+  "OCR": "文字识别"
 }

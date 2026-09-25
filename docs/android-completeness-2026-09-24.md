@@ -505,7 +505,7 @@ OcrSearchRepository.search(q, bookKey)           ← 打分（0.75·token 覆盖
 PdfReaderController.goTo(page)                   ← 跳页
 ```
 
-UI：PDF 工具栏新增 **OCR** 入口（文字字形，`material-icons-core` 没有 OCR 图标，extended 会加 ~20MB 类）→ 弹窗含「索引本页 / 索引全部页 / 取消 / 清除 OCR 索引」+ 已索引页码 + 逐页进度条 + 检索框与结果列表。6 个新 key（`Index this page` / `Index all pages` / `Indexed pages` / `Recognizing` / `OCR model unavailable` / `Clear OCR index`）已加入 en + zh-CN 并同步。
+UI：PDF 工具栏新增 **OCR** 入口（文字字形，`material-icons-core` 没有 OCR 图标，extended 会加 ~20MB 类）→ 弹窗含「索引本页 / 索引全部页 / 取消 / 清除 OCR 索引」+ 已索引页码 + 逐页进度条 + 检索框与结果列表。7 个新 key（`OCR` / `Index this page` / `Index all pages` / `Indexed pages` / `Recognizing` / `OCR model unavailable` / `Clear OCR index`）已加入 en + zh-CN 并同步。
 
 **设计取舍（都写进代码注释与本文档，未藏在行为里）**：
 
