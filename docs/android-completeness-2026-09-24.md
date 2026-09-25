@@ -647,6 +647,22 @@ gradle -p android :core:locale:test → BUILD SUCCESSFUL
 
 顺带说明为什么这批修复值得做：这类"守卫存在但没接线"和 §18 的"测试存在但没执行"是同一个失败模式——**校验的价值只有在真的跑起来时才存在**。
 
+### 18.3 同一类问题第三例：P7 备份冒烟从未在 CI 跑
+
+`scripts/smoke-zip-restore.js`（+ 它调用的 `verify-desktop-read.js`）证明的是**"桌面 .db 双向可读"中最难的那一半**：`:core:dbio` 产出的桌面备份 zip，用桌面还原路径同一套 sql.js WASM 打开并逐字段核对（含 12 列 `books` schema 与封面）。它同样从未被 CI 调用。
+
+本地实测（`:core:dbio` 的 JUnit 用例会写 `build/export-sample/KoodoReader-Backup-sample.zip`，CI 的 `gradle test` 之后即可跑）：
+
+```
+node scripts/smoke-zip-restore.js
+  → all five table entries + config.json present (desktop restore shape)
+  → verify-desktop-read: sql.js opened 1 books / 1 notes, 12-column books schema intact, cover present
+  → PASS
+```
+
+已接入 CI（放在 `gradle test` 与幽灵测试门禁之后，因为它需要测试产物）。同一轮排查的其余未接线脚本（`measure-*`、`i18n-script`、`patch-nan`、`android-baseline`、`stage-pdf-engine-assets`）属**手动工具**而非门禁：其中 `stage-pdf-engine-assets.js` 与 `measure-*` 已在本轮或前轮文档里说明用途，未强行接入 CI。唯一仍值得后续补的门禁是"staged pdf.js 资产 vs 桌面 `public/lib/pdfjs` 是否过期"（当前靠人工重跑 staging 脚本）。
+
+
 
 
 
