@@ -1413,5 +1413,10 @@
   "Recognizing": "识别中",
   "OCR model unavailable": "OCR 模型不可用",
   "Clear OCR index": "清除 OCR 索引",
-  "OCR": "文字识别"
+  "OCR": "文字识别",
+  "Library": "书库",
+  "Settings": "设置",
+  "Content Sources": "内容源",
+  "No notes yet": "暂无笔记",
+  "Favorite": "已收藏"
 }

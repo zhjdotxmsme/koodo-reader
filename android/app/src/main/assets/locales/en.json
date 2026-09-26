@@ -1403,5 +1403,10 @@
   "Recognizing": "Recognizing",
   "OCR model unavailable": "OCR model unavailable",
   "Clear OCR index": "Clear OCR index",
-  "OCR": "OCR"
+  "OCR": "OCR",
+  "Library": "Library",
+  "Settings": "Settings",
+  "Content Sources": "Content Sources",
+  "No notes yet": "No notes yet",
+  "Favorite": "Favorite"
 }
