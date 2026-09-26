@@ -36,6 +36,16 @@ interface ReaderSession : AutoCloseable {
 }
 
 /**
+ * 从已存储的位置 CFI 恢复起始页：无进度、空白或 CFI 不属于本文档时回到第
+ * 0 页。翻页写进度（[ReaderProgressPrefs]）/ 打开恢复走这一个入口，纯函数
+ * 可 JVM 测。
+ */
+fun ReaderSession.resumePage(storedCfi: String?): Int {
+    if (storedCfi.isNullOrBlank()) return 0
+    return pageForCfi(storedCfi)?.coerceIn(0, (pageCount - 1).coerceAtLeast(0)) ?: 0
+}
+
+/**
  * 通用「章节文本 → 分页 → CFI」会话（EPUB/TXT/MD/MOBI 共享）。
  *
  * 输入是已经扁平化好的每章 [TextBlock] 列表（内部按 spine 序组装为

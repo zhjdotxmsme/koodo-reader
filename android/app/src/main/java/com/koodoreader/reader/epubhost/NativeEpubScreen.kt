@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.ReaderFiles
+import com.koodoreader.reader.shell.ReaderProgressPrefs
 import java.io.File
 
 /**
@@ -62,6 +63,8 @@ fun NativeEpubScreen(
 ) {
     val context = LocalContext.current
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
+    // 阅读进度（bookKey → 位置 CFI）：非 Room 键值存储，schema.lock 五表保持干净。
+    val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
     val file = remember(book?.key, book?.path, book?.format) {
         val b = book ?: return@remember null
         ReaderFiles.resolveBookFile(
@@ -98,7 +101,17 @@ fun NativeEpubScreen(
 
     var currentPage by remember { mutableIntStateOf(0) }
     var showChrome by remember { mutableStateOf(true) }
-    LaunchedEffect(session) { currentPage = 0 }
+    // 打开恢复：会话就绪后按上次位置 CFI 落页（无进度/无效 CFI → 第 0 页）。
+    LaunchedEffect(session) {
+        val stored = book?.key?.let { progressPrefs.cfiOf(it) }
+        currentPage = session?.resumePage(stored) ?: 0
+    }
+    // 翻页写回进度（位置 CFI；与桌面 recordLocation 同一寻址格式）。
+    LaunchedEffect(session, currentPage) {
+        val key = book?.key ?: return@LaunchedEffect
+        val s = session ?: return@LaunchedEffect
+        if (s.pageCount > 0) s.cfiForPage(currentPage)?.let { progressPrefs.save(key, it) }
+    }
 
     val pageCount = session?.pageCount ?: 0
     val lines = session?.pageLines(currentPage) ?: emptyList()
