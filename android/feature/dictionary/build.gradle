@@ -62,6 +62,10 @@ android {
 }
 
 dependencies {
+    // Compose design system: the dictionary screen uses the shared KoodoTopAppBar
+    // instead of hand-rolling one, so its bar matches the rest of the shell.
+    implementation project(':core:ui')
+
     // Compose UI only (词典管理 + 划词弹窗). The parser itself needs nothing.
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom

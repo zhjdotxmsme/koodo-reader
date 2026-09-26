@@ -49,6 +49,10 @@ android {
 }
 
 dependencies {
+    // Compose design system: the stats screen takes its surface/text colours from
+    // MaterialTheme and its chart colours from LocalKoodoChartColors, instead of
+    // carrying its own 22-literal light/dark palette.
+    implementation project(':core:ui')
     def roomVersion = '2.6.1'
     implementation "androidx.room:room-runtime:$roomVersion"
     implementation "androidx.room:room-ktx:$roomVersion"

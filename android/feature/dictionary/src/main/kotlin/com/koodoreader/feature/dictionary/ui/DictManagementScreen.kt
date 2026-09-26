@@ -23,13 +23,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import com.koodoreader.core.ui.component.KoodoTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,13 +75,13 @@ fun DictManagementScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(strings.title, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = strings.back)
-                    }
-                },
+            // The shell's shared bar: flush `surface` container, titleMedium
+            // title, and an auto-mirrored back arrow (the hand-rolled version used
+            // the non-mirroring ArrowBack, so RTL layouts pointed the wrong way).
+            KoodoTopAppBar(
+                title = strings.title,
+                onBack = onBack,
+                backContentDescription = strings.back,
                 actions = {
                     IconButton(onClick = onImportClick) {
                         Icon(Icons.Default.Add, contentDescription = strings.importDict)

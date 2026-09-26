@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -52,6 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.koodoreader.core.ui.theme.KoodoCardShape
+import com.koodoreader.core.ui.theme.KoodoShapes
+import com.koodoreader.core.ui.theme.LocalKoodoChartColors
 import com.koodoreader.feature.stats.DayPoint
 import com.koodoreader.feature.stats.HeatmapCell
 import com.koodoreader.feature.stats.StatsAggregator
@@ -71,38 +73,42 @@ data class StatsPalette(
     val tabInactiveText: Color,
     val heatmapEmpty: Color,
     val heatmap: List<Color>,
-) {
-    companion object {
-        fun of(dark: Boolean): StatsPalette = if (dark) {
-            StatsPalette(
-                background = Color(0xFF1E1E1E),
-                card = Color(0xFF2A2A2A),
-                text = Color(0xFFE0E0E0),
-                line = Color(0xFFFFB066),
-                grid = Color(0x14FFFFFF),
-                tabActiveBackground = Color(0xFF3A3A3A),
-                tabActiveText = Color.White,
-                tabInactiveBackground = Color(0x0FFFFFFF),
-                tabInactiveText = Color(0x99FFFFFF),
-                heatmapEmpty = Color(0x12FFFFFF),
-                heatmap = listOf(Color(0xFF0E4429), Color(0xFF006D32), Color(0xFF26A641), Color(0xFF39D353)),
-            )
-        } else {
-            StatsPalette(
-                background = Color(0xFFF5F5F5),
-                card = Color.White,
-                text = Color(0xFF333333),
-                line = Color(0xFFFF6B1A),
-                grid = Color(0x14000000),
-                tabActiveBackground = Color(0xFF333333),
-                tabActiveText = Color.White,
-                tabInactiveBackground = Color(0x0F000000),
-                tabInactiveText = Color(0x80000000),
-                heatmapEmpty = Color(0x12000000),
-                heatmap = listOf(Color(0xFF9BE9A8), Color(0xFF40C463), Color(0xFF30A14E), Color(0xFF216E39)),
-            )
-        }
-    }
+)
+
+/**
+ * Theme-derived colours for the stats screen.
+ *
+ * This struct used to carry 22 hard-coded literals in two hand-written light and
+ * dark sets (`StatsPalette.of(dark)`). It is now a BINDING: every value comes
+ * from the shell theme (`MaterialTheme.colorScheme`) or from the design system's
+ * chart tokens (`LocalKoodoChartColors`). Nothing here decides a colour any
+ * more — which is exactly why `darkTheme` no longer needs threading through the
+ * API: the theme already knows.
+ *
+ * Kept as a struct (instead of inlining `MaterialTheme.colorScheme` at ~40 call
+ * sites) so this stays a re-homing rather than a rewrite of a 400-line screen.
+ *
+ * Chart colours deliberately do NOT come from `ColorScheme`: M3 has no role for
+ * "series line" or "heatmap step 3", and overloading e.g. `tertiary` would make
+ * the chart change colour for unrelated reasons later.
+ */
+@Composable
+fun statsPalette(): StatsPalette {
+    val cs = MaterialTheme.colorScheme
+    val chart = LocalKoodoChartColors.current
+    return StatsPalette(
+        background = cs.background,
+        card = cs.surfaceContainerLow,
+        text = cs.onSurface,
+        line = chart.line,
+        grid = chart.grid,
+        tabActiveBackground = cs.secondaryContainer,
+        tabActiveText = cs.onSecondaryContainer,
+        tabInactiveBackground = Color.Transparent,
+        tabInactiveText = cs.onSurfaceVariant,
+        heatmapEmpty = chart.heatmapEmpty,
+        heatmap = chart.heatmap,
+    )
 }
 
 /** Desktop `getHeatmapColor` + `legendLevels`. */
@@ -113,12 +119,17 @@ fun heatmapColor(level: Int, palette: StatsPalette): Color =
 fun StatsScreen(
     state: StatsUiState,
     modifier: Modifier = Modifier,
-    darkTheme: Boolean = false,
     t: (String) -> String = { it },
     onClose: () -> Unit = {},
     onChartTabSelected: (ChartTab) -> Unit = {},
+    /**
+     * False when this screen is mounted as a TOP-LEVEL tab (the shell's bottom
+     * bar already provides navigation). A close affordance there would be a
+     * second, conflicting way out of a screen that is not a drill-down.
+     */
+    showClose: Boolean = true,
 ) {
-    val palette = remember(darkTheme) { StatsPalette.of(darkTheme) }
+    val palette = statsPalette()
     Surface(modifier = modifier.fillMaxSize(), color = palette.background) {
         Column(
             modifier = Modifier
@@ -134,7 +145,11 @@ fun StatsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onClose) { Text(text = "✕", color = palette.text, fontSize = 18.sp) }
+                if (showClose) {
+                    TextButton(onClick = onClose) {
+                        Text(text = "✕", color = palette.text, fontSize = 18.sp)
+                    }
+                }
             }
             Spacer(Modifier.height(20.dp))
 
@@ -188,7 +203,7 @@ private fun StatCard(
 ) {
     Column(
         modifier = modifier
-            .background(palette.card, RoundedCornerShape(16.dp))
+            .background(palette.card, KoodoCardShape)
             .padding(horizontal = 16.dp, vertical = 20.dp),
     ) {
         Text(value, color = palette.text, fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -207,7 +222,7 @@ private fun ChartSection(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(palette.card, RoundedCornerShape(16.dp))
+            .background(palette.card, KoodoCardShape)
             .padding(16.dp),
     ) {
         Text(t("Last 30 Days"), color = palette.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -219,7 +234,11 @@ private fun ChartSection(
                     onClick = { onChartTabSelected(tab) },
                     modifier = Modifier.background(
                         if (selected) palette.tabActiveBackground else palette.tabInactiveBackground,
-                        RoundedCornerShape(20.dp),
+                        // Snapped from the previous ad-hoc 20.dp to the scale's
+                        // `large`: closest on-scale step (-4dp) and the same one
+                        // cards and controls use. An off-scale radius is exactly
+                        // what the token layer exists to remove.
+                        KoodoShapes.large,
                     ),
                 ) {
                     Text(
@@ -334,7 +353,7 @@ private fun HeatmapSection(snapshot: StatsSnapshot, palette: StatsPalette, t: (S
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(palette.card, RoundedCornerShape(16.dp))
+            .background(palette.card, KoodoCardShape)
             .padding(16.dp),
     ) {
         Text(t("Reading Activity"), color = palette.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -373,7 +392,9 @@ private fun HeatmapSection(snapshot: StatsSnapshot, palette: StatsPalette, t: (S
                                     .background(
                                         if (day == null) Color.Transparent
                                         else heatmapColor(day.level, palette),
-                                        RoundedCornerShape(3.dp),
+                                        // Heatmap cells: snapped 3dp -> extraSmall (4dp), the
+                                        // smallest on-scale step.
+                                        KoodoShapes.extraSmall,
                                     ),
                             )
                         }
@@ -392,7 +413,7 @@ private fun HeatmapSection(snapshot: StatsSnapshot, palette: StatsPalette, t: (S
                         .size(cell)
                         .background(
                             heatmapColor(StatsAggregator.heatmapLevel(seconds), palette),
-                            RoundedCornerShape(3.dp),
+                            KoodoShapes.extraSmall,
                         ),
                 )
             }
