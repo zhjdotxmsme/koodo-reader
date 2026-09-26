@@ -3,64 +3,88 @@ package com.koodoreader.reader.shell
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.koodoreader.reader.epubhost.NativeEpubScreen
 
-object ShellRoutes {
-    const val LIBRARY = "library"
-    const val READER = "reader/{bookKey}"
-    const val BACKUP = "backup"
-    const val TRASH = "trash"
-    const val STATS = "stats"
-    const val DICTIONARY = "dictionary"
-
-    fun reader(bookKey: String): String = "reader/${Uri.encode(bookKey)}"
-}
-
+/**
+ * Route table of the native shell.
+ *
+ * The route strings and the two route predicates live in [ShellNav] as pure,
+ * unit-tested functions; this file only mounts composables. Compose routes are
+ * keyed by [ShellNav]/[ShellTab] constants so a rename cannot desynchronise the
+ * bar from the graph.
+ *
+ * The [NavHostController] is supplied by [ShellScaffold], which owns the bottom
+ * bar and therefore needs the current route.
+ */
 @Composable
-fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
-    val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = ShellRoutes.LIBRARY) {
-        composable(ShellRoutes.LIBRARY) {
+fun ShellNavHost(
+    navController: NavHostController,
+    assets: ReaderAssetHost = ReaderAssetHost.NONE,
+    modifier: Modifier = Modifier,
+) {
+    NavHost(
+        navController = navController,
+        startDestination = ShellTab.START.route,
+        modifier = modifier,
+    ) {
+        composable(ShellNav.LIBRARY) {
+            // The library's top bar now carries only title + view options +
+            // import (W5a). Trash / Backup / Dictionary are reached through the
+            // Settings tab and Stats has its own tab, so this screen no longer
+            // takes callbacks for them.
             LibraryScreen(
-                onOpenBook = { key -> navController.navigate(ShellRoutes.reader(key)) },
-                onOpenBackup = { navController.navigate(ShellRoutes.BACKUP) },
-                onOpenTrash = { navController.navigate(ShellRoutes.TRASH) },
-                onOpenStats = { navController.navigate(ShellRoutes.STATS) },
-                onOpenDictionary = { navController.navigate(ShellRoutes.DICTIONARY) },
+                onOpenBook = { key -> navController.navigate(ShellNav.reader(key)) },
             )
         }
-        composable(ShellRoutes.BACKUP) {
+
+        // P6 reading stats, now a top-level tab: no close affordance, because
+        // the bottom bar is the way out of a tab.
+        composable(ShellNav.STATS) {
+            StatsRoute(onBack = { navController.popBackStack() }, showClose = false)
+        }
+
+        composable(ShellNav.NOTES) {
+            // No book-jump wiring yet: the route cannot carry a CFI, and a tap
+            // that opened the book at its last-read page instead of the
+            // annotation would be a lie. See the P0-1 note on this card.
+            NotesScreen()
+        }
+
+        composable(ShellNav.SETTINGS) {
+            SettingsScreen(
+                onOpenBackup = { navController.navigate(ShellNav.BACKUP) },
+                onOpenTrash = { navController.navigate(ShellNav.TRASH) },
+                onOpenDictionary = { navController.navigate(ShellNav.DICTIONARY) },
+            )
+        }
+
+        // ── Settings leaves: keep the bottom bar (they are drills, not tabs) ──
+        composable(ShellNav.BACKUP) {
             BackupScreen(onBack = { navController.popBackStack() })
         }
-        composable(ShellRoutes.TRASH) {
+        composable(ShellNav.TRASH) {
             TrashScreen(onBack = { navController.popBackStack() })
         }
-        // P6 reading stats (desktop /stats): the module shipped long before this
-        // route existed, which is exactly the "delivered but unreachable" gap this
-        // nav entry closes.
-        composable(ShellRoutes.STATS) {
-            StatsRoute(onBack = { navController.popBackStack() })
-        }
-        // P6 dictionary manager: local .mdx/.mdd import + enable/order/default.
-        // The cloud catalogue is intentionally not mounted (see DictionaryRoute).
-        composable(ShellRoutes.DICTIONARY) {
+        composable(ShellNav.DICTIONARY) {
             DictionaryRoute(onBack = { navController.popBackStack() })
         }
+
         composable(
-            route = ShellRoutes.READER,
+            route = ShellNav.READER_PATTERN,
             arguments = listOf(navArgument("bookKey") { type = NavType.StringType }),
         ) { entry ->
             // P3/P5 routing dispatch — the book format decides which native
             // reader composable mounts. PDF → NativePdfScreen (loopback pdf.js);
-            // EPUB / TXT / MD / MOBI(AZW/AZW3) → NativeEpubScreen + ReaderSession
-            // （engine/layout 分页 + CFI，四格式共用一屏，各一个 session 实现）;
+            // EPUB / TXT / MD / MOBI(AZW/AZW3) / FB2 / DOCX / HTML family →
+            // NativeEpubScreen + ReaderSession（engine/layout 分页 + CFI，共用一屏）;
             // 其余格式 → P1 placeholder（CBZ/CBT/CB7 由 :app ComicViewerActivity
             // 承接，见 P5-CBZ-5 / P8-F1）。
             val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())

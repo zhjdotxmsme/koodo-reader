@@ -1,6 +1,5 @@
 package com.koodoreader.reader.shell
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,7 +32,15 @@ import com.koodoreader.feature.stats.ui.StatsViewModel
  * the screen renders the same zeroes the desktop shows for a fresh database.
  */
 @Composable
-fun StatsRoute(onBack: () -> Unit) {
+fun StatsRoute(
+    onBack: () -> Unit,
+    /**
+     * False when mounted as the top-level Stats tab: the shell's bottom bar is
+     * the way out of a tab, so the screen's own ✕ would be a second, competing
+     * exit from a screen that is not a drill-down.
+     */
+    showClose: Boolean = true,
+) {
     val context = LocalContext.current
     val app = context.applicationContext
     // `I18nState.t` is a plain lookup; the composable wrapper cannot be called
@@ -63,9 +70,9 @@ fun StatsRoute(onBack: () -> Unit) {
 
     StatsScreen(
         state = viewModel.state,
-        darkTheme = isSystemInDarkTheme(),
         t = { key -> i18n.localization.t(key) },
         onClose = onBack,
         onChartTabSelected = viewModel::selectChartTab,
+        showClose = showClose,
     )
 }
