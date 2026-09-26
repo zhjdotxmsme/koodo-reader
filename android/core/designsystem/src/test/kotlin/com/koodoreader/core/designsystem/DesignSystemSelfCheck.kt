@@ -15,7 +15,14 @@ package com.koodoreader.core.designsystem
  * to this file's main class.)
  */
 fun main(args: Array<String>) {
-    val failures = mutableListOf<String>()
+    // Element type is Throwable, NOT String: `runCheck` returns a
+    // `Result<Unit>`, so `.onFailure { failures.add(it) }` passes a Throwable.
+    // Declaring this as List<String> was the original type error (21 identical
+    // compile failures) — this file had never been compiled because the module
+    // was missing from settings.gradle. Keeping the Throwable preserves the
+    // cause chain; the summary below prints `.message` so the output stays
+    // human-readable.
+    val failures = mutableListOf<Throwable>()
 
     // ─── 1. TypographyTokens defaults ─────────────────────────────────────────
     runCheck("TypographyTokens default fontSizeSp == 17f") {
@@ -175,13 +182,104 @@ fun main(args: Array<String>) {
         }
     }.onFailure { failures.add(it) }
 
+    // ─── 5. Shell colour tokens ──────────────────────────────────────────────
+    // These are the checks that make "the design system is correct" a CI fact.
+    // Everything asserted here runs on a plain JVM: the tokens are Long values
+    // and the contrast maths is pure Kotlin, precisely so this section can
+    // exist without Compose, Android or a screen.
+
+    runCheck("ColorTokens: light and dark declare the same slots") {
+        val light = ColorTokens.LIGHT.slotPairs().map { it.first }
+        val dark = ColorTokens.DARK.slotPairs().map { it.first }
+        check(light == dark) { "slot mismatch: light=$light dark=$dark" }
+    }
+
+    runCheck("ColorTokens: every token is fully opaque") {
+        for (palette in ColorTokens.ALL) {
+            val bad = palette.requireOpaque()
+            check(bad.isEmpty()) { "non-opaque tokens: $bad" }
+        }
+    }
+
+    runCheck("ColorTokens: text pairs meet WCAG AA 4.5:1") {
+        for (palette in ColorTokens.ALL) {
+            for ((label, fg, bg) in ColorTokens.textPairs(palette)) {
+                val r = Contrast.ratio(fg, bg)
+                check(r >= Contrast.TEXT_MIN_RATIO) {
+                    "$label ${Contrast.hex(fg)} on ${Contrast.hex(bg)} = " +
+                        "%.2f:1 < %.1f:1".format(r, Contrast.TEXT_MIN_RATIO)
+                }
+            }
+        }
+    }
+
+    runCheck("ColorTokens: accents and borders meet WCAG AA 3:1") {
+        for (palette in ColorTokens.ALL) {
+            for ((label, fg, bg) in ColorTokens.accentPairs(palette)) {
+                val r = Contrast.ratio(fg, bg)
+                check(r >= Contrast.ACCENT_MIN_RATIO) {
+                    "$label ${Contrast.hex(fg)} on ${Contrast.hex(bg)} = " +
+                        "%.2f:1 < %.1f:1".format(r, Contrast.ACCENT_MIN_RATIO)
+                }
+            }
+        }
+    }
+
+    runCheck("ColorTokens: elevation ramp is monotonic (light down, dark up)") {
+        val lightRamp = with(ColorTokens.LIGHT) {
+            listOf(
+                surfaceContainerLowest, surfaceContainerLow, surfaceContainer,
+                surfaceContainerHigh, surfaceContainerHighest,
+            )
+        }.map { Contrast.relativeLuminance(it) }
+        val darkRamp = with(ColorTokens.DARK) {
+            listOf(
+                surfaceContainerLowest, surfaceContainerLow, surfaceContainer,
+                surfaceContainerHigh, surfaceContainerHighest,
+            )
+        }.map { Contrast.relativeLuminance(it) }
+        check(lightRamp.zipWithNext().all { (a, b) -> a > b }) { "light ramp not descending: $lightRamp" }
+        check(darkRamp.zipWithNext().all { (a, b) -> a < b }) { "dark ramp not ascending: $darkRamp" }
+    }
+
+    runCheck("ColorTokens: brand seeds preserved from the old shell theme") {
+        check(ColorTokens.LIGHT.primary == 0xFF3A6EA5) { "light primary brand colour changed" }
+        check(ColorTokens.LIGHT.secondary == 0xFF6B8E23) { "light secondary brand colour changed" }
+        check(ColorTokens.LIGHT.background == 0xFFF8F6F2) { "light background changed" }
+        check(ColorTokens.DARK.background == 0xFF16181D) { "dark background changed" }
+    }
+
+    runCheck("ShapeTokens: matches the Material 3 five-step scale") {
+        check(ShapeTokens.ALL == ShapeTokens.MATERIAL3_DEFAULTS) {
+            "shape scale ${ShapeTokens.ALL} != M3 ${ShapeTokens.MATERIAL3_DEFAULTS}"
+        }
+        check(ShapeTokens.ALL.zipWithNext().all { (a, b) -> a < b }) { "shape scale not ascending" }
+    }
+
+    runCheck("SpaceTokens: 4dp grid, ascending, named constants on-scale") {
+        check(SpaceTokens.ALL.zipWithNext().all { (a, b) -> a < b }) { "spacing not ascending" }
+        check(SpaceTokens.ALL.all { it % 4 == 0 }) { "spacing off the 4dp grid: ${SpaceTokens.ALL}" }
+        val offScale = SpaceTokens.NAMED.filterNot { SpaceTokens.ALL.contains(it) }
+        check(offScale.isEmpty()) { "named spacing constants not on the scale: $offScale" }
+    }
+
     // ─── Summary ───────────────────────────────────────────────────────────
     if (failures.isEmpty()) {
+        // Printed so that "the new checks actually ran" is visible in CI logs,
+        // rather than being inferred from the absence of a failure.
+        println(
+            "shell tokens: ${ColorTokens.ALL.size} palettes, " +
+                "${ColorTokens.textPairs(ColorTokens.LIGHT).size} text pairs @" +
+                "${Contrast.TEXT_MIN_RATIO}:1, " +
+                "${ColorTokens.accentPairs(ColorTokens.LIGHT).size} accent pairs @" +
+                "${Contrast.ACCENT_MIN_RATIO}:1, " +
+                "${ShapeTokens.ALL.size} shape steps, ${SpaceTokens.ALL.size} spacing steps",
+        )
         println("OK")
         kotlin.system.exitProcess(0)
     } else {
         System.err.println("FAIL")
-        failures.forEach { System.err.println("  • $it") }
+        failures.forEach { System.err.println("  • ${it.message ?: it}") }
         kotlin.system.exitProcess(1)
     }
 }

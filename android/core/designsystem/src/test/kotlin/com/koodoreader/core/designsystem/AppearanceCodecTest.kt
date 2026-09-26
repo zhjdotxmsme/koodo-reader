@@ -3,6 +3,7 @@ package com.koodoreader.core.designsystem
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
@@ -19,8 +20,8 @@ class AppearanceCodecTest {
         val original = ReaderAppearanceConfig()
         val json = AppearanceCodec.encode(original)
         assertNotNull(json)
-        assert(json.startsWith("{"))
-        assert(json.endsWith("}"))
+        assertTrue(json.startsWith("{"))
+        assertTrue(json.endsWith("}"))
         val decoded = AppearanceCodec.decode(json)
         assertEquals(original, decoded)
     }
@@ -133,18 +134,18 @@ class AppearanceCodecTest {
     @Test
     fun `encoded JSON contains expected key names`() {
         val json = AppearanceCodec.encode(ReaderAppearanceConfig())
-        assert(json.contains("\"fontSizeSp\""))
-        assert(json.contains("\"lineHeightRatio\""))
-        assert(json.contains("\"letterSpacingPx\""))
-        assert(json.contains("\"textAlign\""))
-        assert(json.contains("\"themeKind\""))
-        assert(json.contains("\"backgroundColor\""))
-        assert(json.contains("\"foregroundColor\""))
-        assert(json.contains("\"fontKey\""))
-        assert(json.contains("\"fontDisplayName\""))
-        assert(json.contains("\"fontFamily\""))
-        assert(json.contains("\"marginHorizontalPx\""))
-        assert(json.contains("\"marginVerticalPx\""))
+        assertTrue(json.contains("\"fontSizeSp\""))
+        assertTrue(json.contains("\"lineHeightRatio\""))
+        assertTrue(json.contains("\"letterSpacingPx\""))
+        assertTrue(json.contains("\"textAlign\""))
+        assertTrue(json.contains("\"themeKind\""))
+        assertTrue(json.contains("\"backgroundColor\""))
+        assertTrue(json.contains("\"foregroundColor\""))
+        assertTrue(json.contains("\"fontKey\""))
+        assertTrue(json.contains("\"fontDisplayName\""))
+        assertTrue(json.contains("\"fontFamily\""))
+        assertTrue(json.contains("\"marginHorizontalPx\""))
+        assertTrue(json.contains("\"marginVerticalPx\""))
     }
 
     // ─── Malformed input handling ───────────────────────────────────────────
@@ -214,7 +215,7 @@ class AppearanceCodecTest {
         val json = AppearanceCodec.encode(
             ReaderAppearanceConfig(theme = ThemeSpec.DEFAULT_PRESET),
         )
-        assert(json.contains("\"backgroundImage\":null"))
+        assertTrue(json.contains("\"backgroundImage\":null"))
     }
 
     @Test

@@ -2,13 +2,19 @@
 /*
  * check-phantom-tests.js — find test classes that never execute.
  *
- * Why: a class can look like coverage and contribute zero results. Two real
+ * Why: a class can look like coverage and contribute zero results. Three real
  * instances in this repo:
  *   1. `ImportPipelineTest` declared `@Test suspend fun` — JUnit 5 cannot invoke
  *      a suspend test method, so the whole class produced no TEST-*.xml while
  *      docs/android-baseline.json cited its 1000-book case as evidence;
  *   2. modules that are not registered in android/settings.gradle never build at
- *      all, so any test under them is decoration.
+ *      all, so any test under them is decoration;
+ *   3. `core/designsystem` sat in KNOWN_UNBUILT for exactly that reason. Its 5
+ *      test files had 26 compile errors and had never been compiled, and once
+ *      registered they exposed a real bug in AppearanceCodec (decode() returned
+ *      every string with literal quotes, so ThemeKind silently fell back to
+ *      DEFAULT). An allow-listed warning is not a substitute for a build entry,
+ *      so case 2 is now a failure and KNOWN_UNBUILT is empty.
  *
  * The check compares, per module: every class/object that *declares* `@Test`
  * against the classes present in `build/test-results/**` (plus the module
@@ -63,7 +69,15 @@ function moduleDirs() {
 }
 
 function settingsIncludes() {
-  const settings = fs.readFileSync(path.join(ANDROID, 'settings.gradle'), 'utf8');
+  const raw = fs.readFileSync(path.join(ANDROID, 'settings.gradle'), 'utf8');
+  // Strip comments BEFORE matching. The include regex is unanchored, so a
+  // commented-out `// include ':x'` used to count as "registered" — and this
+  // file legitimately contains commented-out includes and explanatory comments
+  // naming modules. Verified by removing the `:core:designsystem` include: the
+  // guard still reported OK until this stripping was added.
+  const settings = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '') // block comments
+    .replace(/\/\/[^\n]*/g, ''); // line comments
   const included = new Set();
   const re = /include\s+['"]([^'"]+)['"]/g;
   let m;
@@ -124,11 +138,20 @@ function resultClassesByModule() {
 }
 
 /**
- * Modules that exist on disk but are NOT in android/settings.gradle, so nothing
- * in them is compiled or executed. Reported loudly, but not a failure: whether
- * such a module gets registered or deleted is a main-thread decision.
+ * Intentional exceptions: modules that exist on disk with `src/test` but are
+ * deliberately NOT in android/settings.gradle. Map is module dir → reason, so
+ * every exception has to justify itself in review.
+ *
+ * Kept EMPTY on purpose. It previously held `core/designsystem`, which is how
+ * that module rotted: the allow-list turned a loud "nothing here is compiled"
+ * warning into an accepted line of output, and the module sat unregistered with
+ * 26 compile errors in its test sources and a quoting bug in AppearanceCodec
+ * that its 72 never-executed tests were written to catch. It is now registered,
+ * so the exception was removed rather than left as a stale entry that would
+ * silently swallow a future regression. Adding a module here requires a reason
+ * string — and a better answer is usually to register or delete the module.
  */
-const KNOWN_UNBUILT = new Set(['core/designsystem']);
+const KNOWN_UNBUILT = new Map();
 
 function main() {
   const included = settingsIncludes();
@@ -159,11 +182,23 @@ function main() {
   }
 
   for (const module of unbuilt) {
-    const known = KNOWN_UNBUILT.has(module);
-    console.warn(
-      `[check-phantom-tests] WARNING ${module}: not in android/settings.gradle — ` +
-      `nothing in it is compiled or run${known ? ' (known; registration vs deletion is a main-thread call)' : ''}`,
+    const reason = KNOWN_UNBUILT.get(module);
+    if (reason) {
+      console.warn(
+        `[check-phantom-tests] WARNING ${module}: not in android/settings.gradle — ` +
+        `nothing in it is compiled or run (accepted: ${reason})`,
+      );
+      continue;
+    }
+    // A module on disk that declares @Test but is not registered contributes
+    // exactly zero results while looking like coverage. This is a failure, not
+    // a warning: tolerating it is what let core/designsystem rot.
+    console.error(
+      `[check-phantom-tests] ${module}: declares @Test but is NOT in android/settings.gradle — ` +
+      'nothing in it is compiled or executed. Register it (include \':…\') or delete it; ' +
+      'if it is intentional, add it to KNOWN_UNBUILT with a reason.',
     );
+    failures.push({ module, name: '(whole module)', reason: 'module not registered in settings.gradle' });
   }
 
   if (phantoms.length > 0) {

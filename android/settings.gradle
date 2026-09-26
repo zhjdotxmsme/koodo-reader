@@ -30,6 +30,20 @@ include ':core:dbio'
 // scripts/sync-locales-android.js, see ADR-004).
 include ':core:common'
 
+// Design-system token source (pure JVM): theme presets, reader typography
+// tokens, font catalog entries and the reader-appearance codec. Its field
+// names / defaults mirror the desktop config so the Room and backup-zip wire
+// formats stay desktop-compatible.
+//
+// NOTE (2026-09-26): this module existed on disk with 6 sources + 5 test files
+// but was NEVER registered here, so it was never compiled, its tests never ran
+// and `selfCheck` never executed — 26 pre-existing compile errors in the test
+// sources went unnoticed. It was also imported by nothing. Registered now as
+// part of the Android UI/UX sub-project ①, where it becomes the value layer
+// behind :core:ui (the Compose design system). If you add a consumer, depend on
+// it via `implementation project(':core:designsystem')`.
+include ':core:designsystem'
+
 //
 
 // Native reading-engine modules (Kotlin, no Android dependency) — see

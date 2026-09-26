@@ -253,8 +253,22 @@ object AppearanceCodec {
         if (j >= s.length) return "" to j
         when (s[j]) {
             '"' -> {
+                // Return the BARE value. readString() already unescaped it.
+                //
+                // This used to be `return "\"$value\"" to next`, which re-added
+                // the surrounding quotes to every string field. The map then
+                // held `"left"`, `"rgba(255,255,255,1)"`, `"NIGHT"`, ... with
+                // literal quote characters, so decode() produced corrupted
+                // values and ThemeKind.valueOf("\"NIGHT\"") threw, silently
+                // falling back to DEFAULT via the catch in decode().
+                //
+                // The defect survived because this module was missing from
+                // settings.gradle: nothing compiled it and its 18 codec tests
+                // never ran. JSON `null` is still reported as the literal
+                // string "null" by the else-branch below, which is what the
+                // `takeIf { it != "null" }` guards in decode() expect.
                 val (value, next) = readString(s, j)
-                return "\"$value\"" to next
+                return value to next
             }
             '{' -> {
                 // Skip nested object

@@ -2,6 +2,7 @@ package com.koodoreader.core.designsystem
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -44,9 +45,9 @@ class FontCatalogEntryTest {
     @Test
     fun `CSS_FAMILY_KEYS contains serif sans-serif monospace`() {
         assertEquals(3, FontCatalogEntry.CSS_FAMILY_KEYS.size)
-        assert(FontCatalogEntry.CSS_FAMILY_KEYS.contains("serif"))
-        assert(FontCatalogEntry.CSS_FAMILY_KEYS.contains("sans-serif"))
-        assert(FontCatalogEntry.CSS_FAMILY_KEYS.contains("monospace"))
+        assertTrue(FontCatalogEntry.CSS_FAMILY_KEYS.contains("serif"))
+        assertTrue(FontCatalogEntry.CSS_FAMILY_KEYS.contains("sans-serif"))
+        assertTrue(FontCatalogEntry.CSS_FAMILY_KEYS.contains("monospace"))
     }
 
     @Test
@@ -66,46 +67,49 @@ class FontCatalogEntryTest {
 
     @Test
     fun `KNOWN_BUNDLED_KEYS contains LXGWWenKai variants from fontConfig ts`() {
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Light"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Medium"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Regular"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Light"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Medium"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("LXGWWenKai-Regular"))
     }
 
     @Test
     fun `KNOWN_BUNDLED_KEYS contains Inter from fontConfig ts`() {
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("Inter-Regular"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("Inter-Medium"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("Inter-Regular"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("Inter-Medium"))
     }
 
     @Test
     fun `KNOWN_BUNDLED_KEYS contains NotoSansSC from fontConfig ts`() {
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Light"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Medium"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Regular"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Light"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Medium"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSansSC-Regular"))
     }
 
     @Test
     fun `KNOWN_BUNDLED_KEYS contains NotoSerifSC from fontConfig ts`() {
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSerifSC-Light"))
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSerifSC-Regular"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSerifSC-Light"))
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.contains("NotoSerifSC-Regular"))
     }
 
     @Test
     fun `KNOWN_BUNDLED_KEYS is non-empty`() {
-        assert(FontCatalogEntry.KNOWN_BUNDLED_KEYS.isNotEmpty())
+        assertTrue(FontCatalogEntry.KNOWN_BUNDLED_KEYS.isNotEmpty())
     }
 
     @Test
     fun `KNOWN_BUNDLED_KEYS entries are non-blank`() {
         for (key in FontCatalogEntry.KNOWN_BUNDLED_KEYS) {
-            assert(key.isNotBlank(), "blank key in KNOWN_BUNDLED_KEYS")
+            assertTrue(key.isNotBlank(), "blank key in KNOWN_BUNDLED_KEYS")
         }
     }
 
     // ─── Bundled Android fonts (FontCatalog.kt alignment) ───────────────────
 
+    // JVM test names may not contain ':' (kotlin.reflect / JUnit reject it), so
+    // the prefix is written as "bundled-" here. The colon form is still asserted
+    // on the values below.
     @Test
-    fun `bundled Android font keys follow 'bundled:' prefix convention`() {
+    fun `bundled Android font keys follow the bundled- prefix convention`() {
         // FontCatalog.kt uses "bundled:lxgw_wenkai_lite", "bundled:inter"
         // which is a different namespace from desktop font ids.
         val bundled = FontCatalogEntry(
@@ -114,7 +118,12 @@ class FontCatalogEntryTest {
             fontFamily = null,
         )
         assertEquals("bundled:lxgw_wenkai_lite", bundled.key)
-        assertEquals("bundled:lxgw_wenkai_lite", bundled.displayName)
+        // The key carries the "bundled:" namespace prefix; displayName carries
+        // the human-facing label. This assertion used to compare displayName
+        // against the key, contradicting the value passed in three lines above —
+        // unsatisfiable, and never noticed because the module was unregistered.
+        assertTrue(bundled.key.startsWith("bundled:"))
+        assertEquals("霞鹜文楷", bundled.displayName)
         assertEquals(null, bundled.fontFamily)
     }
 
