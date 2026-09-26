@@ -1,26 +1,8 @@
 package com.koodoreader.reader.shell
 
 import android.graphics.BitmapFactory
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,29 +10,46 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import android.content.Context
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import com.koodoreader.core.data.entity.BookEntity
+import com.koodoreader.core.ui.component.BookCardModel
+import com.koodoreader.core.ui.component.KoodoBookCard
+import com.koodoreader.core.ui.component.KoodoBookRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Deterministic placeholder palette for books without a decodable cover. */
-private val CoverPalette = listOf(
-    Color(0xFF3A6EA5), Color(0xFF6B8E23), Color(0xFF9C5B4F),
-    Color(0xFF7A5C9E), Color(0xFF2E7D6B), Color(0xFF8A6D3B),
+/**
+ * Library tiles — now a thin ADAPTER over `:core:ui`'s components.
+ *
+ * ### What stayed here and why (interface inversion)
+ * This file used to BE the component, taking a [BookEntity] and decoding its own
+ * cover. That coupled a card to `:core:data`, `Context`, bitmap IO and the app's
+ * i18n, so it could not live in the shared design system. Now:
+ *
+ *  - the model is `:core:ui`'s [BookCardModel] (mapped by [toCardModel] below);
+ *  - COVER RESOLUTION STAYS HERE — base64 row + on-disk cover file needs
+ *    `Context` and `BitmapFactory`, which the design system must not touch. It
+ *    hands the component a finished [Painter].
+ *  - the long-press menu is passed as a slot, so its wording uses `t()` here
+ *    rather than being hardcoded inside the shared component.
+ *
+ * No business logic lives in this file; the placeholder palette it used to
+ * define moved to `ColorTokens.COVER_PLACEHOLDERS`.
+ */
+private fun BookEntity.toCardModel(isFavorite: Boolean) = BookCardModel(
+    title = name.orEmpty(),
+    author = author,
+    formatLabel = format?.uppercase(),
+    coverSeed = key,
+    isFavorite = isFavorite,
 )
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Grid tile (view mode = grid). */
 @Composable
 fun BookCard(
     book: BookEntity,
@@ -63,61 +62,31 @@ fun BookCard(
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }),
-        ) {
-            Box {
-                BookCover(
-                    cover = book.cover,
-                    title = book.name ?: "?",
-                    seed = book.key,
-                    coverVersion = coverVersion,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(0.72f)
-                        .clip(RoundedCornerShape(8.dp)),
+    KoodoBookCard(
+        model = book.toCardModel(isFavorite),
+        cover = rememberCoverPainter(book.cover, book.key, coverVersion),
+        onClick = onClick,
+        onLongClick = { menuOpen = true },
+        // Was the hardcoded literal "Favorite", i.e. an untranslated string
+        // exposed to TalkBack. Now routed through i18n; the key is added to
+        // src/assets/locales/en.json with the rest of the W6a keys.
+        favoriteContentDescription = t("Favorite"),
+        menu = {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = {
+                        Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite"))
+                    },
+                    onClick = { onToggleFavorite(); menuOpen = false },
                 )
-                if (isFavorite) {
-                    Icon(
-                        imageVector = Icons.Filled.Star,
-                        contentDescription = "Favorite",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp),
-                    )
-                }
+                DropdownMenuItem(
+                    text = { Text(t("Move to trash")) },
+                    onClick = { onMoveToTrash(); menuOpen = false },
+                )
             }
-            Text(
-                text = book.name.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            Text(
-                text = listOfNotNull(book.author, book.format?.uppercase())
-                    .filter { it.isNotBlank() }
-                    .joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite")) },
-                onClick = { onToggleFavorite(); menuOpen = false },
-            )
-            DropdownMenuItem(
-                text = { Text(t("Move to trash")) },
-                onClick = { onMoveToTrash(); menuOpen = false },
-            )
-        }
-    }
+        },
+        modifier = modifier,
+    )
 }
 
 /** Compact list-view row (view mode = list). */
@@ -129,87 +98,38 @@ fun BookListRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        BookCover(
-            cover = book.cover,
-            title = book.name ?: "?",
-            seed = book.key,
-            coverVersion = coverVersion,
-            modifier = Modifier
-                .width(48.dp)
-                .aspectRatio(0.72f)
-                .clip(RoundedCornerShape(4.dp)),
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = book.name.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = listOfNotNull(book.author, book.format?.uppercase())
-                    .filter { it.isNotBlank() }
-                    .joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (isFavorite) {
-            Icon(
-                imageVector = Icons.Filled.Star,
-                contentDescription = "Favorite",
-                tint = MaterialTheme.colorScheme.tertiary,
-            )
-        }
-    }
+    KoodoBookRow(
+        model = book.toCardModel(isFavorite),
+        cover = rememberCoverPainter(book.cover, book.key, coverVersion),
+        onClick = onClick,
+        favoriteContentDescription = t("Favorite"),
+        modifier = modifier,
+    )
 }
 
+/**
+ * Resolve the cover for a book and hand it to the design system as a [Painter].
+ *
+ * Row base64 first (desktop-imported rows), then the `cover/` dir file written by
+ * the native import ([CoverStore]), else null → the component draws its
+ * deterministic placeholder.
+ */
 @Composable
-private fun BookCover(
+private fun rememberCoverPainter(
     cover: String?,
-    title: String,
     seed: String,
-    modifier: Modifier = Modifier,
-    coverVersion: Int = 0,
-) {
+    coverVersion: Int,
+): Painter? {
     val context = LocalContext.current
     val coverStore = remember(context) { CoverStore(context) }
     val bitmap by produceState<ImageBitmap?>(initialValue = null, cover, seed, coverVersion) {
         value = decodeCover(cover, coverStore.fileFor(seed))
     }
-    val image = bitmap
-    if (image != null) {
-        Image(
-            bitmap = image,
-            contentDescription = title,
-            modifier = modifier,
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        val color = CoverPalette[kotlin.math.abs(seed.hashCode()) % CoverPalette.size]
-        Box(modifier = modifier.background(color), contentAlignment = Alignment.Center) {
-            Text(
-                text = title.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
-            )
-        }
-    }
+    // BitmapPainter rather than an `asImagePainter()` extension: the extension
+    // is not available in this Compose BOM's ui-graphics artifact.
+    return bitmap?.let { BitmapPainter(it) }
 }
 
-/**
- * Row base64 cover first (desktop-imported rows), then the `cover/` dir
- * file written by the native import ([CoverStore]), else null → placeholder.
- */
 private suspend fun decodeCover(
     cover: String?,
     coverFile: java.io.File?,

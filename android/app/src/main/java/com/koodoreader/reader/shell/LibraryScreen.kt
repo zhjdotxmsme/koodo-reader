@@ -20,8 +20,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,10 +54,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun LibraryScreen(
     onOpenBook: (String) -> Unit,
-    onOpenBackup: () -> Unit = {},
-    onOpenTrash: () -> Unit = {},
-    onOpenStats: () -> Unit = {},
-    onOpenDictionary: () -> Unit = {},
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val books by viewModel.libraryBooks.collectAsStateWithLifecycle()
@@ -75,8 +69,7 @@ fun LibraryScreen(
     // (cover files are written by the import, not the row).
     val coverVersion = (importState as? ImportState.Finished)?.hashCode() ?: 0
     var menuOpen by remember { mutableStateOf(false) }
-    val i18n = LocalI18n.current
-    val i18nLanguage by i18n.language.collectAsState()
+    var importMenuOpen by remember { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
@@ -109,18 +102,40 @@ fun LibraryScreen(
                         )
                         ImportState.Idle -> Unit
                     }
-                    IconButton(onClick = { filesLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Filled.Menu, contentDescription = t("Select book files"))
+                    // ONE import affordance with both sources inside, instead of
+                    // two icon buttons whose glyphs said something else (the file
+                    // picker wore a hamburger, backup wore a list icon).
+                    Box {
+                        IconButton(onClick = { importMenuOpen = true }) {
+                            Icon(Icons.Filled.Add, contentDescription = t("Import"))
+                        }
+                        DropdownMenu(
+                            expanded = importMenuOpen,
+                            onDismissRequest = { importMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(t("Import")) },
+                                onClick = {
+                                    filesLauncher.launch(arrayOf("*/*"))
+                                    importMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Import books from folder")) },
+                                onClick = {
+                                    treeLauncher.launch(null)
+                                    importMenuOpen = false
+                                },
+                            )
+                        }
                     }
-                    IconButton(onClick = { treeLauncher.launch(null) }) {
-                        Icon(Icons.Filled.Add, contentDescription = t("Import books from folder"))
-                    }
-                    IconButton(onClick = onOpenBackup) {
-                        Icon(Icons.Filled.List, contentDescription = t("Backup / restore"))
-                    }
+                    // The library's OWN view options (grid/list, sort, favourites)
+                    // are what is left of the old seven-group menu. Everything
+                    // global moved out: Trash / Backup / Dictionary → Settings,
+                    // Stats → its own tab, Language → Settings › Language.
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Shelf menu")
+                            Icon(Icons.Filled.MoreVert, contentDescription = t("View"))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
@@ -145,30 +160,6 @@ fun LibraryScreen(
                             DropdownMenuItem(
                                 text = { Text(if (shelf.favoritesOnly) t("Show all books") else t("Show favorites")) },
                                 onClick = { viewModel.setFavoritesOnly(!shelf.favoritesOnly); menuOpen = false },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("${t("Trash")} (${shelf.trashed.size})") },
-                                onClick = { onOpenTrash(); menuOpen = false },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Reading Stats")) },
-                                onClick = { onOpenStats(); menuOpen = false },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Dictionary")) },
-                                onClick = { onOpenDictionary(); menuOpen = false },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("${t("Language")}: ${languageLabel(i18nLanguage)}") },
-                                onClick = {
-                                    val idx = I18nState.CHOICES.indexOf(i18n.language.value)
-                                    val next = I18nState.CHOICES[(idx + 1) % I18nState.CHOICES.size]
-                                    i18n.setLanguage(next)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Backup / restore")) },
-                                onClick = { onOpenBackup(); menuOpen = false },
                             )
                         }
                     }
