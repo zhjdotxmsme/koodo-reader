@@ -1,0 +1,41 @@
+// core/archive — ONE zip-reading facade for EPUB / CBZ / DOCX (OOXML) /
+// desktop backup bundles (R1, P5.5 hard prerequisite; risk R1 of
+// docs/fb2-docx-html-mhtml-eval.md).
+//
+// PURE KOTLIN JVM MODULE (same rationale as :core:dbio / :core:importer):
+// java.util.zip is stock JVM, so everything here is unit-testable without
+// the Android SDK, and the Android runtime needs no extra dependency.
+//
+// Why this module exists — before R1 the same code lived four times:
+//   EpubBook.kt / ComicCover.kt (exact-then-case-insensitive entry lookup),
+//   BackupBundle.kt (reopen the zip per accessor call), engine/image
+//   ZipExtractor.kt (long-lived handle). See docs/patches/r1-core-archive.patch
+//   for the migration of the first three onto this facade.
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // Zero runtime dependencies by design — this module is the dependency.
+
+    // Test only.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

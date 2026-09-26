@@ -1,10 +1,11 @@
 package com.koodoreader.core.dbio
 
+import com.koodoreader.core.archive.ZipArchive
+import com.koodoreader.core.archive.ZipArchives
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
@@ -118,24 +119,26 @@ class BundleOpen internal constructor(
     val bookFiles: List<BookFile>,
     val fontFiles: List<FontFile>,
     private val workDir: File?,
-    private val zipFile: File?,
+    /**
+     * The OPEN archive handle (R1: one shared handle instead of reopening
+     * the zip on every accessor call). Null for directory bundles. Lifecycle
+     * is owned by [close] — callers must not close it.
+     */
+    private val zip: ZipArchive?,
     private val coverRoot: File?,
     private val bookRoot: File?,
     private val fontRoot: File?,
 ) : AutoCloseable {
 
     override fun close() {
+        zip?.close()
         workDir?.deleteRecursively()
     }
 
     /** Raw bytes of a bundled cover (desktop covers are small by design). */
     fun coverBytes(name: String): ByteArray? {
-        if (zipFile != null) {
-            return ZipFile(zipFile).use { zf ->
-                zf.getEntry("cover/$name")?.let {
-                    zf.getInputStream(it).use { s -> s.readBytes() }
-                }
-            }
+        if (zip != null) {
+            return zip.entry("cover/$name")?.let { zip.readBytes(it.name) }
         }
         val f = coverRoot?.let { File(it, name) } ?: return null
         return if (f.isFile) f.readBytes() else null
@@ -143,12 +146,10 @@ class BundleOpen internal constructor(
 
     /** Stream a bundled book file into [out] (never fully in memory). */
     fun bookStream(name: String, out: OutputStream) {
-        if (zipFile != null) {
-            ZipFile(zipFile).use { zf ->
-                val e = zf.getEntry("book/$name")
-                    ?: throw DesktopDbException("no book entry: $name")
-                zf.getInputStream(e).use { it.copyTo(out) }
-            }
+        if (zip != null) {
+            val e = zip.entry("book/$name")
+                ?: throw DesktopDbException("no book entry: $name")
+            zip.copyTo(e.name, out)
         } else {
             val f = bookRoot?.let { File(it, name) }
                 ?: throw DesktopDbException("no book dir; missing entry: $name")
@@ -159,12 +160,10 @@ class BundleOpen internal constructor(
 
     /** Stream a bundled font file into [out]. */
     fun fontStream(name: String, out: OutputStream) {
-        if (zipFile != null) {
-            ZipFile(zipFile).use { zf ->
-                val e = zf.getEntry("fonts/$name")
-                    ?: throw DesktopDbException("no font entry: $name")
-                zf.getInputStream(e).use { it.copyTo(out) }
-            }
+        if (zip != null) {
+            val e = zip.entry("fonts/$name")
+                ?: throw DesktopDbException("no font entry: $name")
+            zip.copyTo(e.name, out)
         } else {
             val f = fontRoot?.let { File(it, name) }
                 ?: throw DesktopDbException("no fonts dir; missing entry: $name")
@@ -176,16 +175,8 @@ class BundleOpen internal constructor(
 
 object BackupBundle {
 
-    /** ZIP local-file header `PK\x03\x04`. */
-    fun isZip(file: File): Boolean {
-        if (!file.isFile || file.length() < 4) return false
-        file.inputStream().use {
-            val b = ByteArray(4)
-            if (it.read(b) < 4) return false
-            return b[0] == 0x50.toByte() && b[1] == 0x4B.toByte() &&
-                b[2] == 0x03.toByte() && b[3] == 0x04.toByte()
-        }
-    }
+    /** ZIP local-file header `PK\x03\x04` (delegates to :core:archive). */
+    fun isZip(file: File): Boolean = ZipArchives.isZip(file)
 
     /** Open a desktop backup: a ZIP file, or a directory with `config/` (+`cover/`+`book/`). */
     fun open(source: File): BundleOpen {
@@ -201,15 +192,17 @@ object BackupBundle {
 
     private fun readZip(zip: File): BundleOpen {
         val work = java.nio.file.Files.createTempDirectory("dbio-open").toFile()
-        ZipFile(zip).use { zf ->
+        // R1: the archive handle stays open for the lifetime of the bundle —
+        // coverBytes / bookStream / fontStream reuse it instead of reopening
+        // the zip per call (the previous 3×-reopen pattern).
+        val archive = ZipArchives.open(zip)
+        try {
             val dbFiles = linkedMapOf<String, File>()
             var configJson: String? = null
             val covers = mutableListOf<CoverFile>()
             val books = mutableListOf<BookFile>()
             val fonts = mutableListOf<FontFile>()
-            val it = zf.entries()
-            while (it.hasMoreElements()) {
-                val entry = it.nextElement()
+            for (entry in archive.entries) {
                 if (entry.isDirectory) continue
                 val name = entry.name
                 when {
@@ -217,8 +210,8 @@ object BackupBundle {
                         val base = name.removePrefix("config/").removeSuffix(".db")
                         val target = File(work, base + ".db")
                         target.parentFile?.mkdirs()
-                        zf.getInputStream(entry).use { input ->
-                            FileOutputStream(target).use { input.copyTo(it) }
+                        FileOutputStream(target).use { out ->
+                            archive.copyTo(name, out)
                         }
                         if (base.startsWith("temp-")) {
                             dbFiles[base.removePrefix("temp-") + "@temp"] = target
@@ -227,19 +220,19 @@ object BackupBundle {
                         }
                     }
                     name == "config/config.json" -> {
-                        configJson = zf.getInputStream(entry).use { it.readBytes().decodeToString() }
+                        configJson = archive.readBytes(name).decodeToString()
                     }
                     name.startsWith("cover/") -> {
                         val rel = name.removePrefix("cover/")
-                        covers.add(CoverFile(rel, entry.size))
+                        covers.add(CoverFile(rel, entry.sizeBytes))
                     }
                     name.startsWith("book/") -> {
                         val rel = name.removePrefix("book/")
-                        books.add(BookFile(rel, entry.size))
+                        books.add(BookFile(rel, entry.sizeBytes))
                     }
                     name.startsWith("fonts/") -> {
                         val rel = name.removePrefix("fonts/")
-                        fonts.add(FontFile(rel, entry.size))
+                        fonts.add(FontFile(rel, entry.sizeBytes))
                     }
                     else -> Unit
                 }
@@ -251,11 +244,16 @@ object BackupBundle {
                 bookFiles = books,
                 fontFiles = fonts,
                 workDir = work,
-                zipFile = zip,
+                zip = archive,
                 coverRoot = null,
                 bookRoot = null,
                 fontRoot = null,
             )
+        } catch (t: Throwable) {
+            // Never leak the handle when bundle construction fails.
+            runCatching { archive.close() }
+            runCatching { work.deleteRecursively() }
+            throw t
         }
     }
 
@@ -284,7 +282,7 @@ object BackupBundle {
             fontFiles = fontsDir.listFiles()
                 .orEmpty().filter { it.isFile }.map { FontFile(it.name, it.length()) },
             workDir = null,
-            zipFile = null,
+            zip = null,
             coverRoot = if (coversDir.isDirectory) coversDir else null,
             bookRoot = if (booksDir.isDirectory) booksDir else null,
             fontRoot = if (fontsDir.isDirectory) fontsDir else null,

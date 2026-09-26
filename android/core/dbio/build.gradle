@@ -25,6 +25,10 @@ kotlin {
 }
 
 dependencies {
+    // R1: shared zip facade — BackupBundle reads desktop backup zips through
+    // ZipArchive (one held handle instead of reopen-per-accessor).
+    implementation project(':core:archive')
+
     // NO runtime SQLite dependency: the JDBC engine below is JVM/test-only
     // (sqlite-jdbc ships no Android natives — xerial#794). On device, the app
     // installs a framework-SQLite factory via DesktopDbEngine at startup.

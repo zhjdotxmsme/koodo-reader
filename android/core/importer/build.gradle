@@ -22,7 +22,11 @@ kotlin {
 }
 
 dependencies {
-    // Test only — this module has zero runtime dependencies.
+    // R1: shared zip facade — EpubBook / ComicCover / EpubSpine read archives
+    // through ZipArchive (ZipArchives.open) instead of naked java.util.zip.
+    implementation project(':core:archive')
+
+    // Test only — apart from :core:archive this module has no runtime deps.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     // `runBlocking` for the suspend pipeline API (JUnit 5 cannot invoke a
     // `suspend fun` test method, which silently skipped this whole class).

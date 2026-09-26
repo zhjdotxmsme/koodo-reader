@@ -1,8 +1,9 @@
 package com.koodoreader.core.importer
 
+import com.koodoreader.core.archive.ZipArchive
+import com.koodoreader.core.archive.ZipArchives
 import java.io.File
 import java.util.Locale
-import java.util.zip.ZipFile
 
 /**
  * Comic (CBZ) cover extraction (P1 import) — parity with the desktop
@@ -30,9 +31,8 @@ object ComicCover {
 
     /** Extract cover + page count from a CBZ [file]. Returns null on failure. */
     fun extract(file: File): Result? = runCatching {
-        ZipFile(file).use { zip ->
-            val images = zip.entries().asSequence()
-                .map { it.name }
+        ZipArchives.openOrNull(file)?.use { archive ->
+            val images = archive.names()
                 .filter { name ->
                     // substringAfterLast returns the input unchanged when
                     // there is no directory prefix (no missing-default here).
@@ -43,7 +43,7 @@ object ComicCover {
             if (images.isEmpty()) {
                 Result(cover = null, pageCount = 0)
             } else {
-                val bytes = readEntryBytes(zip, images.first())
+                val bytes = readEntryBytes(archive, images.first())
                 if (bytes == null) {
                     Result(cover = null, pageCount = images.size)
                 } else {
@@ -63,10 +63,10 @@ object ComicCover {
 
     private fun coverExt(entryName: String): String = extOf(entryName.substringAfterLast('/'))
 
-    private fun readEntryBytes(zip: ZipFile, name: String): ByteArray? {
-        zip.getEntry(name)?.let { e -> return zip.getInputStream(e).use { it.readBytes() } }
-        val match = zip.entries().asSequence().firstOrNull { it.name.equals(name, ignoreCase = true) }
-        return match?.let { zip.getInputStream(it).use { it.readBytes() } }
+    private fun readEntryBytes(archive: ZipArchive, name: String): ByteArray? {
+        // ZipArchive.entry() = exact match, then case-insensitive fallback
+        // (the shared policy this module used to hand-roll).
+        return archive.entry(name)?.let { archive.readBytes(it.name) }
     }
 
     /**

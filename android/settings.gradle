@@ -78,7 +78,7 @@ include ':engine:pdf'
 //
 // // Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
 // // desktop backup bundles — see docs/fb2-docx-html-mhtml-eval.md risk R1.
-// include ':core:archive'
+include ':core:archive'
 // // Native FB2 (FictionBook 2) converter (P5.5a).
 // include ':engine:fb2'
 // // Native single-file HTML / MHTML converter (P5.5b/c).

@@ -1,8 +1,10 @@
 package com.koodoreader.core.importer
 
+import com.koodoreader.core.archive.ArchiveException
+import com.koodoreader.core.archive.ZipArchive
+import com.koodoreader.core.archive.ZipArchives
 import java.io.File
 import java.util.Locale
-import java.util.zip.ZipFile
 
 /**
  * A cover image extracted from a book archive. [extension] is the file
@@ -29,8 +31,8 @@ data class EpubResult(val metadata: EpubMetadata, val cover: BookCover?)
 
 /**
  * EPUB metadata + cover extraction (P1 import) — a minimal, dependency-free
- * reader of the OPF package, on a `java.util.zip.ZipFile` (the book file has
- * already been copied into app storage by [ImportPipeline]).
+ * reader of the OPF package, over the :core:archive ZipArchive facade (the
+ * book file has already been copied into app storage by [ImportPipeline]).
  *
  * Parity notes vs the desktop engine (kookit `EpubRender` / `epub.js`):
  *  - container: `META-INF/container.xml` → `<rootfile full-path="…">`;
@@ -52,16 +54,16 @@ object EpubBook {
     /** Throws [IllegalArgumentException] when [file] is not a readable EPUB zip. */
     fun parse(file: File): EpubResult {
         if (!file.isFile) throw IllegalArgumentException("EPUB file not found: ${file.path}")
-        val zip = try {
-            ZipFile(file)
-        } catch (e: java.io.IOException) {
+        val archive = try {
+            ZipArchives.open(file)
+        } catch (e: ArchiveException) {
             throw IllegalArgumentException("not a readable EPUB zip: ${file.path}", e)
         }
-        zip.use {
-            val opfPath = opfPath(zip) ?: throw IllegalArgumentException(
+        archive.use {
+            val opfPath = opfPath(archive) ?: throw IllegalArgumentException(
                 "EPUB without an OPF package document",
             )
-            val opfXml = readEntry(zip, opfPath)
+            val opfXml = readEntry(archive, opfPath)
                 ?: throw IllegalArgumentException("OPF entry unreadable: $opfPath")
 
             val metadata = metadataOf(opfXml)
@@ -70,7 +72,7 @@ object EpubBook {
                 ?.let { resolvePath(opfPath, it) }
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { entryName ->
-                    readEntryBytes(zip, entryName)?.let {
+                    readEntryBytes(archive, entryName)?.let {
                         BookCover(it, coverExtension(entryName))
                     }
                 }
@@ -80,29 +82,25 @@ object EpubBook {
 
     // ---- package navigation ------------------------------------------------
 
-    private fun opfPath(zip: ZipFile): String? {
-        val container = readEntry(zip, CONTAINER_PATH)
+    private fun opfPath(archive: ZipArchive): String? {
+        val container = readEntry(archive, CONTAINER_PATH)
         if (container != null) {
             val fullPath = firstAttribute(container, "rootfile", "full-path")
             if (fullPath != null && fullPath.isNotEmpty()) return fullPath
         }
         // Fallback (desktop-tolerant): first .opf entry in the archive.
-        return zip.entries().asSequence()
-            .map { it.name }
+        return archive.names()
             .firstOrNull { it.endsWith(".opf", ignoreCase = true) }
     }
 
-    private fun readEntry(zip: ZipFile, name: String): String? =
-        readEntryBytes(zip, name)?.toString(Charsets.UTF_8)
+    private fun readEntry(archive: ZipArchive, name: String): String? =
+        readEntryBytes(archive, name)?.toString(Charsets.UTF_8)
 
-    private fun readEntryBytes(zip: ZipFile, name: String): ByteArray? {
+    private fun readEntryBytes(archive: ZipArchive, name: String): ByteArray? {
         // Zip entry names are case-sensitive; some packages mangle case —
-        // try the exact name first, then a case-insensitive scan (bounded:
-        // archives in this app's size range stay cheap).
-        zip.getEntry(name)?.let { e -> zip.getInputStream(e).use { return it.readBytes() } }
-        val match = zip.entries().asSequence()
-            .firstOrNull { it.name.equals(name, ignoreCase = true) }
-        return match?.let { zip.getInputStream(it).use { it.readBytes() } }
+        // ZipArchive.entry() resolves exact first, then case-insensitively
+        // (the shared policy this module used to hand-roll).
+        return archive.entry(name)?.let { archive.readBytes(it.name) }
     }
 
     // ---- metadata ----------------------------------------------------------
