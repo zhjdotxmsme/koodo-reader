@@ -244,6 +244,8 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // `runBlocking` for the suspend import pipeline (import → read E2E test).
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
 }
 
 tasks.withType(Test).configureEach {
