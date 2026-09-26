@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计：Android 端 UI/UX 对齐 readest —— 设计语言与信息架构打底</title>
+<style>
+  :root { --bg:#10141a; --card:#18202b; --line:#263242; --tx:#dce6f2; --dim:#8fa1b8;
+          --acc:#4da3ff; --ok:#3fb950; --warn:#d4a72c; --bad:#f47067; --code-bg:#0c1016;
+          --purple:#c792ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 16px; background:var(--bg); color:var(--tx);
+         font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; line-height:1.35; }
+  h2 { font-size:18px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:15px; margin:22px 0 8px; color:#b9cbe2; }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:18px; line-height:1.8; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:12px 0; }
+  code, pre { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13px; }
+  code { background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; line-height:1.5; }
+  pre code { border:none; background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); font-weight:600; }
+  .tag { display:inline-block; font-size:12px; border-radius:999px; padding:1px 10px; margin-right:6px; white-space:nowrap; }
+  .ok { background:#123d1f; color:var(--ok); } .warn { background:#3d3212; color:var(--warn); }
+  .acc { background:#122c47; color:var(--acc); } .new { background:#2d123d; color:var(--purple); }
+  .bad { background:#40191a; color:var(--bad); }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .kv { color:var(--dim); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+  .swatch { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; border:1px solid #0006; }
+  .note { border-left:3px solid var(--acc); padding-left:12px; color:#c3d4e8; }
+  .danger { border-left:3px solid var(--bad); padding-left:12px; color:#f0c9c8; }
+  a { color:var(--acc); }
+  hr { border:none; border-top:1px solid var(--line); margin:28px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Android 端 UI/UX 对齐 readest<br><span style="font-size:17px;color:var(--dim);font-weight:400">子项目 ①：设计语言与信息架构打底</span></h1>
+
+<div class="meta">
+  日期 2026-09-26 · 项目 <code>koodo-reader</code>（workspace <code>40f005a9-ecb4-49f1-a486-10fe5018a294</code>）<br>
+  状态：<span class="tag ok">用户已确认设计</span>待实施计划<br>
+  参照项目：<a href="https://github.com/readest/readest">readest/readest</a>（AGPL-3.0）· 文档 <a href="https://readest.com/docs">readest.com/docs</a><br>
+  事实来源：本会话直接读取仓库代码 + 解包 Gradle 缓存 AAR 实测，逐条标注证据
+</div>
+
+<h2>0. 范围与不在范围内的部分</h2>
+
+<div class="card">
+  <p style="margin-top:0">用户原始诉求是「UI/UX 借鉴 readest，对文件的适配也借鉴它来适配」。这实际上是<b>两个独立的大方向</b>，一个 spec 装不下，经确认后拆成四个子项目，本次只做第 ① 个。</p>
+  <div class="grid2">
+    <div>
+      <h3 style="margin-top:0;color:var(--ok)">本次范围内（子项目 ①）</h3>
+      <ul>
+        <li>设计 token 层（颜色 / 形状 / 间距 / 字体）</li>
+        <li>Compose 组件基座 <code>:core:ui</code></li>
+        <li>导航骨架：底部导航 4 Tab + 各页自有 TopBar</li>
+        <li>设置页分组骨架 + 已有能力接线</li>
+        <li>笔记页（跨书高亮/笔记/书签）</li>
+        <li>书库下拉菜单拆解</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="margin-top:0;color:var(--dim)">明确不在范围内</h3>
+      <ul>
+        <li><b>阅读器内部改造</b>（工具栏/抽屉/面板/选中弹窗/手势）→ 子项目 ②</li>
+        <li><b>文件格式适配</b>（格式矩阵、统一解析抽象、各格式一致性）→ 子项目 ④</li>
+        <li><b>桌面 / Web 端</b>：本次完全不动 <code>src/</code></li>
+        <li><b>新增设置功能项</b>：只搭骨架，不造功能</li>
+        <li><b>BOM / AGP / Kotlin 升级</b>：有意不做，见 D7</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>1. 已确认决策</h2>
+<table>
+  <tr><th style="width:44px">#</th><th style="width:150px">决策点</th><th>取值</th></tr>
+  <tr><td>D1</td><td>目标端</td><td><b>Android 原生端</b>（<code>android/</code>，Compose）。桌面 <code>src/</code>（React CRA）不动 —— 近期提交与看板任务全在 android，格式适配也在这里落地，改动闭环最快</td></tr>
+  <tr><td>D2</td><td>视觉取向</td><td><b>折中</b>：外壳（导航/书库/设置/面板）对齐 readest 的现代语言；<b>阅读页配色仍走 <code>ThemeSpec</code></b>，保持与桌面 <code>themeList</code> 一致；品牌色保留</td></tr>
+  <tr><td>D3</td><td>第一优先级</td><td><b>设计语言 + 信息架构打底</b>（token / 主题 / 导航骨架），先于阅读器内改造与格式适配</td></tr>
+  <tr><td>D4</td><td>落地方案</td><td><b>新增 <code>:core:ui</code></b>（<code>com.android.library</code> + Compose）承载设计系统；<code>:core:designsystem</code> 维持纯 JVM 定位（不塞 Compose），但需<b>先把它真正注册进构建并修好测试编译</b> —— 实测发现它当前是幽灵模块，见 §2</td></tr>
+  <tr><td>D5</td><td>导航形态</td><td><b>底部导航</b>（4 个平级 Tab）+ 各页自有 TopBar</td></tr>
+  <tr><td>D6</td><td>Tab 集合</td><td><b>书库 / 笔记 / 统计 / 设置</b>（含新建笔记页）</td></tr>
+  <tr><td>D7</td><td>Compose BOM</td><td><b>不升级</b>，留在 <code>compose-bom:2024.06.00</code>（= material3 1.2.1）。代价是平板自适应需自建，见风险 R2</td></tr>
+  <tr><td>D8</td><td>token 拆分</td><td><b>值对象放 <code>:core:designsystem</code></b>（纯 JVM 可测、纳入 <code>selfCheck</code> 门禁）；<b>Compose 绑定放 <code>:core:ui</code></b></td></tr>
+  <tr><td>D9</td><td>设置页范围</td><td>只交付<b>分组骨架 + 已有能力接线</b>，不新增任何设置项</td></tr>
+  <tr><td>D10</td><td>菜单拆解规则</td><td>按<b>语境归属</b>而非按功能：视图/排序是"看书库时的控件"→ 留在书库；回收站/备份/统计/词典/语言是全局配置 → 迁至设置与统计</td></tr>
+  <tr><td>D11</td><td>阅读器位置</td><td><code>reader/{bookKey}</code> 是<b>全屏 destination，不在底栏内</b>，进入即隐藏底栏</td></tr>
+</table>
+
+<h2>2. 现状（本会话核实的代码事实）</h2>
+
+<div class="card">
+  <h3 style="margin-top:0">壳主题与导航</h3>
+  <ul>
+    <li><span class="tag warn">极简</span><code>app/.../shell/Theme.kt</code> 全文 38 行，只有 <b>4 个硬编码色值</b>（primary <code>#3A6EA5</code>、secondary <code>#6B8E23</code>、浅底 <code>#F8F6F2</code>、深底 <code>#16181D</code>）；文件自带注释承认「真正的阅读器主题化是 P2 的事」。</li>
+    <li><span class="tag bad">结构性问题</span><code>LibraryScreen.kt</code> 把 <b>7 组</b>互不相关的能力塞进一个 TopAppBar：4 个 IconButton（选文件 / 导入文件夹 / 备份 / 更多）+ 下拉菜单里的 视图切换、排序（多字段）、仅收藏、回收站、统计、词典、语言。</li>
+    <li><span class="tag acc">路由现状</span><code>ShellNavHost.kt</code>：起始 <code>library</code>，另有 <code>backup</code> / <code>trash</code> / <code>stats</code> / <code>dictionary</code> 四个叶子路由，以及 <code>reader/{bookKey}</code>（按 format 分发 PDF / NativeEpub / placeholder）。<b>无任何顶层导航容器。</b></li>
+  </ul>
+
+  <h3>技术底座（实测）</h3>
+  <ul>
+    <li>AGP <code>8.2.2</code> · Kotlin <code>1.9.24</code> · Compose 编译器 <code>1.5.14</code> · <code>navigation-compose:2.7.7</code> · <code>compileSdk 34 / minSdk 24 / targetSdk 34</code>。</li>
+    <li>Compose BOM <code>2024.06.00</code> → 解包 Gradle 缓存中的 <code>material3-android-1.2.1.aar</code> 实测确认：</li>
+    <li><span class="tag ok">有</span><code>surfaceContainer</code> / <code>surfaceContainerLow</code> / <code>surfaceContainerHighest</code> / <code>surfaceDim</code> / <code>surfaceBright</code> —— 现代 M3 语义色角色齐全，<b>不需要升级 BOM 就能用</b>。</li>
+    <li><span class="tag ok">有</span><code>SegmentedButton</code> · <code>NavigationBar</code> / <code>NavigationBarItem</code> · <code>ModalBottomSheet</code> · <code>FilterChip</code> · <code>SearchBar</code> · <code>ListItem</code> · <code>PullToRefresh</code>。</li>
+    <li><span class="tag bad">没有</span><code>NavigationSuiteScaffold</code> 及 Material3 Expressive（需 BOM 1.3+）→ 平板/横屏自适应必须自建（见 R2）。</li>
+  </ul>
+
+  <h3>模块约定（决定了 D4）</h3>
+  <ul>
+    <li><code>:core:designsystem</code> 是<b>纯 Kotlin JVM 模块</b>，自带零依赖注释、<code>selfCheck</code> 任务（<code>gradle :core:designsystem:selfCheck</code>）与无框架自检类。它承载 <code>ThemeSpec</code> / <code>TypographyTokens</code> / <code>FontCatalogEntry</code> / <code>AppearanceCodec</code>，字段与默认值是从桌面 <code>styleUtil.ts</code> / <code>themeUtil.ts</code> / <code>themeList.tsx</code> 逐条提取的<b>协议镜像</b>，用于保证 Room 与备份 zip 的线格式与桌面兼容。</li>
+    <li>把 Compose 塞进这个模块会让 <code>gradle test</code> 从此需要 Android SDK，作废它<b>应有的</b> JVM 门禁 —— 这正是选 D4 的原因。</li>
+  </ul>
+
+  <div class="danger">
+    <h3 style="margin-top:0;color:var(--bad)">⚠ 实测更正：<code>:core:designsystem</code> 是幽灵模块，其测试从未编译过</h3>
+    <p>初版本 spec 把该模块的 <code>selfCheck</code> 当作"正在生效的既有门禁"，并以此作为 D4 的论据。用 Gradle 8.5 + JDK 17 <b>实跑</b>后推翻了这个前提，事实如下：</p>
+    <ul>
+      <li><code>settings.gradle</code> 的 29 个 <code>include</code> 中<b>没有</b> <code>:core:designsystem</code> → 它不参与构建。</li>
+      <li>全仓 <code>build.gradle</code> <b>无一</b>依赖它 → 无消费者；全仓 Kotlin 代码 <b>无一</b> <code>import com.koodoreader.core.designsystem</code> → 6 个源文件 + 5 个测试文件<b>全是死代码</b>。它只被别的模块在<b>注释里</b>当作"参考范式"提及，这正是它长期看起来活着的原因。</li>
+      <li>用独立 settings 探针单独注册该模块后实跑：主源码 <code>compileKotlin</code> <b>通过</b>，<code>compileTestKotlin</code> <b>失败，26 个错误</b>：<code>DesignSystemSelfCheck.kt</code> 21×（<code>failures</code> 声明为 <code>List&lt;String&gt;</code> 却 <code>add(it)</code> 一个 <code>Throwable</code>）、<code>ThemePresetTest.kt</code> 3×（<code>assertTrue</code> 未导入）、<code>FontCatalogEntryTest.kt</code> 2×（<code>assert(x, "msg")</code> 签名误用；反引号测试名含 JVM 非法字符 <code>:</code>）。</li>
+      <li>附带发现：<code>FontCatalogEntryTest</code> 有 3 处用 Kotlin 的 <code>assert()</code>，而它在 JVM 上<b>默认不启用（需 <code>-ea</code>）</b>且模块未开启断言 → 即使编译通过也是<b>永不失败的真空测试</b>，属仓库 <code>scripts/check-phantom-tests.js</code> 所防的那一类。</li>
+    </ul>
+    <p style="margin-bottom:0"><b>对设计的影响：</b>D4 的<b>决策不变</b>（纯 JVM 可测性、不污染 Android 依赖、<code>:core:ui</code> 作为可复用设计系统，这些理由依然成立），但 W1 的范围与风险变了 —— 见 §9 与 R6。</p>
+  </div>
+
+  <h3>笔记页的数据可行性（已核实，风险低于预期）</h3>
+  <ul>
+    <li><span class="tag ok">已就绪</span><code>core:data</code> 的 Room 库 <code>KoodoDatabase</code> 已有 <code>notes</code> / <code>bookmarks</code> 两张表与对应 Entity/DAO。</li>
+    <li><span class="tag ok">已就绪</span><code>NoteDao.observeAll()</code> 与 <code>BookmarkDao.observeAll()</code> <b>都已存在</b> → 跨书聚合<b>零 DAO 改动、零 schema 迁移</b>，只需 ViewModel 里 combine 两个 Flow 再 join <code>books</code> 取标题与封面。</li>
+    <li><span class="tag warn">待验证</span><code>engine/annotate</code> 是<b>决策层</b>（三态模型 + CFI 编解码 + 列描述符），<b>没有任何屏幕</b>；从笔记列表跳进阅读器能否用 CFI 精确定位，见 R4。</li>
+  </ul>
+
+  <h3>并行改动面（影响第 2 步）</h3>
+  <ul>
+    <li><span class="tag warn">热点文件</span><code>android/settings.gradle</code> <b>当前已被修改未提交</b>，<code>android/engine/fb2/</code> 未跟踪；<code>.worktrees/</code> 下有十几个并行工作树。新模块注册必须单独提交、单独 review。</li>
+  </ul>
+</div>
+
+<h2>3. readest → koodo 对位表</h2>
+
+<table>
+  <tr><th style="width:200px">readest 的做法</th><th style="width:230px">koodo 现状</th><th>本次采用</th></tr>
+  <tr>
+    <td>Next.js 页面级路由：<code>app/{library,reader,user,player,…}</code></td>
+    <td>单 <code>NavHost</code>，书库是唯一入口，其余靠下拉菜单进</td>
+    <td>顶层 4 Tab 路由 + 每 Tab 自有 TopBar；叶子路由挂在 Tab 之下（底栏保留）</td>
+  </tr>
+  <tr>
+    <td>独立设计系统层 <code>components/{primitives,settings,metadata}</code></td>
+    <td>无设计系统层；仅 38 行的壳主题 + 各页面直接用 M3 默认值</td>
+    <td>新建 <code>:core:ui</code>，token 层 + 组件层，可被 <code>:feature:*</code> 复用</td>
+  </tr>
+  <tr>
+    <td>书库顶部承载搜索 + 右上角 Grid/List 切换 + View 菜单（隐藏封面、最近阅读）</td>
+    <td>同位置塞了 7 组能力，含与书库无关的全局配置</td>
+    <td>书库 TopBar 只留 搜索 + 视图（网格/列表 · 排序 · 分组 · 仅收藏）+ 导入</td>
+  </tr>
+  <tr>
+    <td>分组：Authors / Books / Groups / Series；排序 + 次级 Then by</td>
+    <td><code>LibraryLogic</code> 已有排序与网格/列表状态</td>
+    <td>骨架先落地「视图」入口；分组能力<b>不在本次</b>（属子项目 ③）</td>
+  </tr>
+  <tr>
+    <td>Notebook 面板（按书聚合摘录/笔记）+ 侧栏 Notes tab</td>
+    <td><code>engine/annotate</code> 有数据无界面</td>
+    <td><b>笔记 Tab</b>：分段控件 全部 / 高亮笔记 / 书签，按书分组</td>
+  </tr>
+  <tr>
+    <td>设置分组：Layout / Behavior / Integrations / Device / Annotation Tools / Pagination / Header &amp; Footer</td>
+    <td>无设置页；语言/词典/备份散落在书库下拉菜单</td>
+    <td>设置页分组骨架，吸收 语言 / 词典 / 备份恢复 / 回收站 等已有能力</td>
+  </tr>
+  <tr>
+    <td>阅读器「控件随叫随到」，不常驻 chrome</td>
+    <td>阅读器已是独立全屏 destination</td>
+    <td>保持并明确：进阅读器即隐藏底栏（D11）</td>
+  </tr>
+  <tr>
+    <td>扁平卡片语言：0 elevation + 发丝线 + tonal surface</td>
+    <td>M3 默认带 elevation 阴影，层级靠阴影表达</td>
+    <td>层级改由 tonal surface 表达 + <code>outlineVariant</code> 1dp 发丝线</td>
+  </tr>
+</table>
+
+<h2>4. 分层与模块边界</h2>
+
+<pre><code>:core:designsystem        （纯 JVM，本子项目不改其构建性质）
+  ThemeSpec / TypographyTokens / FontCatalogEntry / AppearanceCodec
+  ＋ 新增：KoodoColorTokens / KoodoShapeTokens / KoodoSpaceTokens（值对象，long 形）
+        ▲  只当"值来源"，零 Compose 依赖，selfCheck 门禁继续有效
+:core:ui                  （新增：com.android.library + Compose）
+  theme/       KoodoTheme · KoodoColors · KoodoShapes · KoodoSpacing
+               KoodoTypography · ThemeSpecBridge
+  component/   KoodoScaffold · KoodoTopAppBar · KoodoSegmentedControl
+               KoodoSettingRow · KoodoSectionHeader · KoodoEmptyState
+               KoodoBookCover · KoodoBookCard · KoodoBookRow · KoodoChip
+               KoodoBottomSheet · KoodoAlert · KoodoSlider
+        ▲
+:app/shell     ShellScaffold（底栏）+ 各页自有 TopAppBar
+:feature:*     就地替换为 :core:ui 组件</code></pre>
+
+<h3>三条硬边界</h3>
+<ol>
+  <li><b><code>:core:ui</code> 不依赖 <code>:core:data</code>。</b> 组件不认识 <code>BookEntity</code>，只吃 <code>BookCardModel</code> 这类 UI model。这条边界换来两件事：设计系统能被 <code>:app</code> 与 <code>:feature:*</code> 双向复用，且 Compose Preview 不需要数据库实例。</li>
+  <li><b><code>ThemeSpecBridge</code> 是唯一耦合点。</b> 阅读页及其面板把 <code>ThemeSpec</code> 映射为 Compose <code>ColorScheme</code>；书库 / 笔记 / 统计 / 设置等<b>外壳</b>用品牌 <code>ColorScheme</code>，不受阅读主题影响。这是 D2「外壳对齐 readest、阅读页保留 koodo」在代码结构上的落点。</li>
+  <li><b><code>:core:designsystem</code> 保持零运行时依赖（纯 JVM）。</b> 新增的只是纯 Kotlin 值对象 + 单测，不引入 Compose / Android 依赖。但注意：该模块<b>当前未注册进构建且测试源码编译不过</b>（见 §2 实测更正），所以 W1 的第一步是把它<b>真正接上（注册 + 修 26 个测试编译错误）</b>，而不是"保持现状"。</li>
+</ol>
+
+<div class="note">
+  <b>为什么值对象与 Compose 绑定要拆两层。</b> <code>androidx.compose.ui.graphics.Color</code> 是 Compose 类型，若 token 本身用它，纯 JVM 单测就必须把 <code>ui-graphics</code> 拉上测试 classpath，对比度校验也就进不了 <code>selfCheck</code>。拆开后：色值在 <code>:core:designsystem</code> 是 <code>long</code>、间距是 <code>Int</code>/<code>Float</code>，可纯 JVM 校验浅深色槽位齐全与对比度 ≥ 4.5:1；<code>:core:ui</code> 只做 <code>Color(0xFF…)</code> 绑定。
+</div>
+
+<h2>5. 信息架构与导航骨架</h2>
+
+<pre><code>ShellScaffold
+├── Tab 1  书库 (start) ── TopBar: 标题 · 搜索 · [视图菜单] · 导入
+│              书库无二级页；视图/排序/仅收藏 全部在本页 TopBar 内消化
+├── Tab 2  笔记 (新) ─── TopBar: 标题 · 搜索
+│              分段控件: 全部 / 高亮笔记 / 书签
+│              按书分组 → 点条目经 CFI 跳 reader/{bookKey}
+├── Tab 3  统计   ────── 复用 feature/stats 的 StatsScreen（去掉其自带返回键）
+└── Tab 4  设置 (新) ─── 分组: 阅读 · 外观 · 内容源 · 语音 · 翻译 · 语言 · 数据 · 关于
+                 ├── 词典管理        （底栏保留）
+                 ├── 备份与恢复       （底栏保留）
+                 └── 回收站          （底栏保留）
+
+reader/{bookKey}  ← 全屏 destination，不在底栏内，进入即隐藏底栏</code></pre>
+
+<div class="note">
+  <b>为什么回收站与备份不放书库。</b> 它们是<b>数据管理</b>能力，不属于"看书库"这一语境，且一年用不到几次 —— 放书库 TopBar 就是拿高频界面承载低频动作。readest 同样把 Sync &amp; Backup 收在 Settings 下。它们仍是独立路由，只是入口挂在 设置 › 数据。
+</div>
+
+<h3>菜单拆解：按语境归属，不按功能</h3>
+<table>
+  <tr><th style="width:230px">现在的位置</th><th style="width:200px">去向</th><th>理由</th></tr>
+  <tr><td>视图切换（网格/列表）、排序</td><td><b>留在书库</b> TopBar 的「视图」菜单</td><td>"我在看书库时的控件"，属于书库语境；readest 同样放在 library 的 View 菜单里</td></tr>
+  <tr><td>仅收藏</td><td>留在书库「视图」菜单</td><td>同上，是书库的筛选维度</td></tr>
+  <tr><td>回收站</td><td>设置 › 数据</td><td>跨页面数据管理，不是书库视图选项</td></tr>
+  <tr><td>备份 / 恢复</td><td>设置 › 数据</td><td>同上</td></tr>
+  <tr><td>统计</td><td><b>升为顶层 Tab</b></td><td>已有独立模块与屏幕，值得平级入口</td></tr>
+  <tr><td>词典</td><td>设置 › 内容源</td><td>配置型能力（导入/启用/排序），不是高频动作</td></tr>
+  <tr><td>语言</td><td>设置 › 语言</td><td>全局偏好</td></tr>
+</table>
+
+<div class="note">
+  <b>结果：</b>书库 TopBar 从「4 个 IconButton + 7 组菜单项」收敛为「搜索 + 一个视图菜单 + 导入」。这是本次改动中用户可感知最强的一处。
+</div>
+
+<h3>两个明确的决定</h3>
+<ul>
+  <li><b>阅读器不进底栏</b>（D11）。对齐 readest 的「控件随叫随到，不占用页面」：阅读是沉浸场景，常驻底栏会同时吃掉垂直空间和注意力。</li>
+  <li><b>叶子页保留底栏</b>（回收站、备份、词典管理）。它们是所属 Tab 的下钻，保留底栏让用户能横向切 Tab 而无需先返回 —— Android 标准行为。</li>
+</ul>
+
+<h2>6. 设计 token</h2>
+
+<h3>6.1 颜色</h3>
+<p>品牌种子沿用现有 <code>Theme.kt</code> 的 4 个色值，按 M3 tonal palette 展开为完整 <code>ColorScheme</code>。观感规则对齐 readest 的扁平语言：</p>
+<table>
+  <tr><th style="width:190px">槽位</th><th>取值 / 规则</th></tr>
+  <tr><td><code>primary</code></td><td><span class="swatch" style="background:#3A6EA5"></span><code>#3A6EA5</code>（沿用现有品牌蓝）</td></tr>
+  <tr><td><code>secondary</code></td><td><span class="swatch" style="background:#6B8E23"></span><code>#6B8E23</code> —— <b>降级为极少数 accent</b>，避免与品牌蓝互抢</td></tr>
+  <tr><td>层级表达</td><td><b>靠 tonal surface，不靠阴影</b>：卡片 0dp elevation + <code>surfaceContainerLow</code>；浮层 <code>surfaceContainerHigh</code></td></tr>
+  <tr><td>边界</td><td><code>outlineVariant</code> <b>1dp 发丝线</b>做卡片与分隔 —— readest 平卡观感的核心，也是 koodo 现在最缺的一层</td></tr>
+  <tr><td>选中态</td><td>统一走 <code>secondaryContainer</code>（底栏项、分段控件、筛选 chip），<b>不用品牌蓝大面积铺底</b></td></tr>
+  <tr><td>浅色底</td><td><span class="swatch" style="background:#F8F6F2"></span><code>#F8F6F2</code>（沿用）</td></tr>
+  <tr><td>深色</td><td><span class="swatch" style="background:#16181D"></span><code>surfaceDim</code> = <code>#16181D</code> 作页面底，<code>surfaceContainer</code> 系列逐级抬升</td></tr>
+</table>
+
+<h3>6.2 形状</h3>
+<p><code>KoodoShapes</code> 覆盖 M3 默认的 medium / large：卡片与 BottomSheet 统一 <b>16dp</b>、控件 <b>12dp</b>、chip <b>8dp</b>。readest 走 daisyUI 的 <code>rounded-box</code>(16) / <code>rounded-btn</code>(8)，这组是对位。</p>
+
+<h3>6.3 间距（M3 的结构性缺口）</h3>
+<div class="card">
+  <p style="margin-top:0"><code>ColorScheme</code> / <code>Typography</code> / <code>Shapes</code> 这套 M3 三件套里<b>没有 spacing token</b>。补 <code>KoodoSpacing</code>：<code>4 / 8 / 12 / 16 / 24 / 32</code>。</p>
+  <p style="margin-bottom:0">这一层最容易被跳过，但跳过之后每个页面都会各自发明间距 —— 最终呈现就是现在这种「一个 TopAppBar 塞四件事」的堆叠感。它是本子项目里<b>投入产出比最高</b>的一项。</p>
+</div>
+
+<h3>6.4 字体</h3>
+<p>UI chrome 用 <code>KoodoTypography</code>（基于 M3 + Inter / Roboto）。<b>阅读页排版完全不动</b>，仍走 <code>:core:designsystem</code> 的 <code>TypographyTokens</code>（与桌面一致）。这条边界保证本次改动不会波及 iframe/分页渲染这条敏感链路。</p>
+
+<h2>7. 组件清单</h2>
+
+<table>
+  <tr><th style="width:120px">梯队</th><th style="width:330px">组件</th><th>说明</th></tr>
+  <tr>
+    <td><span class="tag acc">一 · 骨架必需</span></td>
+    <td><code>KoodoScaffold</code> · <code>KoodoTopAppBar</code> · <code>KoodoSegmentedControl</code> · <code>KoodoSettingRow</code> · <code>KoodoSectionHeader</code> · <code>KoodoEmptyState</code></td>
+    <td>§5 的骨架直接依赖。<code>KoodoSettingRow</code>（title + summary + trailing 控件）是设置页的基本砖块</td>
+  </tr>
+  <tr>
+    <td><span class="tag new">二 · 书库/笔记</span></td>
+    <td><code>KoodoBookCover</code> · <code>KoodoBookCard</code> · <code>KoodoBookRow</code> · <code>KoodoChip</code></td>
+    <td>组件<b>不含业务逻辑</b>：排序 / 分组 / lazy grid 状态留在 <code>LibraryLogic</code> / <code>LibraryViewModel</code>，组件只接收已算好的 model</td>
+  </tr>
+  <tr>
+    <td><span class="tag warn">三 · 阅读器内</span></td>
+    <td><code>KoodoBottomSheet</code> · <code>KoodoAlert</code> · <code>KoodoSlider</code></td>
+    <td>本次只<b>落地并验证</b>，不改造阅读器；供子项目 ② 复用</td>
+  </tr>
+</table>
+
+<h2>8. 验证策略</h2>
+
+<p>不能只靠"看着变了"。三层：</p>
+
+<div class="card">
+  <h3 style="margin-top:0">① 纯 JVM 单测（关键设计决定，见 §4）</h3>
+  <ul>
+    <li>色值 / 间距 / 形状以纯 Kotlin 值对象形式放在 <code>:core:designsystem</code>，纳入既有 <code>gradle :core:designsystem:selfCheck</code> 门禁。</li>
+    <li>校验项：浅色与深色的语义槽位<b>齐全且一一对应</b>；正文/背景<b>对比度 ≥ 4.5:1</b>；<code>KoodoShapes</code> <b>覆盖 M3 全部 5 档</b>；间距标尺单调递增且无缺口。</li>
+    <li>成果：设计系统的正确性进了 CI，而不是靠人眼。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">② Compose Preview + 截图</h3>
+  <ul>
+    <li>底栏（浅/深）、<code>KoodoSettingRow</code>、书库卡片与列表行各出 Preview。</li>
+    <li>截图归档，供下一步与实施后对比。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">③ 真机 / 模拟器冒烟</h3>
+  <ul>
+    <li>4 个 Tab 均可达；叶子页返回栈正确；Tab 间切换不丢各自滚动/筛选状态。</li>
+    <li>进出阅读器<b>底栏不泄漏</b>（D11 的回归点）。</li>
+    <li>深浅色切换、横竖屏旋转不丢状态；<code>minSdk 24</code> 设备上无 API 越界崩溃。</li>
+    <li>i18n：语言切换后新页面文案全部跟随，无回退英文。</li>
+  </ul>
+</div>
+
+<h2>9. 迁移顺序（每步可独立验证、可回退）</h2>
+
+<table>
+  <tr><th style="width:40px">步</th><th style="width:300px">动作</th><th>完成判据</th></tr>
+  <tr><td>1</td><td><b>复活</b> <code>:core:designsystem</code>：注册进 <code>settings.gradle</code> + 修 26 个测试编译错误（含把 3 处真空 <code>assert()</code> 换成 JUnit 断言），<b>然后</b>补 token 值对象 + 新单测</td><td><b>不动任何 UI</b>；<code>:core:designsystem:test</code> 与 <code>selfCheck</code> <b>首次真正跑绿</b>，含新增校验项</td></tr>
+  <tr><td>2</td><td>建 <code>:core:ui</code>，注册 <code>settings.gradle</code> + <code>app/build.gradle</code>，只放 theme 层</td><td><code>:app</code> 能引用 <code>KoodoTheme</code>；<b>单独提交、单独 review</b>（见 R1）</td></tr>
+  <tr><td>3</td><td><code>:app</code> 用 <code>KoodoShellTheme</code> 取代 <code>Theme.kt</code></td><td>观感开始变化，<b>结构不变</b>，可回退</td></tr>
+  <tr><td>4</td><td>引入 <code>ShellScaffold</code> + 底栏 + 4 Tab 路由</td><td>书库/统计接现成屏幕；笔记与设置先出空骨架；4 Tab 可达</td></tr>
+  <tr><td>5</td><td>拆书库菜单：视图归位，其余迁设置/统计</td><td>书库 TopBar 收敛为 搜索 + 视图 + 导入；无功能丢失</td></tr>
+  <tr><td>6</td><td>填充设置分组页 + 笔记页</td><td>设置各分组可达；笔记页聚合正确、CFI 跳转可用（依赖 R4 前置验证）</td></tr>
+  <tr><td>7</td><td><code>:feature:stats</code> / <code>:feature:dictionary</code> 换用 <code>:core:ui</code></td><td>两个 feature 模块不再自带一套视觉，跨模块一致</td></tr>
+</table>
+
+<h2>10. 风险与未验证项</h2>
+
+<table>
+  <tr><th style="width:40px">#</th><th style="width:170px">风险</th><th>说明与应对</th></tr>
+  <tr>
+    <td>R1</td>
+    <td><span class="tag warn">并行冲突</span>构建脚本是热点</td>
+    <td><code>android/settings.gradle</code> <b>当前已有未提交修改</b>，<code>android/engine/fb2/</code> 未跟踪，<code>.worktrees/</code> 下十几个并行工作树。<b>应对：</b>第 2 步的模块注册单独成一个提交、单独 review，不与任何 UI 改动混在一起。</td>
+  </tr>
+  <tr>
+    <td>R2</td>
+    <td><span class="tag warn">有意接受</span>平板/横屏需自建</td>
+    <td>M3 1.2.1 无 <code>NavigationSuiteScaffold</code>。<b>应对：</b>接受自建一层自适应（<code>WindowSizeClass</code> + 宽屏切 NavigationRail / 双栏）。这是用一层自建代码换掉一次工具链升级风险的<b>有意交换</b>，不是遗漏。</td>
+  </tr>
+  <tr>
+    <td>R3</td>
+    <td><span class="tag warn">门禁</span>i18n 哈希守卫</td>
+    <td>新文案必须走 <code>t("key")</code>；新 key 进 <code>src/assets/locales/en.json</code> 后跑 <code>scripts/sync-locales-android.js</code>；仓库另有 <code>scripts/check-locales.mjs</code> 守卫（历史上因行尾差异反复变红）。笔记页与设置页会引入较多新 key，<b>应对：</b>单独排一步，不与 UI 改动混提。</td>
+  </tr>
+  <tr>
+    <td>R4</td>
+    <td><span class="tag bad">未验证</span>笔记 → 阅读器的 CFI 跳转</td>
+    <td><code>engine/annotate</code> 是决策层、无屏幕；<code>NativeEpubScreen</code> 是否已能用 CFI 从外部精确定位，<b>本次未做验证</b>。<b>应对：</b>第 6 步开工前先做一次可行性确认；若不可用，笔记页先交付列表与聚合（数据层已就绪），跳转能力拆出独立卡片。</td>
+  </tr>
+  <tr>
+    <td>R5</td>
+    <td><span class="tag bad">合规</span>readest 是 AGPL-3.0</td>
+    <td>本 spec 只借鉴 readest 的<b>交互模式与视觉语言</b>（设计不受版权保护），<b>不复制其代码、样式文件或资源</b>。若实施中需要参考其源码实现，必须走 AGPL 合规评估 —— 本仓库已有 AGPL 合规相关工作（如 <code>docs/appendix-c-agpl-compliance.md</code>），不应引入新的许可义务。<b>注意 readest 依赖的 foliate-js 是 MIT，但其自身为 AGPL-3.0。</b></td>
+  <tr>
+    <td>R6</td>
+    <td><span class="tag bad">实测发现</span>幽灵模块 + 坏测试源</td>
+    <td><code>:core:designsystem</code> 未注册进构建、无消费者、其测试源码 26 个编译错误从未编译过（详见 §2 实测更正）。<b>影响：</b>W1 不是"新增 token"，而是"先复活再扩展"，工作量与风险都上调。修错本身是机械性的（缺 import / 类型不匹配 / 非法测试名），但 3 处真空 <code>assert()</code> 需要判断原意后再改。<b>应对：</b>置于 W1 最前，单独提交（"修复幽灵模块"本身有价值，且与 UI 改动无关，便于独立 review）。</td>
+  </tr>
+  <tr>
+    <td>R7</td>
+    <td><span class="tag warn">已缓解</span>构建脚本冲突</td>
+    <td>会话开始时 <code>android/settings.gradle</code> 有未提交改动，现已随 <code>780b7169</code> 等 4 个提交入库，工作区干净。<b>但</b>并行工作树仍在，W1/W2 触碰 <code>settings.gradle</code> 时仍需单独提交。另：本机无 <code>gradlew</code>、无 PATH 上的 gradle，需用缓存中的 Gradle 8.5 + <code>D:\jdk-17\jdk-17.0.13+11</code>（见实施计划的环境章节）。</td>
+  </tr>
+</table>
+
+<h2>11. 后续子项目（本次不做，各自独立出 spec）</h2>
+
+<table>
+  <tr><th style="width:40px">#</th><th style="width:230px">子项目</th><th>内容</th></tr>
+  <tr><td>②</td><td>阅读器内 UI/UX 对齐 readest</td><td>顶/底工具栏、目录·书签·笔记侧栏、Notebook 面板、主题/排版面板、选中弹窗、手势分区、进度显示样式</td></tr>
+  <tr><td>③</td><td>书库与设置深化</td><td>分组（作者/系列/自定义合集）、次级排序、最近阅读、批量选择、元数据编辑、书库搜索</td></tr>
+  <tr><td>④</td><td>文件格式适配对齐 readest</td><td>格式矩阵对照、统一解析抽象、各格式体验一致性、readest 有而 koodo 缺的能力评估</td></tr>
+</table>
+
+<h2>12. 明确不做（YAGNI）</h2>
+<ul>
+  <li><b>不做</b>桌面 / Web 端任何改动。</li>
+  <li><b>不做</b> BOM / AGP / Kotlin / navigation-compose 升级（D7）。</li>
+  <li><b>不做</b>阅读器内部结构改造（属子项目 ②）。</li>
+  <li><b>不做</b>新增设置功能项，只搭骨架并接线已有能力（D9）。</li>
+  <li><b>不做</b>书库分组 / 合集 / 元数据编辑（属子项目 ③）。</li>
+  <li><b>不做</b>动态配色（Material You / <code>dynamicColor</code>）—— 会与保留品牌色的 D2 冲突。</li>
+  <li><b>不做</b> readest 的平行阅读、OPDS、云同步、有声书 etc. —— 那些是功能而非 UI/UX，超出本子项目。</li>
+</ul>
+
+<hr>
+<div class="meta">
+  本文档由 brainstorming 流程产出：先核实代码事实（含解包 AAR 实测 M3 1.2.1 能力边界），再逐节确认设计（目标端 → 优先级 → 视觉取向 → 导航形态 → Tab 集合 → 落地方案 → 分层与骨架 → token 与验证），全部经用户确认后成文。<br>
+  下一步：<code>writing-plans</code> 生成实施计划。
+</div>
+
+</div>
+</body>
+</html>

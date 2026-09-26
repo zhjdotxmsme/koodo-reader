@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实施计划：Android 端 UI/UX 对齐 readest —— 设计语言与信息架构打底</title>
+<style>
+  :root { --bg:#10141a; --card:#18202b; --line:#263242; --tx:#dce6f2; --dim:#8fa1b8;
+          --acc:#4da3ff; --ok:#3fb950; --warn:#d4a72c; --bad:#f47067; --code-bg:#0c1016;
+          --purple:#c792ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 16px; background:var(--bg); color:var(--tx);
+         font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; }
+  h1 { font-size:23px; margin:0 0 4px; line-height:1.35; }
+  h2 { font-size:18px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:15px; margin:22px 0 8px; color:#b9cbe2; }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:18px; line-height:1.8; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:12px 0; }
+  code, pre { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13px; }
+  code { background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; line-height:1.5; }
+  pre code { border:none; background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); font-weight:600; }
+  .tag { display:inline-block; font-size:12px; border-radius:999px; padding:1px 10px; margin-right:6px; white-space:nowrap; }
+  .ok { background:#123d1f; color:var(--ok); } .warn { background:#3d3212; color:var(--warn); }
+  .acc { background:#122c47; color:var(--acc); } .new { background:#2d123d; color:var(--purple); }
+  .bad { background:#40191a; color:var(--bad); }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .note { border-left:3px solid var(--acc); padding-left:12px; color:#c3d4e8; }
+  .danger { border-left:3px solid var(--bad); padding-left:12px; color:#f0c9c8; }
+  a { color:var(--acc); }
+  hr { border:none; border-top:1px solid var(--line); margin:28px 0; }
+  .unit { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--acc);
+          border-radius:8px; padding:12px 18px; margin:16px 0; }
+  .unit h3 { margin-top:0; }
+  .kv { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>实施计划：Android 端 UI/UX 对齐 readest<br><span style="font-size:16px;color:var(--dim);font-weight:400">子项目 ①：设计语言与信息架构打底</span></h1>
+
+<div class="meta">
+  日期 2026-09-26 · 项目 <code>koodo-reader</code> · 基线提交 <code>780b7169</code>（工作区干净）<br>
+  设计依据：<code>.openteams/specs/2026-09-26-android-ui-ux-readest-alignment-design.html</code><br>
+  状态：<span class="tag acc">待执行</span>本计划的验证命令均已在本机<b>实跑过一遍</b>，非纸面推断
+</div>
+
+<h2>1. 环境与命令（先解决"能不能验证"）</h2>
+
+<div class="danger">
+  <b>关键：这台机器默认跑不了 Gradle。</b> 实测四项障碍，以及各自的解法：
+</div>
+
+<table>
+  <tr><th style="width:200px">障碍（实测）</th><th>解法</th></tr>
+  <tr>
+    <td><code>android/gradlew</code> <b>不存在</b>（<code>gradle/wrapper/</code> 下只有 <code>gradle-wrapper.properties</code>，无 jar / 无脚本）</td>
+    <td>用 Gradle 用户缓存里已有的发行版（见下方命令）。<code>scripts/build-android.js</code> 本身也设计了"无 wrapper 时回退到系统 gradle"的分支，所以这不是本项目的新问题。</td>
+  </tr>
+  <tr>
+    <td>PATH 上<b>没有</b> <code>gradle</code></td>
+    <td>缓存中已有：<code>C:\Users\54389\.gradle\wrapper\dists\gradle-8.5-bin\5t9huq95ubn472n8rpzujfbqh\gradle-8.5\bin\gradle.bat</code></td>
+  </tr>
+  <tr>
+    <td>JDK 版本不对：PATH 上是 <b>11</b>、<code>JAVA_HOME</code> 指向 <b>21</b>，而项目用 <code>jvmToolchain(17)</code></td>
+    <td>JDK 17 在 <code>D:\jdk-17\jdk-17.0.13+11</code>。<b>注意多一层目录</b> —— 直接把 <code>D:\jdk-17</code> 设为 <code>JAVA_HOME</code> 会报 <code>invalid directory</code>（已实测踩到）。</td>
+  </tr>
+  <tr>
+    <td>出网被阻断（连 <code>services.gradle.org</code> 都 SSL 失败），且沙箱策略若回退到 <code>workspace-write</code> 会拒绝写 <code>~/.gradle</code>，导致 Gradle 报 <code>Could not initialize native services / native-platform.dll</code></td>
+    <td>加 <code>--offline</code>；依赖已全在缓存中。<code>~/.gradle</code> 写入权限取决于会话的文件策略（本会话已放宽，可直接跑）。</td>
+  </tr>
+</table>
+
+<h3>标准调用（本计划所有验证命令的前缀）</h3>
+<pre><code>$env:JAVA_HOME = "D:\jdk-17\jdk-17.0.13+11"
+$GRADLE = "C:\Users\54389\.gradle\wrapper\dists\gradle-8.5-bin\5t9huq95ubn472n8rpzujfbqh\gradle-8.5\bin\gradle.bat"
+& $GRADLE -p "E:\open-source\koodo-reader\android" --offline --no-daemon --console=plain &lt;task&gt;</code></pre>
+
+<div class="note">
+  <b>已验证可行</b>：上面这条命令在本会话成功执行到 <code>:core:designsystem:compileKotlin</code> 通过、<code>compileTestKotlin</code> 失败（26 错），证明 Gradle 工具链本身可用，且该模块的<b>主源码能编译</b>。
+</div>
+
+<h3>可选使能项</h3>
+<ul>
+  <li><b>E-1 补 Gradle wrapper</b>：<code>settings.gradle</code> 有 <code>gradle-wrapper.properties</code> 却没有 <code>gradlew</code>/<code>gradlew.bat</code>/<code>gradle-wrapper.jar</code>，所以 CI 只能自己下 Gradle 8.5（见 workflow）。<b>已按 Q3 裁决升为计划内工作单元 W0。</b></li>
+  <li><b>E-2 扩展幽灵模块守卫</b>：<code>scripts/check-phantom-tests.js</code> 显然没抓到 <code>:core:designsystem</code>（因为它只扫已注册的工程）。建议增加一条"磁盘上存在但 <code>settings.gradle</code> 未 include 的模块"检查 —— 这正是本次缺陷的成因。放在 W1 内，因为它与修复同源。</li>
+</ul>
+
+<h2>2. 前置条件（开工前必须清掉）</h2>
+
+<table>
+  <tr><th style="width:44px">#</th><th style="width:190px">前置</th><th>内容与判据</th></tr>
+  <tr>
+    <td>P0-1</td>
+    <td>R4 可行性确认</td>
+    <td>读 <code>NativeEpubScreen.kt</code> / <code>EpubBookSession.kt</code> / <code>engine/cfi</code>，确认<b>能否用外部传入的 CFI 打开并定位</b>。<b>判据：</b>产出一句结论 + 证据（能：指出入口函数；不能：说明缺什么）。<b>这一步的结论直接决定 W6b 的范围。</b>本会话未做，不许假设。</td>
+  </tr>
+  <tr>
+    <td>P0-2</td>
+    <td>确认本机 gradle 可用</td>
+    <td>跑通 §1 的标准调用（任一 task）。<b>判据：</b>能进到具体 task 执行阶段而非在 native services 处崩。</td>
+  </tr>
+</table>
+
+<h2>3. 工作单元总览</h2>
+
+<table>
+  <tr>
+    <th style="width:56px">单元</th><th style="width:250px">内容</th><th style="width:70px">依赖</th>
+    <th style="width:90px">风险</th><th>可独立验证</th>
+  </tr>
+  <tr><td><b>W0</b></td><td>补 Gradle wrapper（Q3 裁决新增）</td><td>—</td><td><span class="tag ok">低</span></td><td>是（<code>gradlew --version</code>）</td></tr>
+  <tr><td><b>W1</b></td><td>复活 <code>:core:designsystem</code> + 补 token 值对象 + 单测</td><td>W0（或 §1 显式路径）</td><td><span class="tag warn">中</span></td><td>是（纯 JVM，<code>--offline</code> 可跑）</td></tr>
+  <tr><td><b>W2</b></td><td>新建 <code>:core:ui</code>，注册构建，放 theme 层</td><td>W1</td><td><span class="tag bad">高</span>（碰构建脚本）</td><td>是（编译通过即可）</td></tr>
+  <tr><td><b>W3</b></td><td><code>:app</code> 换用 <code>KoodoTheme</code>，删旧 <code>Theme.kt</code></td><td>W2</td><td><span class="tag ok">低</span></td><td>是（可回退，结构不变）</td></tr>
+  <tr><td><b>W4</b></td><td><code>ShellScaffold</code> + 底栏 + 4 Tab 路由（笔记/设置先出空骨架）</td><td>W3</td><td><span class="tag warn">中</span></td><td>是（纯逻辑可单测 + 人工冒烟）</td></tr>
+  <tr><td><b>W5</b></td><td>拆书库菜单 + <code>KoodoBookCard</code> 接口反转</td><td>W4</td><td><span class="tag warn">中</span></td><td>是</td></tr>
+  <tr><td><b>W6a</b></td><td>设置分组页 + 接线已有能力 + i18n</td><td>W4</td><td><span class="tag warn">中</span></td><td>是（i18n 门禁 + 冒烟）</td></tr>
+  <tr><td><b>W6b</b></td><td>笔记页（跨书聚合；CFI 跳转取决于 P0-1）</td><td>W4, P0-1</td><td><span class="tag warn">中</span></td><td>是（聚合数可对账）</td></tr>
+  <tr><td><b>W7</b></td><td><code>feature:stats</code> / <code>feature:dictionary</code> 换用 <code>:core:ui</code></td><td>W2</td><td><span class="tag warn">中</span>（stats 有 24 个硬编码色）</td><td>是</td></tr>
+</table>
+
+<p class="kv">W6a / W6b / W7 之间无相互依赖，可在 W4 完成后并行。按 Q1 裁决，本计划<b>不含任何功能新增</b>（书库搜索已移出），全部改动都是结构、视觉与缺陷修复。</p>
+
+<h2>4. 工作单元详情</h2>
+
+<div class="unit" style="border-left-color:var(--purple)">
+<h3>W0 — 补 Gradle wrapper <span class="tag new">新增（Q3 裁决）</span></h3>
+<p>当前 <code>android/gradle/wrapper/</code> 只有 <code>gradle-wrapper.properties</code>，缺 <code>gradlew</code> / <code>gradlew.bat</code> / <code>gradle-wrapper.jar</code>，导致本地每次验证要拼长路径、CI 只能自己下 Gradle 8.5。</p>
+<p><b>动作：</b>用缓存中的 Gradle 8.5 生成 wrapper（<code>gradle wrapper --gradle-version 8.5</code>），提交三个文件。</p>
+<p><b>验收：</b><code>android/gradlew --version</code> 输出 <code>Gradle 8.5</code>；<code>android/gradlew --offline :core:designsystem:test</code> 能跑，不必再拼发行版的长路径。</p>
+<p><b>注意：</b><code>distributionUrl</code> 已指向 8.5，保持不变。出网被阻断时首次 <code>gradlew</code> 可能尝试下载发行版 —— 该版本已在 <code>~/.gradle/wrapper/dists</code> 中，应直接命中缓存。<b>若它仍试图联网且失败，则 W0 作废</b>：不为形式而引入一个在本机不可用的入口，继续用 §1 的显式路径。</p>
+<p><b>回退点：</b>独立提交，纯新增文件，不影响任何既有构建路径。</p>
+</div>
+
+<div class="unit">
+<h3>W1 — 复活 <code>:core:designsystem</code>，然后补 token 层 <span class="tag acc">先做</span></h3>
+<p class="kv">为什么先做：它是纯 JVM、<code>--offline</code> 可跑、不碰任何 UI，是唯一能在本机<b>完整闭环验证</b>的单元；同时它修掉一个真实缺陷。</p>
+
+<h3 style="font-size:14px">W1a 复活（修缺陷）</h3>
+<ol>
+  <li><code>android/settings.gradle</code>：在 <code>include ':core:common'</code> 附近加 <code>include ':core:designsystem'</code>，并写清它是什么、为何现在才注册（防止后来者再把它当"已交付"）。</li>
+  <li><code>DesignSystemSelfCheck.kt</code>：21 处 <code>failures.add(it)</code> —— <code>failures</code> 声明为 <code>mutableListOf&lt;String&gt;()</code>，而 <code>it</code> 是 <code>Throwable</code>。修法二选一并说明理由：把列表改为 <code>List&lt;Throwable&gt;</code>，或 <code>add(it.message ?: it.toString())</code>。<b>建议后者</b>（保留原意图：打印可读信息）。</li>
+  <li><code>ThemePresetTest.kt</code>：补 <code>import org.junit.jupiter.api.Assertions.assertTrue</code>。</li>
+  <li><code>FontCatalogEntryTest.kt:101</code>：<code>assert(key.isNotBlank(), "…")</code> → <code>assert(key.isNotBlank()) { "…" }</code>（Kotlin <code>assert</code> 第二参为 <code>() -&gt; Any</code>）。</li>
+  <li><code>FontCatalogEntryTest.kt:108</code>：测试名含 JVM 非法字符 <code>:</code> → 改名为 <code>bundled Android font keys follow the bundled- prefix convention</code>。</li>
+  <li><b>真空测试修复</b>：<code>FontCatalogEntryTest</code> 三处 <code>assert()</code> 是 Kotlin 内置断言，JVM 默认不启用、模块也未开 <code>-ea</code> → 永不失败。改用 JUnit <code>assertTrue</code>。（不要用"开 <code>-ea</code>"绕过：那会把断言行为绑到运行参数上，仍然脆。）</li>
+</ol>
+<p><b>验收：</b><code>:core:designsystem:test</code> 与 <code>:core:designsystem:selfCheck</code> <b>首次跑绿</b>。</p>
+<pre><code>&amp; $GRADLE … :core:designsystem:test :core:designsystem:selfCheck</code></pre>
+<p><b>回退点：</b>W1a 单独一个提交（"修复幽灵模块"本身有价值，且与 UI 无关，便于独立 review）。若 26 个错误里出现"不只是机械修复"的情况，停下汇报。</p>
+
+<h3 style="font-size:14px">W1b 补 token 值对象（纯 Kotlin，无 Compose）</h3>
+<p>新增到 <code>android/core/designsystem/src/main/kotlin/com/koodoreader/core/designsystem/</code>：</p>
+<ul>
+  <li><code>ColorTokens.kt</code> —— 语义槽位的 <code>Long</code> 形色值（<code>0xFFRRGGBB</code>），浅色/深色各一套，<b>槽位名一一对应</b>；含品牌种子 <code>#3A6EA5</code> / <code>#6B8E23</code> / <code>#F8F6F2</code> / <code>#16181D</code>。</li>
+  <li><code>ShapeTokens.kt</code> —— 5 档（extraSmall 4 / small 8 / medium 12 / large 16 / extraLarge 28）。</li>
+  <li><code>SpaceTokens.kt</code> —— 4 / 8 / 12 / 16 / 24 / 32。</li>
+  <li><code>Contrast.kt</code> —— 纯函数 WCAG 相对亮度与对比度计算（<b>这是能在 CI 里验的东西</b>）。</li>
+</ul>
+<p>新增测试：<code>ColorTokensTest</code>（浅深槽位齐全且同名对应、正文/背景对比度 ≥ 4.5:1、无非法 alpha）、<code>ShapeTokensTest</code>（覆盖 5 档、单调不减）、<code>SpaceTokensTest</code>（严格递增无缺口）。并把新校验挂进 <code>DesignSystemSelfCheck</code>。</p>
+<p><b>验收：</b>上述 task 仍绿，且新增校验确实在 <code>selfCheck</code> 输出中出现（证明挂上了，不是写了没接）。</p>
+</div>
+
+<div class="unit">
+<h3>W2 — 新建 <code>:core:ui</code> <span class="tag bad">高风险：碰构建脚本</span></h3>
+<p><b>新增文件：</b></p>
+<ul>
+  <li><code>android/core/ui/build.gradle</code> —— <code>com.android.library</code> + <code>org.jetbrains.kotlin.android</code>；<code>namespace 'com.koodoreader.core.ui'</code>；<code>compileSdk 34</code> / <code>minSdk 24</code>；<code>buildFeatures { compose true }</code>；<code>kotlinCompilerExtensionVersion '1.5.14'</code>；依赖 <code>project(':core:designsystem')</code> + <code>platform('androidx.compose:compose-bom:2024.06.00')</code> + ui/foundation/material3/material-icons-core。照抄 <code>feature/stats/build.gradle</code> 的写法保持一致。</li>
+  <li><code>android/core/ui/src/main/AndroidManifest.xml</code> —— library 必需，空 manifest。</li>
+  <li><code>theme/KoodoColors.kt</code> —— 把 W1b 的 <code>Long</code> 绑定为 <code>ColorScheme</code>（浅/深）。</li>
+  <li><code>theme/KoodoShapes.kt</code> / <code>KoodoSpacing.kt</code>（含 <code>LocalKoodoSpacing</code>）/ <code>KoodoTypography.kt</code>。</li>
+  <li><code>theme/KoodoTheme.kt</code> —— <code>KoodoTheme(darkTheme, content)</code>。</li>
+  <li><code>theme/ThemeSpecBridge.kt</code> —— <code>ThemeSpec</code> → <code>ColorScheme</code>，需解析 <code>rgba(r,g,b,a)</code> 与 <code>#RRGGBB</code> 两种格式（<code>ThemeSpec</code> 里两种都有）。<b>解析函数写成纯函数并单测</b>（非法输入、alpha=0/1、空白、大小写）。</li>
+</ul>
+<p><b>修改：</b><code>android/settings.gradle</code>（<code>include ':core:ui'</code>）、<code>android/app/build.gradle</code>（<code>implementation project(':core:ui')</code>）。</p>
+<p><b>验收：</b><code>:app:compileNativeDebugKotlin</code> 通过（或 <code>:core:ui:assembleDebug</code>）。</p>
+<p><b>回退点：</b>单独提交，且<b>只含构建脚本 + 新模块</b>，不夹带任何 <code>:app</code> 代码改动 —— 这是 spec R1/R7 的要求。</p>
+<div class="note"><b>边界纪律：</b><code>:core:ui</code> <b>不得</b>依赖 <code>:core:data</code>；组件的用户可见文案一律<b>以 <code>String</code> / slot 参数传入</b>，不在组件内部调 <code>t()</code>（<code>LocalI18n</code> 定义在 <code>:app</code>，反向依赖会成环）。</div>
+</div>
+
+<div class="unit">
+<h3>W3 — 壳主题切换到 <code>:core:ui</code></h3>
+<ol>
+  <li>删除 <code>android/app/src/main/java/com/koodoreader/reader/shell/Theme.kt</code>（38 行、4 个硬编码色值）。</li>
+  <li>改 <code>NativeShellActivity.kt</code>：<code>KoodoShellTheme</code> → <code>KoodoTheme</code>（含 import）。</li>
+</ol>
+<p><b>验收：</b>编译通过；<code>:app</code> 内不再有 <code>KoodoShellTheme</code> 引用；<b>结构零变化</b>（只有观感变），因此可安全回退。</p>
+</div>
+
+<div class="unit">
+<h3>W4 — <code>ShellScaffold</code> + 底栏 + 4 Tab</h3>
+<p><b>新增：</b></p>
+<ul>
+  <li><code>shell/ShellDestinations.kt</code> —— 4 个 destination 的 route / labelKey / icon 定义 + <b>纯函数逻辑</b>（<code>topLevelFor(route)</code>、<code>hidesBottomBar(route)</code>）。</li>
+  <li><code>ShellDestinationsTest.kt</code>（<code>:app</code> 的 <code>test/</code>，纯 JVM）—— 4 个 tab route 唯一、无前缀冲突（注意 <code>reader/{bookKey}</code> 与其他路由的匹配顺序）、<code>hidesBottomBar</code> 对 reader 返回 true、对 4 个顶层及设置叶子返回 false。</li>
+  <li><code>shell/ShellScaffold.kt</code> —— <code>NavigationBar</code> + <code>NavHost</code>；按 <code>hidesBottomBar</code> 决定是否渲染底栏。</li>
+  <li><code>shell/NotesScreen.kt</code> + <code>NotesViewModel.kt</code> —— W4 先出空态骨架。</li>
+  <li><code>shell/SettingsScreen.kt</code> —— W4 先出分组骨架。</li>
+</ul>
+<p><b>修改：</b><code>ShellNavHost.kt</code>（加 <code>notes</code> / <code>settings</code> 路由；书库不再挂 backup/trash/dictionary，改挂到设置之下）、<code>StatsRoute.kt</code> + <code>feature/stats/.../StatsScreen.kt</code>（顶层时隐藏那个 <code>"✕"</code> 关闭按钮 —— 当前是硬编码 <code>Text(text = "✕", …)</code>）。</p>
+<div class="note"><b>实现要求：</b>底栏显隐判定<b>不要</b>在 UI 里散写 route 字符串比较，统一走 <code>ShellDestinations</code> 的纯函数 —— 这样它有单测，且与仓库既有风格一致（<code>LibraryLogic</code> / <code>BookRules</code> / <code>IntentRoutePolicy</code> 都是"决策逻辑纯 JVM 可测"这个模式）。</div>
+<p><b>验收：</b>单测绿；人工冒烟：4 Tab 可达、叶子页返回栈正确、<b>进出阅读器底栏不泄漏</b>、旋转不丢状态。</p>
+</div>
+
+<div class="unit">
+<h3>W5 — 拆书库菜单 + <code>KoodoBookCard</code> 接口反转</h3>
+<h3 style="font-size:14px">W5a 菜单收敛</h3>
+<p><code>LibraryScreen.kt</code>（现 275 行）：TopAppBar 收敛为 <b>标题 + 搜索 + 视图菜单 + 导入</b>；删除 备份 / 统计 / 词典 / 语言 四个菜单项（去向 W4 的设置页）。<b>视图菜单保留</b>：网格↔列表、排序字段、仅收藏。</p>
+<p>顺带把 TopAppBar 里的 <code>Icons.Filled.Menu</code> / <code>Add</code> / <code>List</code> 三个语义错位的图标（"选文件"用汉堡图标、"备份"用列表图标）换成语义正确的图标 —— 这是当前可用性最差的一处。</p>
+
+<h3 style="font-size:14px">W5b <code>KoodoBookCard</code> 接口反转（读代码后的关键发现）</h3>
+<div class="danger">
+  现有 <code>BookCard.kt</code>（231 行）<b>不能直接搬进 <code>:core:ui</code></b>：<code>BookCard</code>/<code>BookListRow</code> 直接接收 <code>BookEntity</code>（<code>:core:data</code>），私有 <code>BookCover</code> 依赖 <code>CoverStore</code>（Android <code>Context</code> + 文件 IO）并调 <code>t()</code>（<code>:app</code> 的 i18n）。直接搬会同时破坏两条边界。所以是<b>接口反转</b>，不是搬运：
+</div>
+<ul>
+  <li><code>:core:ui</code> 定义 <code>BookCardModel(title, author, formatLabel, coverSeed, isFavorite)</code> + <code>KoodoBookCard(model, coverPainter: Painter?, onClick, onLongClick, menu: @Composable () -&gt; Unit)</code>。</li>
+  <li><b>封面解析留在 <code>:app</code></b>（<code>CoverStore</code> / base64 / <code>BitmapFactory</code> 都是平台与数据关注点），产出 <code>Painter</code> 传入。这同时让 Preview 不需要数据库与文件系统。</li>
+  <li>长按菜单文案由 <code>:app</code> 以 slot 传入（<code>t()</code> 在 <code>:app</code>）。</li>
+  <li><code>CoverPalette</code> 的 6 个品牌色与 W1b 的 token <b>重复定义</b> → 改为从 token 取，消除第二份事实源。</li>
+  <li>硬编码 <code>RoundedCornerShape(8.dp)</code> / <code>(4.dp)</code> → 改走 <code>KoodoShapes</code>。</li>
+  <li><b>顺带修一个 i18n 违规</b>：<code>contentDescription = "Favorite"</code> 是硬编码英文（读屏可见），应走 <code>t()</code>。</li>
+</ul>
+<p><b>验收：</b>书库网格/列表观感与行为不变（拖拽重排在网格仍可用）；无功能丢失（原菜单每一项都能在新位置找到）；<code>LibraryLogicTest</code> 仍绿；<code>:core:ui</code> 仍不依赖 <code>:core:data</code>（用 <code>grep</code> 或构建依赖检查确认）。</p>
+</div>
+
+<div class="unit">
+<h3>W6a — 设置分组页</h3>
+<p>分组（对齐 readest 的 Settings 分组思路）：<b>阅读</b>（布局/翻页/排版默认值）· <b>外观</b>（主题/字体）· <b>内容源</b>（词典管理 → 既有 <code>DictionaryRoute</code>）· <b>语音</b>（TTS 控制）· <b>翻译</b> · <b>语言</b>（既有 <code>I18nState.CHOICES</code> 循环切换改为列表选择）· <b>数据</b>（备份与恢复 / 回收站 → 既有 <code>BackupScreen</code> / <code>TrashScreen</code>）· <b>关于</b>。</p>
+<p><code>KoodoSettingRow</code> 作为基本砖块（title + summary + trailing）。</p>
+<div class="note"><b>i18n 单独一步：</b>新增可见文案全部走 <code>t("key")</code>，key 加进 <code>src/assets/locales/en.json</code>，然后跑 <code>node scripts/sync-locales-android.js</code>；<code>scripts/check-locales.mjs</code> 是哈希门禁（历史上因行尾差异反复红过）。<b>建议 i18n 改动与 UI 改动分开提交</b>，否则门禁红了很难定位是谁引起的。</div>
+<p><b>验收：</b>各分组可达且能进到对应既有屏幕；语言切换后新页面文案全部跟随、无回退英文；locale 门禁绿。</p>
+</div>
+
+<div class="unit">
+<h3>W6b — 笔记页（跨书高亮/笔记/书签）</h3>
+<p><b>数据侧已就绪、零改动</b>（已核实）：<code>NoteDao.observeAll()</code> 与 <code>BookmarkDao.observeAll()</code> 都存在，<code>notes</code>/<code>bookmarks</code> 表已在 <code>KoodoDatabase</code> 中。</p>
+<ul>
+  <li><code>NotesViewModel</code>：<code>combine(noteDao.observeAll(), bookmarkDao.observeAll(), bookDao.observeAll())</code> → 按书分组并补上书名/封面。三态模型复用 <code>engine:annotate</code>。</li>
+  <li><code>NotesScreen</code>：<code>KoodoSegmentedControl</code> 切 全部 / 高亮笔记 / 书签 + 分组列表 + 空态。</li>
+  <li><b>CFI 跳转取决于 P0-1。</b>若可行 → 点条目跳 <code>reader/{bookKey}</code> 并定位；若不可行 → 本次只交付列表与聚合（数据已是真实可用的），跳转拆独立卡片。不要为了"看起来完整"而做假的定位。</li>
+  <li>排序需在纯逻辑里定：跨书按"书 + 章节序（<code>chapterIndex</code>）"还是按时间。<code>NoteDao.observeForBook</code> 已按 <code>chapterIndex, key</code> 排，跨书聚合要保持一致语义。</li>
+</ul>
+<p><b>验收：</b>列表条目数与数据库实际计数一致（可对账）；空态正确；新建/删除一条笔记后列表实时更新（Flow 驱动）。</p>
+</div>
+
+<div class="unit">
+<h3>W7 — <code>feature</code> 模块换用 <code>:core:ui</code></h3>
+<div class="danger">
+  <b>比 spec 预估的重。</b> 读代码发现 <code>StatsScreen.kt</code> 内含一整套 <code>StatsPalette</code>，<b>约 24 个硬编码颜色</b>（深/浅各一套：背景、卡片、文字、折线、网格、tab 态、热力图 4 档…）。这是 <code>feature:stats</code> 里一套<b>事实上的平行设计系统</b>，正是本子项目要消灭的东西。所以 W7 不是"换个 TopAppBar"，而是把 <code>StatsPalette</code> 拆解映射到 token。
+</div>
+<ul>
+  <li><code>feature/stats</code>：<code>StatsPalette.of(darkTheme)</code> → 改由 <code>KoodoTheme</code> 提供；<code>StatsScreen</code> 的 <code>darkTheme: Boolean</code> 参数随之取消（由主题自己决定），<code>StatsRoute</code> 相应简化；关闭按钮改为按"是否顶层"决定。</li>
+  <li><code>feature/dictionary</code>：<code>DictManagementScreen</code> 已用 <code>MaterialTheme.colorScheme.*</code>（状况较好），主要是 TopAppBar / 列表行换成 <code>:core:ui</code> 组件。</li>
+  <li>两模块 <code>build.gradle</code> 加 <code>implementation project(':core:ui')</code>。</li>
+</ul>
+<p><b>验收：</b>两模块内不再有硬编码颜色与圆角（可用 grep 佐证）；统计页观感随主题一致；<code>feature:stats</code> 既有单测仍绿。</p>
+</div>
+
+<h2>5. 验证矩阵（诚实区分"本机能跑"与"跑不了"）</h2>
+
+<table>
+  <tr><th style="width:300px">验证项</th><th style="width:150px">本机可执行</th><th>说明</th></tr>
+  <tr><td><code>:core:designsystem:test</code> / <code>:selfCheck</code></td><td><span class="tag ok">可以</span></td><td>纯 JVM，<code>--offline</code> 已实测可跑；<b>W1 的核心验收</b></td></tr>
+  <tr><td><code>:app:testDebugUnitTest</code>（<code>ShellDestinationsTest</code> 等）</td><td><span class="tag bad">跑不了</span></td><td><b>已实测更正</b>：<code>app/build.gradle</code> 声明 <code>testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'</code>，而该构件<b>不在离线缓存中</b>（已确认 <code>~/.gradle/caches</code> 下无 <code>org.junit.vintage</code>）且出网被封 → 测试运行时类路径无法解析。原判"应该可以"是错的。W4 的 <code>ShellDestinationsTest</code> 需换到 CI 或联网环境执行，或先设法补齐该依赖。</td></tr>
+  <tr><td><code>:app:compileNativeDebugKotlin</code> / <code>:core:ui:assembleDebug</code></td><td><span class="tag warn">未实测</span></td><td>需要 SDK platform 34 与 build-tools 齐全。<b>首次要实测</b>，不要假设</td></tr>
+  <tr><td>真机/模拟器冒烟（Tab 可达、底栏不泄漏、旋转、深浅色）</td><td><span class="tag bad">跑不了</span></td><td>无设备/模拟器。需你在本机或 CI 执行。这是 W4/W6 不可省的人工验收</td></tr>
+  <tr><td>截图对比（观感）</td><td><span class="tag bad">跑不了</span></td><td>同上；Compose Preview 也需 IDE</td></tr>
+  <tr><td><code>node scripts/check-locales.mjs</code> 等 JS 守卫</td><td><span class="tag ok">可以</span></td><td>本机有 node v16.20.2（无 yarn on PATH，但这些脚本是纯 node）</td></tr>
+  <tr><td>Gradle 涉及联网的 task（<code>--offline</code> 之外）</td><td><span class="tag bad">跑不了</span></td><td>出网被阻断</td></tr>
+</table>
+
+<h2>6. 提交策略</h2>
+<ol>
+  <li><b>W1a</b>（复活幽灵模块 + 修 26 个编译错误 + 真空断言）单独一个提交。理由：它是缺陷修复，与 UI 无关，独立 review 价值最高。</li>
+  <li><b>W1b</b>（token 值对象 + 单测）单独一个提交。</li>
+  <li><b>W2</b>（构建脚本 + 新模块）单独一个提交，<b>不夹带 <code>:app</code> 代码</b>。这是全计划风险最高的一处。</li>
+  <li><b>i18n key</b> 改动与对应 UI 改动分开提交（否则门禁变红难定位）。</li>
+  <li>其余每单元一个提交。按仓库规范：<b>不自行 <code>git commit</code>/<code>push</code></b>，改动展示后由你决定。</li>
+</ol>
+
+<h2>7. 已裁决事项（2026-09-26 用户确认）</h2>
+
+<table>
+  <tr><th style="width:44px">#</th><th style="width:210px">问题</th><th>裁决</th></tr>
+  <tr>
+    <td>Q1</td>
+    <td>W5c 书库搜索是否纳入？</td>
+    <td><b>不纳入。</b>书库 TopBar 本次只放 <b>视图 + 导入</b>；搜索归子项目 ③。好处：本子项目守住"只打底、不增加功能"的验收边界，W5c 整节作废（见下）。</td>
+  </tr>
+  <tr>
+    <td>Q2</td>
+    <td>平板/横屏自适应是否本次做？</td>
+    <td><b>推到子项目 ③。</b>手机优先，自建 <code>WindowSizeClass</code> + NavigationRail / 双栏不在本次。spec R2 的"有意接受自建"仍然成立，只是排期后移。</td>
+  </tr>
+  <tr>
+    <td>Q3</td>
+    <td>是否补 Gradle wrapper？</td>
+    <td><b>补，且独立提交。</b>§1 的 E-1 从"可选"升为计划内工作单元 <b>W0</b>（见下）。</td>
+  </tr>
+  <tr>
+    <td>Q4</td>
+    <td>是否登记看板？</td>
+    <td><b>已建主卡 + 验收清单</b>（workspace <code>40f005a9…</code> koodo-reader 项目）。</td>
+  </tr>
+</table>
+
+<div class="danger">
+  <b>W5c（书库搜索）已按 Q1 裁决作废</b>：本计划不含该书库搜索实现。书库 TopBar 最终形态 = 标题 + 视图菜单 + 导入。搜索能力归子项目 ③，届时以 <code>LibraryLogic</code> 纯函数 + 单测的形式加入。
+</div>
+
+<h2>8. 与 spec 的偏差记录</h2>
+<p>执行本计划时，以下 spec 内容已被实测<b>修正或加重</b>，spec 文件已同步更新：</p>
+<table>
+  <tr><th style="width:170px">spec 原述</th><th>修正后</th></tr>
+  <tr><td>§2 / D4：<code>:core:designsystem</code> 的 <code>selfCheck</code> 是"既有门禁，原样保留"</td><td><b>幽灵模块</b>：未注册进构建、无消费者、测试源码 26 个编译错误从未编译过。<code>selfCheck</code> 从未成功运行。D4 决策不变，W1 范围上调为"先复活再扩展"（spec 新增 R6）</td></tr>
+  <tr><td>§9 步骤 1：补 token + 单测</td><td>先注册模块并修 26 个编译错误（含 3 处真空断言），再补 token</td></tr>
+  <tr><td>§10 R1：<code>settings.gradle</code> 有未提交改动，冲突风险高</td><td><b>已缓解</b>：那些改动已随 <code>780b7169</code> 等 4 个提交入库，工作区干净；仅保留"单独提交"的要求（spec 新增 R7）</td></tr>
+  <tr><td>§7 组件清单：<code>KoodoBookCard</code> 视为组件搬运</td><td>实为<b>接口反转</b>（现有卡片耦合 <code>BookEntity</code>/<code>CoverStore</code>/<code>t()</code>），封面解析留在 <code>:app</code>（见 W5b）</td></tr>
+  <tr><td>§9 步骤 7：feature 模块"换用组件"</td><td>加重：<code>StatsScreen</code> 内含约 24 个硬编码颜色的平行调色板，需拆解映射（见 W7）</td></tr>
+</table>
+
+<hr>
+<div class="meta">
+  下一步：你裁决 §7 的 Q1–Q4 后即可开工。<b>建议起手 W1</b> —— 纯 JVM、本机可完整验证、且顺手修掉一个真实缺陷，是风险最低、反馈最快的一步。
+</div>
+
+</div>
+</body>
+</html>
