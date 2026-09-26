@@ -24,7 +24,7 @@ import com.koodoreader.engine.image.ComicPage
 import com.koodoreader.engine.image.ComicViewerModel
 import com.koodoreader.engine.image.DefaultPageLoader
 import com.koodoreader.reader.imagehost.ComicViewerHost
-import com.koodoreader.reader.shell.KoodoShellTheme
+import com.koodoreader.core.ui.theme.KoodoTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,7 +60,7 @@ class ComicViewerActivity : ComponentActivity() {
         val i18n = I18nState.create(this)
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
-                KoodoShellTheme {
+                KoodoTheme {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         ComicViewerScreen(file) { finish() }
                     }

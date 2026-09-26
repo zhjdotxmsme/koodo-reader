@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import com.koodoreader.core.ui.theme.KoodoTheme
 import com.koodoreader.reader.LocalAssetServer
 
 /**
@@ -35,12 +36,12 @@ class NativeShellActivity : ComponentActivity() {
         val assetHost = startAssetServer()
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
-                KoodoShellTheme {
+                KoodoTheme {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        ShellNavHost(assets = assetHost)
+                        ShellScaffold(assets = assetHost)
                     }
                 }
             }
