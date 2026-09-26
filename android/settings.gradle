@@ -81,8 +81,9 @@ include ':engine:pdf'
 include ':core:archive'
 // // Native FB2 (FictionBook 2) converter (P5.5a).
 // include ':engine:fb2'
-// // Native single-file HTML / MHTML converter (P5.5b/c).
-// include ':engine:htmlbook'
+// // Native single-file HTML / MHTML converter (P5.5b/c) — IMPLEMENTED
+// // (HtmlDocument + MhtmlDocument, ADR-006); registered below.
+include ':engine:htmlbook'
 // // Native DOCX (WordprocessingML subset) converter (P5.5d).
 // include ':engine:docx'
 // ---------------------------------------------------------------------------

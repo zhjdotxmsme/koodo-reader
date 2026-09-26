@@ -74,7 +74,9 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
                     assets = assets,
                     viewModel = viewModel,
                 )
-                "EPUB", "TXT", "MD", "MARKDOWN", "MOBI", "AZW", "AZW3" -> NativeEpubScreen(
+                "EPUB", "TXT", "MD", "MARKDOWN", "MOBI", "AZW", "AZW3",
+                "HTML", "HTM", "XHTML", "XML", "MHTML", "MHT",
+                -> NativeEpubScreen(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,

@@ -91,6 +91,8 @@ fun NativeEpubScreen(
                 "epub" -> EpubBookSession.open(f, w, h, AndroidTextMeasurer(density))
                 "txt", "md", "markdown" -> TextBookSession.open(f, w, h, AndroidTextMeasurer(density))
                 "mobi", "azw", "azw3" -> MobiBookSession.open(f, w, h, AndroidTextMeasurer(density))
+                "html", "htm", "xhtml", "xml", "mhtml", "mht" ->
+                    WebBookSession.open(f, w, h, AndroidTextMeasurer(density))
                 else -> null
             }
         }.getOrNull()

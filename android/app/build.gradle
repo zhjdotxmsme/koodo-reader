@@ -188,6 +188,9 @@ dependencies {
     implementation project(':engine:text')
     implementation project(':engine:mobi')
 
+    // P5.5b/c single-file HTML/XHTML/XML + MHTML producers (ADR-006).
+    implementation project(':engine:htmlbook')
+
     // P5 native comic / image-sequence reader (CBZ / CBT / image directory).
     implementation project(':engine:image')
 

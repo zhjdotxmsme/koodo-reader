@@ -1,0 +1,39 @@
+// engine/htmlbook — 单文件 HTML / XHTML / HTM / XML / MHTML 的原生解析
+// （P5.5b/c，ADR-006）。
+//
+// PURE KOTLIN JVM MODULE（与 :engine:cfi / :engine:layout 同一约定）：
+//  - 零外部运行时依赖：HTML 扁平化复用 :engine:layout 的 HtmlFlattener
+//    （D0 交付，畸形容错 + CFI 兄弟序保真）；MHTML 的 MIME 拆包是几十行
+//    手写解析，不值得引第三方；
+//  - 与阅读器解耦：本模块只产出 `List<TextBlock>`（"文件 → 块"生产者），
+//    分页/CFI/渲染由 :app 的 ReaderSession 统一承担。
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // 扁平化器（HtmlFlattener/HtmlEntities）与块模型。
+    api project(':engine:layout')
+    // 编码探测/解码（GBK/Big5/UTF-8…）：中文 HTML 常见非 UTF-8。
+    api project(':engine:text')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

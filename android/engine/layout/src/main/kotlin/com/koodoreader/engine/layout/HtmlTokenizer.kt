@@ -223,45 +223,15 @@ internal class HtmlTokenizer(private val src: String) {
     }
 
     companion object {
-        private val NAMED = mapOf(
-            "lt" to "<", "gt" to ">", "amp" to "&", "quot" to "\"", "apos" to "'",
-            "nbsp" to "\u00A0", "copy" to "\u00A9", "reg" to "\u00AE", "trade" to "\u2122",
-            "hellip" to "\u2026", "mdash" to "\u2014", "ndash" to "\u2013",
-            "lsquo" to "\u2018", "rsquo" to "\u2019", "ldquo" to "\u201C", "rdquo" to "\u201D",
-            "bull" to "\u2022", "middot" to "\u00B7", "deg" to "\u00B0",
-            "laquo" to "\u00AB", "raquo" to "\u00BB", "times" to "\u00D7", "divide" to "\u00F7",
-            "euro" to "\u20AC", "pound" to "\u00A3", "yen" to "\u00A5", "cent" to "\u00A2",
-            "sect" to "\u00A7", "para" to "\u00B6", "plusmn" to "\u00B1", "micro" to "\u00B5",
-        )
-
-        private val ENTITY_RE = Regex("&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);?")
-
         /**
          * Decode HTML entities in text / attribute values. Unknown or broken
          * entities pass through literally (browser-tolerant); a trailing
          * semicolon is optional after a valid named/numeric reference.
+         *
+         * Implementation lives in the public [HtmlEntities] so other module
+         * producers (htmlbook / fb2) can decode plain text without reaching
+         * into this internal tokenizer.
          */
-        fun decodeEntities(s: String): String {
-            if (!s.contains('&')) return s
-            return ENTITY_RE.replace(s) { m ->
-                val body = m.groupValues[1]
-                when {
-                    body.startsWith("#x") || body.startsWith("#X") ->
-                        body.substring(2).toIntOrNull(16)?.toCharOrNull()?.toString() ?: m.value
-                    body.startsWith("#") ->
-                        body.substring(1).toIntOrNull()?.toCharOrNull()?.toString() ?: m.value
-                    else -> NAMED[body.lowercase()] ?: m.value
-                }
-            }
-        }
-
-        private fun Int.toCharOrNull(): Char? {
-            // Reject out-of-range / surrogate-only code points; keep it simple:
-            // map to the char when representable, else U+FFFD like browsers.
-            if (this < 0) return null
-            if (this > 0xFFFF) return '\uFFFD'
-            val ch = this.toChar()
-            return if (Character.isHighSurrogate(ch) || Character.isLowSurrogate(ch)) '\uFFFD' else ch
-        }
+        fun decodeEntities(s: String): String = HtmlEntities.decode(s)
     }
 }
