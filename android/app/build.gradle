@@ -183,6 +183,11 @@ dependencies {
     implementation project(':engine:link')
     implementation project(':engine:toc')
 
+    // P5 native text (TXT/MD) + P4 MOBI parser: consumed by the native reader
+    // host (epubhost sessions) so EPUB/TXT/MD/MOBI share one pagination screen.
+    implementation project(':engine:text')
+    implementation project(':engine:mobi')
+
     // P5 native comic / image-sequence reader (CBZ / CBT / image directory).
     implementation project(':engine:image')
 

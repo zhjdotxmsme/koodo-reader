@@ -73,17 +73,23 @@ fun NativeEpubScreen(
     }
 
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    // 会话按 (文件, 视口) 重建：尺寸未知时 null（首帧后 onSizeChanged 触发）。
-    val session = remember(file, viewport) {
+    val format = book?.format?.lowercase()
+    // 会话按 (文件, 格式, 视口) 重建：尺寸未知时 null（首帧后 onSizeChanged 触发）。
+    // 同一渲染屏服务全部文本格式：EPUB / TXT / MD / MOBI(AZW/AZW3) 各由一个
+    // ReaderSession 实现产出分页，屏幕只消费 ReaderSession 接口。
+    val session: ReaderSession? = remember(file, format, viewport) {
         val f = file ?: return@remember null
         if (viewport.width == 0 || viewport.height == 0) return@remember null
+        val density = context.resources.displayMetrics.density
+        val w = viewport.width.toFloat()
+        val h = viewport.height.toFloat()
         runCatching {
-            EpubBookSession.open(
-                file = f,
-                viewportWidthPx = viewport.width.toFloat(),
-                viewportHeightPx = viewport.height.toFloat(),
-                measurer = AndroidTextMeasurer(context.resources.displayMetrics.density),
-            )
+            when (format) {
+                "epub" -> EpubBookSession.open(f, w, h, AndroidTextMeasurer(density))
+                "txt", "md", "markdown" -> TextBookSession.open(f, w, h, AndroidTextMeasurer(density))
+                "mobi", "azw", "azw3" -> MobiBookSession.open(f, w, h, AndroidTextMeasurer(density))
+                else -> null
+            }
         }.getOrNull()
     }
     DisposableEffect(session) {
@@ -104,9 +110,9 @@ fun NativeEpubScreen(
     val fgColor = MaterialTheme.colorScheme.onSurface
     val chapterInfo = remember(session, currentPage) {
         session?.let { s ->
-            val idx = (0 until s.spine.chapters.size)
+            val idx = (0 until s.chapterCount)
                 .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
-            "c ${idx + 1}/${s.spine.chapters.size} · ${s.spine.chapters[idx].href.substringAfterLast('/')}"
+            "c ${idx + 1}/${s.chapterCount} · ${s.chapterLabel(idx)}"
         } ?: ""
     }
 

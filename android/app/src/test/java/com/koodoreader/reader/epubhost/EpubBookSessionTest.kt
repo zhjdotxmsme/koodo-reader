@@ -89,14 +89,14 @@ class EpubBookSessionTest {
                 // 每章的内容都可以在分页行里找到
                 for (n in 1..3) {
                     assertTrue(
-                        s.result.pages.any { page ->
+                        s.paged.result.pages.any { page ->
                             page.columns.any { col -> col.lines.any { it.text.contains("Chapter $n first") } }
                         },
                         "chapter $n missing from pagination",
                     )
                 }
                 // 章序：ch1 的行先于 ch3 的行
-                val flat = s.result.pages.flatMap { it.columns }.flatMap { it.lines }
+                val flat = s.paged.result.pages.flatMap { it.columns }.flatMap { it.lines }
                 val first1 = flat.indexOfFirst { it.text.contains("Chapter 1 first") }
                 val first3 = flat.indexOfFirst { it.text.contains("Chapter 3 first") }
                 assertTrue(first1 in 0 until first3)

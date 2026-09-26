@@ -57,11 +57,12 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
             route = ShellRoutes.READER,
             arguments = listOf(navArgument("bookKey") { type = NavType.StringType }),
         ) { entry ->
-            // P3/P5-CBZ routing dispatch — the book format decides which native
+            // P3/P5 routing dispatch — the book format decides which native
             // reader composable mounts. PDF → NativePdfScreen (loopback pdf.js);
-            // EPUB → NativeEpubScreen (engine/layout + CFI, EPUB 原生阅读屏
-            // 步骤③); TXT/MD/MOBI 等其他格式 → P1 placeholder（后续卡逐格式
-            // 迁出，见 docs/android-native-migration.md）。
+            // EPUB / TXT / MD / MOBI(AZW/AZW3) → NativeEpubScreen + ReaderSession
+            // （engine/layout 分页 + CFI，四格式共用一屏，各一个 session 实现）;
+            // 其余格式 → P1 placeholder（CBZ/CBT/CB7 由 :app ComicViewerActivity
+            // 承接，见 P5-CBZ-5 / P8-F1）。
             val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())
             val viewModel: LibraryViewModel = viewModel()
             val book by viewModel.book(key).collectAsStateWithLifecycle(initialValue = null)
@@ -73,7 +74,7 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
                     assets = assets,
                     viewModel = viewModel,
                 )
-                "EPUB" -> NativeEpubScreen(
+                "EPUB", "TXT", "MD", "MARKDOWN", "MOBI", "AZW", "AZW3" -> NativeEpubScreen(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
