@@ -116,9 +116,13 @@ class IntentRoutePolicyTest {
 
     @Test
     fun `web formats route to the native shell`() {
-        for (name in listOf("a.html", "b.htm", "c.xhtml", "d.xml", "e.mhtml", "f.mht")) {
+        // 白名单内（与桌面 supportedFormats 同集）：html/htm/xhtml/xml/mhtml。
+        // 注意 `.mht` **不在**导入白名单，导入管线会拒收，故路由表也不认领它
+        // （避免"导得进来但打不开"的反向不一致）。
+        for (name in listOf("a.html", "b.htm", "c.xhtml", "d.xml", "e.mhtml")) {
             assertEquals(IntentRoutePolicy.Route.NATIVE_SHELL, decide(null, name))
         }
+        assertEquals(IntentRoutePolicy.Route.ISLAND, decide(null, "f.mht"))
     }
 
     @Test

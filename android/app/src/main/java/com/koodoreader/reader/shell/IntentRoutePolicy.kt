@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.core.importer.BookRules
+
 /**
  * VIEW/SEND intent 的 mime-type/文件名 → 路由决策（P5-CBZ-5 + P8-F1 共用）。
  *
@@ -42,7 +44,7 @@ object IntentRoutePolicy {
     }
 
     /** engine:image 原生可读的漫画容器扩展名（小写，不含点）。 */
-    private val NATIVE_COMIC_EXTS = setOf("cbz", "cbt", "cb7")
+    private val COMIC_EXTS = setOf("cbz", "cbt", "cb7")
 
     /** engine:image 原生可读的漫画容器 mime-type（小写）。 */
     private val NATIVE_COMIC_MIMES = setOf(
@@ -57,45 +59,31 @@ object IntentRoutePolicy {
     private val ISLAND_ONLY_EXTS = setOf("cbr")
 
     /** 原生 PDF 屏已就绪（P3），扩展名 + mime 都认。 */
-    private val NATIVE_PDF_EXTS = setOf("pdf")
+    private val PDF_EXTS = setOf("pdf")
     private val NATIVE_PDF_MIMES = setOf("application/pdf")
 
     /**
-     * 原生壳可读的文本/文档格式（全部已适配：各自 ReaderSession 已接线，
-     * 见 epubhost 包）。CBR 之外没有"落到岛"的规划格式。
+     * 原生壳可读的文本/文档格式 —— **派生自导入白名单**（[BookRules.BOOK_EXTENSIONS]
+     * 去掉漫画、PDF 与 CBR），而不是另抄一份：导入管线收哪些格式，intent 路由就认
+     * 哪些格式，两边永不漂移（此前硬编码表里的 `mht`/`markdown` 不在白名单，
+     * 外部打开会被导入拒收 → 已由派生消除）。
      */
-    private val NATIVE_SHELL_EXTS = setOf(
-        "epub", "txt", "md", "markdown",
-        "mobi", "azw", "azw3",
-        "html", "htm", "xhtml", "xml", "mhtml", "mht",
-        "fb2", "docx",
-    )
+    private val NATIVE_SHELL_EXTS: Set<String> =
+        BookRules.BOOK_EXTENSIONS.toSet() - COMIC_EXTS - PDF_EXTS - ISLAND_ONLY_EXTS
 
-    private val NATIVE_SHELL_MIMES = setOf(
-        "application/epub+zip",
-        "text/plain",
-        "text/markdown",
-        "text/x-markdown",
-        "application/x-mobipocket-ebook",
-        "application/vnd.amazon.ebook",
-        "text/html",
-        "application/xhtml+xml",
-        "application/xml",
-        "text/xml",
-        "multipart/related", // MHTML
-        "message/rfc822", // MHTML 的另一种声明
-        "application/x-fictionbook+xml", // FB2
-        "application/x-fictionbook",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
-    )
+    /** 对应的 mime 表，同样从 [BookRules.MIME_BY_EXT] 派生。 */
+    private val NATIVE_SHELL_MIMES: Set<String> =
+        NATIVE_SHELL_EXTS.mapNotNull { BookRules.MIME_BY_EXT[it] }.toSet() +
+            // 少数真实世界变体（文件管理器/浏览器另存）
+            setOf("text/x-markdown", "multipart/related", "application/x-fictionbook")
 
     fun decide(mimeType: String?, fileName: String?): Route {
         val name = fileName.orEmpty().lowercase()
         val ext = name.substringAfterLast('.', "")
 
         if (ext in ISLAND_ONLY_EXTS) return Route.ISLAND
-        if (ext in NATIVE_COMIC_EXTS) return Route.NATIVE_COMIC
-        if (ext in NATIVE_PDF_EXTS) return Route.NATIVE_PDF
+        if (ext in COMIC_EXTS) return Route.NATIVE_COMIC
+        if (ext in PDF_EXTS) return Route.NATIVE_PDF
         if (ext in NATIVE_SHELL_EXTS) return Route.NATIVE_SHELL
 
         val mime = mimeType.orEmpty().lowercase().substringBefore(';').trim()

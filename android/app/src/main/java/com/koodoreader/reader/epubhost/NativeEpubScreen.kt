@@ -78,26 +78,19 @@ fun NativeEpubScreen(
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val format = book?.format?.lowercase()
     // 会话按 (文件, 格式, 视口) 重建：尺寸未知时 null（首帧后 onSizeChanged 触发）。
-    // 同一渲染屏服务全部文本格式：EPUB / TXT / MD / MOBI(AZW/AZW3) 各由一个
-    // ReaderSession 实现产出分页，屏幕只消费 ReaderSession 接口。
+    // 格式 → 会话的分派在 ReaderSessionFactory（纯 JVM、可测、覆盖全部受支持
+    // 文本格式），屏幕只消费 ReaderSession 接口。
     val session: ReaderSession? = remember(file, format, viewport) {
         val f = file ?: return@remember null
         if (viewport.width == 0 || viewport.height == 0) return@remember null
         val density = context.resources.displayMetrics.density
-        val w = viewport.width.toFloat()
-        val h = viewport.height.toFloat()
-        runCatching {
-            when (format) {
-                "epub" -> EpubBookSession.open(f, w, h, AndroidTextMeasurer(density))
-                "txt", "md", "markdown" -> TextBookSession.open(f, w, h, AndroidTextMeasurer(density))
-                "mobi", "azw", "azw3" -> MobiBookSession.open(f, w, h, AndroidTextMeasurer(density))
-                "html", "htm", "xhtml", "xml", "mhtml", "mht" ->
-                    WebBookSession.open(f, w, h, AndroidTextMeasurer(density))
-                "fb2" -> Fb2BookSession.open(f, w, h, AndroidTextMeasurer(density))
-                "docx" -> DocxBookSession.open(f, w, h, AndroidTextMeasurer(density))
-                else -> null
-            }
-        }.getOrNull()
+        ReaderSessionFactory.open(
+            format = format,
+            file = f,
+            viewportWidthPx = viewport.width.toFloat(),
+            viewportHeightPx = viewport.height.toFloat(),
+            measurer = AndroidTextMeasurer(density),
+        )
     }
     DisposableEffect(session) {
         onDispose { session?.close() }
