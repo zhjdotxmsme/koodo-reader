@@ -226,5 +226,18 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling'
 
     // Local JVM unit tests (pure logic, e.g. LibraryLogicTest).
+    // JUnit 5 platform + vintage: existing junit4 tests keep running while
+    // new tests (EPUB reader host) use jupiter — both on testDebugUnitTest.
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
 }

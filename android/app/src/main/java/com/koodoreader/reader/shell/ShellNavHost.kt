@@ -10,6 +10,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.koodoreader.reader.epubhost.NativeEpubScreen
 
 object ShellRoutes {
     const val LIBRARY = "library"
@@ -56,11 +57,11 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
             route = ShellRoutes.READER,
             arguments = listOf(navArgument("bookKey") { type = NavType.StringType }),
         ) { entry ->
-            // P3 routing dispatch — the book format decides which reader
-            // composable mounts. PDF lands on NativePdfScreen (which renders
-            // through the loopback-hosted pdf.js engine); everything else falls
-            // through to the P1 placeholder for now (P2 native EPUB lands later;
-            // see docs/android-native-migration.md).
+            // P3/P5-CBZ routing dispatch — the book format decides which native
+            // reader composable mounts. PDF → NativePdfScreen (loopback pdf.js);
+            // EPUB → NativeEpubScreen (engine/layout + CFI, EPUB 原生阅读屏
+            // 步骤③); TXT/MD/MOBI 等其他格式 → P1 placeholder（后续卡逐格式
+            // 迁出，见 docs/android-native-migration.md）。
             val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())
             val viewModel: LibraryViewModel = viewModel()
             val book by viewModel.book(key).collectAsStateWithLifecycle(initialValue = null)
@@ -70,6 +71,11 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     assets = assets,
+                    viewModel = viewModel,
+                )
+                "EPUB" -> NativeEpubScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
                     viewModel = viewModel,
                 )
                 else -> ReaderPlaceholderScreen(

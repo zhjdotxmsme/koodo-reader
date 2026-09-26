@@ -1,0 +1,1055 @@
+diff --git a/android/app/build.gradle b/android/app/build.gradle
+index 3d31d844..d69be9a9 100644
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -226,5 +226,18 @@ dependencies {
+     debugImplementation 'androidx.compose.ui:ui-tooling'
+ 
+     // Local JVM unit tests (pure logic, e.g. LibraryLogicTest).
++    // JUnit 5 platform + vintage: existing junit4 tests keep running while
++    // new tests (EPUB reader host) use jupiter — both on testDebugUnitTest.
+     testImplementation 'junit:junit:4.13.2'
++    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
++    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
++    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
++}
++
++tasks.withType(Test).configureEach {
++    useJUnitPlatform()
++    testLogging {
++        events 'passed', 'skipped', 'failed'
++        exceptionFormat 'full'
++    }
+ }
+diff --git a/android/app/src/main/java/com/koodoreader/reader/epubhost/AndroidTextMeasurer.kt b/android/app/src/main/java/com/koodoreader/reader/epubhost/AndroidTextMeasurer.kt
+new file mode 100644
+index 00000000..0aa7fd32
+--- /dev/null
++++ b/android/app/src/main/java/com/koodoreader/reader/epubhost/AndroidTextMeasurer.kt
+@@ -0,0 +1,62 @@
++package com.koodoreader.reader.epubhost
++
++import android.graphics.Paint
++import com.koodoreader.engine.layout.TextMeasurer
++
++/**
++ * 设备端 [TextMeasurer]：`TextPaint.measureText` 驱动，与分页引擎的契约
++ * 一致（宽度像素、letter-spacing 逐字符叠加、行盒 ascent/descent）。
++ *
++ * 这是「真机渲染 = 分页测量」的关键一环：JVM 测试用确定性 measurer 跑
++ * 分页算法，设备用这套 TextPaint 口径跑同一算法，产出的行几何（x/y/
++ * baseline）与 Canvas 绘制完全对应——CFI 行级定位因此与所见图文一致。
++ *
++ * @param density 屏幕密度（sp→px 换算，LayoutTokens.fontSizePx 是 sp 值 ×
++ *   density 得物理 px，与 Canvas 的 onSizeChanged px 一致）
++ * @param fontFamily 默认字体（null = 系统默认；字体切换后续卡从
++ *   FontManager/TypefaceCache 注入）
++ */
++class AndroidTextMeasurer(
++    private val density: Float,
++    fontFamily: android.graphics.Typeface? = null,
++) : TextMeasurer {
++
++    private val family: android.graphics.Typeface? = fontFamily
++
++    override fun width(text: String, fontSizePx: Float, letterSpacingPx: Float): Float =
++        runWidth(text, fontSizePx, letterSpacingPx)
++
++    override fun prefixWidth(text: String, endExclusive: Int, fontSizePx: Float, letterSpacingPx: Float): Float =
++        runWidth(text.substring(0, endExclusive.coerceIn(0, text.length)), fontSizePx, letterSpacingPx)
++
++    override fun lineHeightPx(fontSizePx: Float): Float {
++        val fm = paint(fontSizePx).fontMetrics
++        return fm.descent - fm.ascent
++    }
++
++    override fun ascentPx(fontSizePx: Float): Float = -paint(fontSizePx).fontMetrics.ascent
++
++    /**
++     * letter-spacing 是「字符间」叠加（引擎契约）；Android 的
++     * TextPaint.letterSpacing 是 em 单位且作用于整段——逐字符测量求和才能
++     * 满足 prefixWidth 的切片一致性（monotonic 二分前提，见接口 KDoc）。
++     */
++    private fun runWidth(text: String, fontSizePx: Float, letterSpacingPx: Float): Float {
++        if (text.isEmpty()) return 0f
++        val p = paint(fontSizePx)
++        p.letterSpacing = 0f
++        var width = 0f
++        for (i in text.indices) {
++            width += p.measureText(text, i, i + 1)
++            if (i > 0) width += letterSpacingPx
++        }
++        return width
++    }
++
++    /** 每次测量新建 Paint：测量是纯函数（无共享可变状态），行为确定。 */
++    private fun paint(fontSizePx: Float): Paint =
++        Paint(Paint.ANTI_ALIAS_FLAG).apply {
++            typeface = family
++            textSize = fontSizePx * density
++        }
++}
+\ No newline at end of file
+diff --git a/android/app/src/main/java/com/koodoreader/reader/epubhost/EpubBookSession.kt b/android/app/src/main/java/com/koodoreader/reader/epubhost/EpubBookSession.kt
+new file mode 100644
+index 00000000..556f13ae
+--- /dev/null
++++ b/android/app/src/main/java/com/koodoreader/reader/epubhost/EpubBookSession.kt
+@@ -0,0 +1,118 @@
++package com.koodoreader.reader.epubhost
++
++import com.koodoreader.core.importer.EpubSpine
++import com.koodoreader.engine.layout.CfiAddressing
++import com.koodoreader.engine.layout.EpubDocument
++import com.koodoreader.engine.layout.HtmlFlattener
++import com.koodoreader.engine.layout.LayoutEngine
++import com.koodoreader.engine.layout.LayoutLine
++import com.koodoreader.engine.layout.LayoutResult
++import com.koodoreader.engine.layout.LayoutTokens
++import com.koodoreader.engine.layout.PaginatorOptions
++import com.koodoreader.engine.layout.SpineItem
++import com.koodoreader.engine.layout.TextBlock
++import java.io.File
++
++/**
++ * EPUB → 分页结果 的集成会话（EPUB 原生阅读屏 步骤②）。
++ *
++ * 打开时一次性完成：[EpubSpine] 逐章 XHTML → [HtmlFlattener] 扁平化为
++ * [TextBlock] → [LayoutEngine] 自绘分页 → [LayoutResult]（每行自带
++ * [com.koodoreader.engine.layout.LayoutPosition]，经 [CfiAddressing] 与 CFI
++ * 互转——CFI 集成的主线就在这里）。
++ *
++ * 纯 JVM（无 Android 类型）：measurer 由构造方注入——真机传
++ * TextPaint 实现，JVM 测试传 engine/layout 自带的确定性 measurer。
++ * 翻页手势/进度是 [result] 之上的宿主职责（步骤③）。
++ *
++ * 内存口径：整本分页在打开时一次完成（10 万字 ≈ 数十万 LayoutLine，
++ * 可控）；懒式逐章分页属优化，不在本步。
++ */
++class EpubBookSession private constructor(
++    val spine: EpubSpine,
++    val document: EpubDocument,
++    val result: LayoutResult,
++) : AutoCloseable {
++
++    val pageCount: Int get() = result.pages.size
++
++    /** 某页的全部已排版行（宿主逐行绘制；行含 x/y/baseline/字号/对齐）。 */
++    fun pageLines(page: Int): List<LayoutLine> =
++        result.pages.getOrNull(page)?.columns?.flatMap { it.lines } ?: emptyList()
++
++    /**
++     * 该页第一个已排版行的位置 CFI —— 翻页时写阅读进度用
++     * （`epubcfi(/6/<spine>!<chain>/<element>/<offsetStep>:<char>)`）。
++     * 空页（理论上分页器不产生）返回 null。
++     */
++    fun cfiForPage(page: Int): String? =
++        result.pages.getOrNull(page)?.columns
++            ?.firstNotNullOfOrNull { col -> col.lines.firstOrNull() }
++            ?.let { CfiAddressing.toCfi(it.position) }
++
++    /**
++     * 把一个位置 CFI 解析回分页位置并落到对应页（标注/书签打开用）。
++     * 位置不在本文档（或格式不符）时返回 null。
++     */
++    fun pageForCfi(cfi: String): Int? {
++        val position = CfiAddressing.fromCfi(cfi, result) ?: return null
++        return result.pages.indexOfFirst { page ->
++            page.columns.any { col -> col.lines.any { it.position == position } }
++        }.takeIf { it >= 0 }
++            // 位置存在但恰无行精确落点（比如章首）→ 二分：找第一个 ≥ 该位置的页
++            ?: result.pages.indexOfFirst { page ->
++                page.columns.firstOrNull()?.lines?.firstOrNull()?.let {
++                    it.position.spineIndex == position.spineIndex &&
++                        it.position.elementIndex >= position.elementIndex
++                } == true
++            }.takeIf { it >= 0 }
++    }
++
++    /** 章节边界：第 [chapterOrder] 章（0 基）所在的页号。 */
++    fun pageOfChapter(chapterOrder: Int): Int =
++        result.pages.indexOfFirst { page ->
++            page.columns.any { col -> col.lines.any { it.position.spineIndex >= chapterOrder } }
++        }.coerceAtLeast(0)
++
++    override fun close() {
++        spine.close()
++    }
++
++    companion object {
++
++        /**
++         * 打开并分页整本 EPUB。
++         *
++         * @param file the .epub 文件
++         * @param viewportWidthPx / viewportHeightPx 屏幕内容区像素（排PageSize）
++         * @param measurer 文字测量（真机 TextPaint / 测试 Monospaced）
++         */
++        fun open(
++            file: File,
++            viewportWidthPx: Float,
++            viewportHeightPx: Float,
++            measurer: com.koodoreader.engine.layout.TextMeasurer,
++            options: PaginatorOptions = PaginatorOptions(),
++        ): EpubBookSession {
++            val spine = EpubSpine.open(file)
++            try {
++                val tokens = LayoutTokens.defaults(viewportWidthPx, viewportHeightPx)
++                val document = EpubDocument(
++                    spine.chapters.mapIndexed { order, chapter ->
++                        val html = spine.readChapter(chapter.index).orEmpty()
++                        HtmlFlattener.DEFAULT.flatten(
++                            html = html,
++                            spineIndex = order + 1, // CFI spine 步是 1 基
++                            href = chapter.href,
++                        )
++                    },
++                )
++                val result = LayoutEngine(measurer, options).layout(document, tokens)
++                return EpubBookSession(spine, document, result)
++            } catch (t: Throwable) {
++                spine.close()
++                throw t
++            }
++        }
++    }
++}
+diff --git a/android/app/src/main/java/com/koodoreader/reader/epubhost/NativeEpubScreen.kt b/android/app/src/main/java/com/koodoreader/reader/epubhost/NativeEpubScreen.kt
+new file mode 100644
+index 00000000..5c9ad654
+--- /dev/null
++++ b/android/app/src/main/java/com/koodoreader/reader/epubhost/NativeEpubScreen.kt
+@@ -0,0 +1,194 @@
++package com.koodoreader.reader.epubhost
++
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.background
++import androidx.compose.foundation.gestures.detectTapGestures
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.filled.ArrowBack
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.Icon
++import androidx.compose.material3.IconButton
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Scaffold
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.material3.TopAppBar
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.State
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableIntStateOf
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.drawscope.DrawScope
++import androidx.compose.ui.graphics.nativeCanvas
++import androidx.compose.ui.graphics.toArgb
++import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.ui.layout.onSizeChanged
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.unit.IntSize
++import androidx.compose.ui.unit.dp
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import androidx.lifecycle.viewmodel.compose.viewModel
++import com.koodoreader.engine.layout.LayoutLine
++import com.koodoreader.reader.shell.LibraryViewModel
++import com.koodoreader.reader.shell.ReaderFiles
++import java.io.File
++
++/**
++ * EPUB 原生阅读屏（步骤③）：Canvas 绘制 [EpubBookSession] 的分页行，
++ * 点区翻页（左 1/3 上页 / 右 1/3 下页 / 中 1/3 呼出进度条），进度 = 章 +
++ * 百分比，位置 CFI 经 [EpubBookSession.cfiForPage] 读取（翻页即得，后续
++ * 标注/书签卡挂持久化）。
++ *
++ * 分页会话随「文件 + 视口尺寸」重建（旋转/改字号时重新分页）；退出时
++ * close 释放归档句柄。
++ */
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun NativeEpubScreen(
++    bookKey: String,
++    onBack: () -> Unit,
++    viewModel: LibraryViewModel = viewModel(),
++) {
++    val context = LocalContext.current
++    val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
++    val file = remember(book?.key, book?.path, book?.format) {
++        val b = book ?: return@remember null
++        ReaderFiles.resolveBookFile(
++            booksDir = File(context.filesDir, "books"),
++            bookKey = b.key,
++            format = b.format,
++            recordedPath = b.path,
++        )
++    }
++
++    var viewport by remember { mutableStateOf(IntSize.Zero) }
++    // 会话按 (文件, 视口) 重建：尺寸未知时 null（首帧后 onSizeChanged 触发）。
++    val session = remember(file, viewport) {
++        val f = file ?: return@remember null
++        if (viewport.width == 0 || viewport.height == 0) return@remember null
++        runCatching {
++            EpubBookSession.open(
++                file = f,
++                viewportWidthPx = viewport.width.toFloat(),
++                viewportHeightPx = viewport.height.toFloat(),
++                measurer = AndroidTextMeasurer(context.resources.displayMetrics.density),
++            )
++        }.getOrNull()
++    }
++    DisposableEffect(session) {
++        onDispose { session?.close() }
++    }
++
++    var currentPage by remember { mutableIntStateOf(0) }
++    var showChrome by remember { mutableStateOf(true) }
++    LaunchedEffect(session) { currentPage = 0 }
++
++    val pageCount = session?.pageCount ?: 0
++    val lines = session?.pageLines(currentPage) ?: emptyList()
++    val cfi = if (pageCount > 0) session?.cfiForPage(currentPage) else null
++
++    // 在 composable 上下文捕获颜色（Canvas 的 DrawScope lambda 不是
++    // composable 上下文，不能直接读 MaterialTheme.colorScheme）。
++    val bgColor = MaterialTheme.colorScheme.background
++    val fgColor = MaterialTheme.colorScheme.onSurface
++    val chapterInfo = remember(session, currentPage) {
++        session?.let { s ->
++            val idx = (0 until s.spine.chapters.size)
++                .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
++            "c ${idx + 1}/${s.spine.chapters.size} · ${s.spine.chapters[idx].href.substringAfterLast('/')}"
++        } ?: ""
++    }
++
++    Scaffold(
++        topBar = {
++            if (showChrome) {
++                TopAppBar(
++                    title = { Text(book?.name ?: "") },
++                    navigationIcon = {
++                        IconButton(onClick = onBack) {
++                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
++                        }
++                    },
++                )
++            }
++        },
++        bottomBar = {
++            if (showChrome && pageCount > 0) {
++                Surface(tonalElevation = 2.dp) {
++                    Row(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(horizontal = 16.dp, vertical = 4.dp),
++                    ) {
++                        Text("$chapterInfo · p ${currentPage + 1}/$pageCount", style = MaterialTheme.typography.labelSmall)
++                        Spacer(Modifier.weight(1f))
++                        Text(
++                            (cfi ?: "").take(48),
++                            style = MaterialTheme.typography.labelSmall,
++                            color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            maxLines = 1,
++                        )
++                    }
++                }
++            }
++        },
++    ) { padding ->
++        Box(
++            modifier = Modifier
++                .fillMaxSize()
++                .padding(padding)
++                .background(MaterialTheme.colorScheme.background),
++        ) {
++            when {
++                session == null && viewport == IntSize.Zero -> Unit // 首帧：等尺寸
++                session == null -> Text(
++                    if (file == null) {
++                        "Book file unavailable on device."
++                    } else {
++                        "Could not paginate this EPUB.\nImport it again or use the web viewer."
++                    },
++                    modifier = Modifier
++                        .fillMaxSize()
++                        .padding(24.dp),
++                )
++                else -> Canvas(
++                    modifier = Modifier
++                        .fillMaxSize()
++                        .onSizeChanged { viewport = it }
++                        .pointerInput(pageCount) {
++                            detectTapGestures { offset ->
++                                val w = size.width
++                                when {
++                                    offset.x < w / 3f -> if (currentPage > 0) currentPage--
++                                    offset.x > 2f * w / 3f -> if (currentPage < pageCount - 1) currentPage++
++                                    else -> showChrome = !showChrome
++                                }
++                            }
++                        },
++                ) {
++                    drawRect(color = bgColor)
++                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
++                    paint.color = fgColor.toArgb()
++                    for (line in lines) drawLine(line, paint)
++                }
++            }
++        }
++    }
++}
++
++/** 绘制一行：字体按行字号，位置用引擎产出的 x/baseline（同一测量口径）。 */
++private fun DrawScope.drawLine(line: LayoutLine, paint: android.graphics.Paint) {
++    paint.textSize = line.fontSizePx
++    drawContext.canvas.nativeCanvas.drawText(line.text, line.x, line.baselineY, paint)
++}
+diff --git a/android/app/src/main/java/com/koodoreader/reader/shell/ShellNavHost.kt b/android/app/src/main/java/com/koodoreader/reader/shell/ShellNavHost.kt
+index b8b6a818..aad6b122 100644
+--- a/android/app/src/main/java/com/koodoreader/reader/shell/ShellNavHost.kt
++++ b/android/app/src/main/java/com/koodoreader/reader/shell/ShellNavHost.kt
+@@ -10,6 +10,7 @@ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
+ import androidx.navigation.compose.rememberNavController
+ import androidx.navigation.navArgument
++import com.koodoreader.reader.epubhost.NativeEpubScreen
+ 
+ object ShellRoutes {
+     const val LIBRARY = "library"
+@@ -56,11 +57,11 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
+             route = ShellRoutes.READER,
+             arguments = listOf(navArgument("bookKey") { type = NavType.StringType }),
+         ) { entry ->
+-            // P3 routing dispatch — the book format decides which reader
+-            // composable mounts. PDF lands on NativePdfScreen (which renders
+-            // through the loopback-hosted pdf.js engine); everything else falls
+-            // through to the P1 placeholder for now (P2 native EPUB lands later;
+-            // see docs/android-native-migration.md).
++            // P3/P5-CBZ routing dispatch — the book format decides which native
++            // reader composable mounts. PDF → NativePdfScreen (loopback pdf.js);
++            // EPUB → NativeEpubScreen (engine/layout + CFI, EPUB 原生阅读屏
++            // 步骤③); TXT/MD/MOBI 等其他格式 → P1 placeholder（后续卡逐格式
++            // 迁出，见 docs/android-native-migration.md）。
+             val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())
+             val viewModel: LibraryViewModel = viewModel()
+             val book by viewModel.book(key).collectAsStateWithLifecycle(initialValue = null)
+@@ -72,6 +73,11 @@ fun ShellNavHost(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
+                     assets = assets,
+                     viewModel = viewModel,
+                 )
++                "EPUB" -> NativeEpubScreen(
++                    bookKey = key,
++                    onBack = { navController.popBackStack() },
++                    viewModel = viewModel,
++                )
+                 else -> ReaderPlaceholderScreen(
+                     bookKey = key,
+                     onBack = { navController.popBackStack() },
+diff --git a/android/app/src/test/java/com/koodoreader/reader/epubhost/EpubBookSessionTest.kt b/android/app/src/test/java/com/koodoreader/reader/epubhost/EpubBookSessionTest.kt
+new file mode 100644
+index 00000000..5ab904e8
+--- /dev/null
++++ b/android/app/src/test/java/com/koodoreader/reader/epubhost/EpubBookSessionTest.kt
+@@ -0,0 +1,171 @@
++package com.koodoreader.reader.epubhost
++
++import com.koodoreader.engine.layout.TextMeasurers
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.assertThrows
++import org.junit.jupiter.api.io.TempDir
++import java.io.File
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertNotNull
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.Assertions.assertTrue
++
++/**
++ * 步骤② 集成测试：EPUB → EpubSpine → HtmlFlattener → LayoutEngine 分页，
++ * CFI 经 CfiAddressing 双向（确定性 mono measurer，断言可精确）。
++ */
++class EpubBookSessionTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    /** 三章 EPUB：每章两个 <p>，内容可断言。 */
++    private fun makeEpub(name: String): File {
++        val zip = File(dir, name)
++        ZipOutputStream(zip.outputStream()).use { zos ->
++            fun put(entry: String, content: String) {
++                zos.putNextEntry(ZipEntry(entry))
++                zos.write(content.toByteArray(Charsets.UTF_8))
++                zos.closeEntry()
++            }
++            put("mimetype", "application/epub+zip")
++            put(
++                "META-INF/container.xml",
++                """<container><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>""",
++            )
++            put(
++                "OEBPS/content.opf",
++                """<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
++                  <manifest>
++                    <item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
++                    <item id="c2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
++                    <item id="c3" href="ch3.xhtml" media-type="application/xhtml+xml"/>
++                  </manifest>
++                  <spine>
++                    <itemref idref="c1"/><itemref idref="c2"/><itemref idref="c3"/>
++                  </spine>
++                </package>""",
++            )
++            for (n in 1..3) {
++                put(
++                    "OEBPS/ch$n.xhtml",
++                    "<html><body>" +
++                        "<p>Chapter $n first paragraph with some longer text.</p>" +
++                        "<p>Chapter $n second paragraph.</p>" +
++                        "</body></html>",
++                )
++            }
++        }
++        return zip
++    }
++
++    private fun open(file: File): EpubBookSession =
++        EpubBookSession.open(
++            file,
++            viewportWidthPx = 400f,
++            viewportHeightPx = 700f,
++            measurer = TextMeasurers.mono(),
++        )
++
++    // ------------------------------------------------------------- 分页
++
++    @Test
++    fun `opens and paginates the whole book`() {
++        makeEpub("a.epub").let { file ->
++            open(file).use { s ->
++                assertEquals(3, s.spine.chapters.size)
++                assertTrue(s.pageCount > 0)
++                assertTrue(s.pageLines(0).isNotEmpty())
++            }
++        }
++    }
++
++    @Test
++    fun `all three chapters land in the document in order`() {
++        makeEpub("b.epub").let { file ->
++            open(file).use { s ->
++                // 每章的内容都可以在分页行里找到
++                for (n in 1..3) {
++                    assertTrue(
++                        s.result.pages.any { page ->
++                            page.columns.any { col -> col.lines.any { it.text.contains("Chapter $n first") } }
++                        },
++                        "chapter $n missing from pagination",
++                    )
++                }
++                // 章序：ch1 的行先于 ch3 的行
++                val flat = s.result.pages.flatMap { it.columns }.flatMap { it.lines }
++                val first1 = flat.indexOfFirst { it.text.contains("Chapter 1 first") }
++                val first3 = flat.indexOfFirst { it.text.contains("Chapter 3 first") }
++                assertTrue(first1 in 0 until first3)
++            }
++        }
++    }
++
++    // ------------------------------------------------------------- CFI
++
++    @Test
++    fun `cfiForPage emits an epubcfi pointing at the right chapter`() {
++        makeEpub("c.epub").let { file ->
++            open(file).use { s ->
++                val cfi = s.cfiForPage(0)
++                assertNotNull(cfi)
++                assertTrue(cfi!!.startsWith("epubcfi("), cfi)
++                // 第 0 页属于第 1 章 → spine 步为 1（1 基阅读序）
++                assertTrue(cfi.contains("/6/1!"), cfi)
++            }
++        }
++    }
++
++    @Test
++    fun `cfiForPage and pageForCfi round-trip`() {
++        makeEpub("d.epub").let { file ->
++            open(file).use { s ->
++                for (p in 0 until s.pageCount) {
++                    val cfi = s.cfiForPage(p) ?: continue
++                    assertEquals(p, s.pageForCfi(cfi), "page $p CFI did not round-trip")
++                }
++            }
++        }
++    }
++
++    @Test
++    fun `pageForCfi returns null for a foreign cfi`() {
++        makeEpub("e.epub").let { file ->
++            open(file).use { s ->
++                assertNull(s.pageForCfi("epubcfi(/6/99!/2/0)"))
++                assertNull(s.pageForCfi("not a cfi"))
++            }
++        }
++    }
++
++    @Test
++    fun `pageOfChapter finds each chapter start`() {
++        makeEpub("f.epub").let { file ->
++            open(file).use { s ->
++                val pages = (0..2).map { s.pageOfChapter(it) }
++                assertTrue(pages.zipWithNext().all { (a, b) -> a <= b }, "chapter pages must be ordered: $pages")
++                assertTrue(s.pageOfChapter(0) <= s.pageOfChapter(2))
++            }
++        }
++    }
++
++    // ------------------------------------------------------- 生命周期
++
++    @Test
++    fun `close is idempotent`() {
++        makeEpub("g.epub").let { file ->
++            val s = open(file)
++            s.close()
++            s.close()
++        }
++    }
++
++    @Test
++    fun `non-epub payload fails fast`() {
++        val junk = File(dir, "junk.epub").apply { writeText("not a zip") }
++        assertThrows<IllegalArgumentException> { open(junk) }
++    }
++}
+diff --git a/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubSpine.kt b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubSpine.kt
+new file mode 100644
+index 00000000..bcd629e9
+--- /dev/null
++++ b/android/core/importer/src/main/kotlin/com/koodoreader/core/importer/EpubSpine.kt
+@@ -0,0 +1,214 @@
++package com.koodoreader.core.importer
++
++import com.koodoreader.core.archive.ZipArchive
++import com.koodoreader.core.archive.ZipArchives
++import java.io.File
++
++/**
++ * EPUB spine / chapter extraction (EPUB native reader, step ①).
++ *
++ * `EpubBook` only surfaces metadata + cover (the P1 import needs); the native
++ * READER needs the actual reading order: OPF manifest + spine, so each chapter
++ * can be flattened (D0 `HtmlFlattener`) and paginated (`engine/layout`).
++ *
++ * Lifecycle: [open] holds ONE ZipArchive for the whole reading session
++ * (R1 facade) — [readChapter] / [readResource] reuse it; [close] when the
++ * book screen goes away.
++ *
++ * CFI note (ADR-002): chapter identity for CFI is the spine order + the
++ * (idref-based) element index inside the chapter — both come from the OPF,
++ * which is why this class resolves spine order from the OPF and never from
++ * the zip's physical entry order.
++ */
++class EpubSpine private constructor(
++    val file: File,
++    private val archive: ZipArchive,
++    /** The OPF package document's path inside the zip (forward slashes). */
++    val opfHref: String,
++    /** The reading order, linearized exactly as the OPF `spine` declares. */
++    val items: List<SpineItem>,
++) : AutoCloseable {
++
++    /** One readable chapter of the spine. [href] is absolute inside the zip. */
++    data class SpineItem(
++        val index: Int,
++        val idref: String,
++        val href: String,
++        val mediaType: String,
++        val isLinear: Boolean,
++    )
++
++    /** Chapters, in reading order (linear="no" items are skipped, per spec). */
++    val chapters: List<SpineItem> = items.filter { it.isLinear }
++
++    /** Decode an entry's bytes as UTF-8 XHTML text (chapters are XML). */
++    fun readChapter(index: Int): String? =
++        chapters.getOrNull(index)?.let { readEntryText(it.href) }
++
++    /**
++     * Raw bytes of a resource. [href] may be OPF-relative (`images/cover.png`,
++     * as written in the manifest) or zip-absolute (`OEBPS/images/cover.png`)
++     * — both resolve when a matching entry exists.
++     */
++    fun readResource(href: String): ByteArray? {
++        archive.entry(href)?.let { return archive.readBytes(it.name) }
++        val resolved = resolve(href)
++        if (resolved != href) {
++            archive.entry(resolved)?.let { return archive.readBytes(it.name) }
++        }
++        return null
++    }
++
++    /** Resolve [href] (as written in the OPF/chapter) against the OPF directory. */
++    fun resolve(href: String): String = normalizePath(
++        EpubBook.resolvePath(opfHref, decodeHref(href)),
++    )
++
++    override fun close() {
++        archive.close()
++    }
++
++    private fun readEntryText(href: String): String? =
++        archive.entry(href)?.let { archive.readBytes(it.name)?.toString(Charsets.UTF_8) }
++
++    companion object {
++
++        /** Opens [file] and parses container.xml → OPF → manifest/spine. */
++        fun open(file: File): EpubSpine {
++            if (!file.isFile) {
++                throw IllegalArgumentException("EPUB file not found: ${file.path}")
++            }
++            val archive = try {
++                ZipArchives.open(file)
++            } catch (e: com.koodoreader.core.archive.ArchiveException) {
++                throw IllegalArgumentException("not a readable EPUB zip: ${file.path}", e)
++            }
++            return try {
++                fromArchive(archive, file)
++            } catch (t: Throwable) {
++                archive.close()
++                throw t
++            }
++        }
++
++        private fun fromArchive(archive: ZipArchive, file: File): EpubSpine {
++            val container = archive.entry("META-INF/container.xml")
++                ?.let { archive.readBytes(it.name)?.toString(Charsets.UTF_8) }
++            val opfHref = container
++                ?.let { firstAttribute(it, "rootfile", "full-path") }
++                ?.takeIf { it.isNotEmpty() }
++                // Desktop-tolerant fallback: first .opf entry in the archive.
++                ?: archive.names().firstOrNull { it.endsWith(".opf", ignoreCase = true) }
++                ?: throw IllegalArgumentException(
++                    "EPUB without an OPF package document: ${file.path}",
++                )
++
++            val opfXml = archive.entry(opfHref)
++                ?.let { archive.readBytes(it.name)?.toString(Charsets.UTF_8) }
++                ?: throw IllegalArgumentException("OPF entry unreadable: $opfHref")
++
++            // manifest: id → (href, media-type). `\b` keeps `<itemref` from
++            // matching `<item`; the match spans the WHOLE opening tag so
++            // tagAttrs sees the attributes.
++            data class ManifestEntry(val href: String, val mediaType: String, val properties: String?)
++            val manifest = HashMap<String, ManifestEntry>()
++            for (m in Regex("""<item\b[^>]*>""").findAll(opfXml)) {
++                val attrs = tagAttrs(m.value)
++                val id = attrs["id"] ?: continue
++                val href = attrs["href"] ?: continue
++                manifest[id] = ManifestEntry(href, attrs["media-type"] ?: "", attrs["properties"])
++            }
++
++            // spine: linear reading order (linear="no" entries skipped — they
++            // are supplementary, the reading flow never lands on them).
++            val spineStart = Regex("""<spine(?=[\s/>])""").find(opfXml)
++                ?: throw IllegalArgumentException("OPF without a <spine>: $opfHref")
++            val spineBlock = spineBlockOf(opfXml, spineStart.range.first)
++            val items = ArrayList<SpineItem>()
++            var order = 0
++            for (m in Regex("""<itemref\b[^>]*>""").findAll(spineBlock)) {
++                val attrs = tagAttrs(m.value)
++                val idref = attrs["idref"] ?: continue
++                val entry = manifest[idref] ?: continue // dangling idref: skip
++                val linear = attrs["linear"]?.lowercase() != "no"
++                val href = normalizePath(
++                    EpubBook.resolvePath(opfHref, decodeHref(entry.href)),
++                )
++                items.add(
++                    SpineItem(
++                        index = order++,
++                        idref = idref,
++                        href = href,
++                        mediaType = entry.mediaType,
++                        isLinear = linear,
++                    ),
++                )
++            }
++            if (items.isEmpty()) {
++                throw IllegalArgumentException("EPUB spine has no readable items: ${file.path}")
++            }
++            return EpubSpine(file, archive, opfHref, items)
++        }
++
++        /**
++         * The `<spine>…</spine>` block: from the opening tag to the FIRST
++         * closing `</spine>` (a self-closing `<spine/>` yields an empty block,
++         * which the empty-items guard reports).
++         */
++        private fun spineBlockOf(opfXml: String, from: Int): String {
++            val openEnd = opfXml.indexOf('>', from)
++            if (openEnd < 0) return ""
++            if (opfXml[openEnd - 1] == '/') return "" // <spine/> — nothing inside
++            val end = opfXml.indexOf("</spine>", openEnd, ignoreCase = true)
++            return if (end < 0) opfXml.substring(openEnd + 1) else opfXml.substring(openEnd + 1, end)
++        }
++
++        /** Attributes of one tag string (`<item …>`), both quote styles, order-free. */
++        private fun tagAttrs(tag: String): Map<String, String> {
++            val attrs = HashMap<String, String>()
++            for (m in Regex("""([a-zA-Z_:][\w:.-]*)\s*=\s*("([^"]*)"|'([^']*)')""").findAll(tag)) {
++                val value = m.groupValues[3].ifEmpty { m.groupValues[4] }
++                attrs.putIfAbsent(m.groupValues[1].lowercase(), value)
++            }
++            return attrs
++        }
++
++        private fun firstAttribute(xml: String, tag: String, attrName: String): String? {
++            val m = Regex("""<$tag(?=[\s/>])""").find(xml) ?: return null
++            return tagAttrs(xml.substring(m.range.first, xml.indexOf('>', m.range.first) + 1)
++                .ifEmpty { xml.substring(m.range.first) })[attrName]
++        }
++
++        /**
++         * EPUB hrefs are percent-encoded IRIs; decode %XX so the resolved
++         * path matches the actual zip entry name. Decoding is byte-oriented
++         * and re-assembles multi-byte UTF-8 sequences (中文文件名)；`+` is NOT
++         * a space here (that's form encoding, not IRI percent-encoding).
++         */
++        private fun decodeHref(href: String): String {
++            if (!href.contains('%')) return href
++            val bytes = ByteArray(href.length)
++            var n = 0
++            var i = 0
++            while (i < href.length) {
++                val c = href[i]
++                if (c == '%' && i + 2 < href.length) {
++                    val byte = href.substring(i + 1, i + 3).toIntOrNull(16)
++                    if (byte != null && byte in 0..0xFF) {
++                        bytes[n++] = byte.toByte()
++                        i += 3
++                        continue
++                    }
++                }
++                // Raw char: re-encode as UTF-8 (multi-byte chars stay correct).
++                for (b in c.toString().toByteArray(Charsets.UTF_8)) bytes[n++] = b
++                i++
++            }
++            return String(bytes, 0, n, Charsets.UTF_8)
++        }
++
++        /** Zip entry names use forward slashes; drop leading "./". */
++        private fun normalizePath(p: String): String =
++            p.replace('\\', '/').removePrefix("./")
++    }
++}
+diff --git a/android/core/importer/src/test/kotlin/com/koodoreader/core/importer/EpubSpineTest.kt b/android/core/importer/src/test/kotlin/com/koodoreader/core/importer/EpubSpineTest.kt
+new file mode 100644
+index 00000000..f5a36fa9
+--- /dev/null
++++ b/android/core/importer/src/test/kotlin/com/koodoreader/core/importer/EpubSpineTest.kt
+@@ -0,0 +1,195 @@
++package com.koodoreader.core.importer
++
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.assertThrows
++import org.junit.jupiter.api.io.TempDir
++import java.io.File
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertNotNull
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.Assertions.assertTrue
++
++/**
++ * EpubSpine 抽取层测试：程序化 EPUB 夹具（无需二进制资源），覆盖
++ * container→OPF→manifest/spine 解析、相对路径、linear 过滤、percent 解码、
++ * fallback 与类型化错误。
++ */
++class EpubSpineTest {
++
++    @TempDir
++    lateinit var dir: File
++
++    /** 组装一个最小但结构完整的 EPUB。 */
++    private fun makeEpub(name: String, opfDir: String = "OEBPS"): File {
++        val zip = File(dir, name)
++        ZipOutputStream(zip.outputStream()).use { zos ->
++            fun put(entry: String, content: String) {
++                zos.putNextEntry(ZipEntry(entry))
++                zos.write(content.toByteArray(Charsets.UTF_8))
++                zos.closeEntry()
++            }
++            fun putBytes(entry: String, bytes: ByteArray) {
++                zos.putNextEntry(ZipEntry(entry))
++                zos.write(bytes)
++                zos.closeEntry()
++            }
++            put("mimetype", "application/epub+zip")
++            put(
++                "META-INF/container.xml",
++                """<?xml version="1.0"?>
++                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
++                  <rootfiles>
++                    <rootfile full-path="$opfDir/content.opf" media-type="application/oebps-package+xml"/>
++                  </rootfiles>
++                </container>""",
++            )
++            put(
++                "$opfDir/content.opf",
++                """<?xml version="1.0"?>
++                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
++                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
++                    <dc:title>T</dc:title><dc:identifier id="uid">u1</dc:identifier>
++                  </metadata>
++                  <manifest>
++                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
++                    <item id="ch1" href="text/ch1.xhtml" media-type="application/xhtml+xml"/>
++                    <item id="ch2" href="text/ch%202.xhtml" media-type="application/xhtml+xml"/>
++                    <item id="img" href="images/cover.png" media-type="image/png"/>
++                    <item id="hidden" href="text/draft.xhtml" media-type="application/xhtml+xml"/>
++                  </manifest>
++                  <spine toc="ncx">
++                    <itemref idref="ch1"/>
++                    <itemref idref="ch2"/>
++                    <itemref idref="hidden" linear="no"/>
++                  </spine>
++                </package>""",
++            )
++            put("$opfDir/text/ch1.xhtml", "<html><body><p>one</p></body></html>")
++            put("$opfDir/text/ch 2.xhtml", "<html><body><p>two</p></body></html>")
++            put("$opfDir/text/draft.xhtml", "<html><body><p>draft</p></body></html>")
++            putBytes("$opfDir/images/cover.png", byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47))
++        }
++        return zip
++    }
++
++    // ------------------------------------------------------------- 解析
++
++    @Test
++    fun `spine 解析为阅读顺序且 href 相对 OPF 解析`() {
++        makeEpub("a.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                assertEquals("OEBPS/content.opf", spine.opfHref)
++                // ch1 ../ 上跳一层后回到 OEBPS/text/ch1.xhtml
++                assertEquals(
++                    listOf("OEBPS/text/ch1.xhtml", "OEBPS/text/ch 2.xhtml"),
++                    spine.chapters.map { it.href },
++                )
++                assertEquals(listOf("ch1", "ch2"), spine.chapters.map { it.idref })
++            }
++        }
++    }
++
++    @Test
++    fun `linear no 的条目在 items 里但不进 chapters`() {
++        makeEpub("b.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                assertEquals(3, spine.items.size)
++                assertEquals(2, spine.chapters.size)
++                assertEquals("hidden", spine.items.last().idref)
++                assertTrue(spine.items.none { !it.isLinear && it.idref == "hidden" }.not())
++            }
++        }
++    }
++
++    @Test
++    fun `readChapter 返回章节 XHTML 文本`() {
++        makeEpub("c.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                assertTrue(spine.readChapter(0)!!.contains("<p>one</p>"))
++                assertTrue(spine.readChapter(1)!!.contains("<p>two</p>"))
++            }
++        }
++    }
++
++    @Test
++    fun `readResource 返回图片字节`() {
++        makeEpub("d.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                val bytes = spine.readResource("OEBPS/images/cover.png")
++                assertNotNull(bytes)
++                assertEquals(4, bytes!!.size)
++            }
++        }
++    }
++
++    @Test
++    fun `href 百分号解码后命中真实条目`() {
++        makeEpub("e.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                // manifest 里写的是 ch%202.xhtml → 解码为 "ch 2.xhtml"
++                assertTrue(spine.readChapter(1)!!.contains("<p>two</p>"))
++            }
++        }
++    }
++
++    @Test
++    fun `缺失 container 时回退到第一个 opf`() {
++        val zip = File(dir, "fallback.epub")
++        ZipOutputStream(zip.outputStream()).use { zos ->
++            fun put(entry: String, content: String) {
++                zos.putNextEntry(ZipEntry(entry))
++                zos.write(content.toByteArray(Charsets.UTF_8))
++                zos.closeEntry()
++            }
++            put("ebook.opf", """<package version="3.0"><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>""")
++            put("c.xhtml", "<html><body>fallback</body></html>")
++        }
++        EpubSpine.open(zip).use { spine ->
++            assertEquals("ebook.opf", spine.opfHref)
++            assertTrue(spine.readChapter(0)!!.contains("fallback"))
++        }
++    }
++
++    // ------------------------------------------------------- 类型化错误
++
++    @Test
++    fun `非 zip 文件抛 IllegalArgumentException`() {
++        val text = File(dir, "not.epub").apply { writeText("plain") }
++        assertThrows<IllegalArgumentException> { EpubSpine.open(text) }
++    }
++
++    @Test
++    fun `无 spine 抛 IllegalArgumentException`() {
++        val zip = File(dir, "nospine.epub")
++        ZipOutputStream(zip.outputStream()).use { zos ->
++            zos.putNextEntry(ZipEntry("META-INF/container.xml"))
++            zos.write(
++                """<container><rootfiles><rootfile full-path="p.opf"/></rootfiles></container>"""
++                    .toByteArray(),
++            )
++            zos.closeEntry()
++            zos.putNextEntry(ZipEntry("p.opf"))
++            zos.write("<package/>".toByteArray())
++            zos.closeEntry()
++        }
++        assertThrows<IllegalArgumentException> { EpubSpine.open(zip) }
++    }
++
++    @Test
++    fun `缺失文件抛 IllegalArgumentException`() {
++        assertThrows<IllegalArgumentException> { EpubSpine.open(File(dir, "ghost.epub")) }
++    }
++
++    // ------------------------------------------------------- 资源读取
++
++    @Test
++    fun `readResource 对不存在资源返回 null`() {
++        makeEpub("g.epub").let { file ->
++            EpubSpine.open(file).use { spine ->
++                assertNull(spine.readResource("OEBPS/images/nope.png"))
++            }
++        }
++    }
++}
