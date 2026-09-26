@@ -1,0 +1,33 @@
+// engine/fb2 — FictionBook 2 (XML) 原生生产者（P5.5a，ADR-006）。
+//
+// PURE KOTLIN JVM MODULE：FB2 是 XML，转换 = 「FB2 标签集 → HTML 等价物」
+// 后交给 :engine:htmlbook / :engine:layout 已就绪的扁平化器。零外部依赖
+// （不引 XML 库：FB2 标签集小且成对，正则+扫描足够，且容错优先于严格性）。
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // HtmlDocument（扁平化 + 编码探测）/ HtmlEntities。
+    api project(':engine:htmlbook')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

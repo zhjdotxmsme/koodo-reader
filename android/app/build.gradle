@@ -191,6 +191,10 @@ dependencies {
     // P5.5b/c single-file HTML/XHTML/XML + MHTML producers (ADR-006).
     implementation project(':engine:htmlbook')
 
+    // P5.5a/d FB2 (FictionBook 2) + DOCX (WordprocessingML subset) producers.
+    implementation project(':engine:fb2')
+    implementation project(':engine:docx')
+
     // P5 native comic / image-sequence reader (CBZ / CBT / image directory).
     implementation project(':engine:image')
 

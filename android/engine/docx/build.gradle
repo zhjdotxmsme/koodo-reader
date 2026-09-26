@@ -1,0 +1,36 @@
+// engine/docx — WordprocessingML (DOCX) 原生生产者（P5.5d，ADR-006）。
+//
+// PURE KOTLIN JVM MODULE：DOCX 是 OOXML zip（`word/document.xml` 为主要
+// 内容），zip 读取走 :core:archive 的唯一门面（R1），WordprocessingML 子集
+// 的解析是自研正则扫描（不引 mammoth-java / POI：ADR-006 的零外部依赖约定
+// 优先，语料覆盖不足时再按 ADR 回滚方案换 vendor）。
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    // zip 门面（ZipArchive：精确/大小写兜底查找 + 流式读）。
+    api project(':core:archive')
+    // HtmlDocument.blocks / HtmlEntities。
+    api project(':engine:htmlbook')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}

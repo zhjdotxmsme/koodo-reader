@@ -60,4 +60,18 @@
 
 - 单格式回滚：格式路由是数据驱动的单表（ADR-003 回滚方案），改回一行即恢复兜底岛渲染；已合入的原生模块保留但不接线路由，不产生运行时成本。
 - 整体回滚：兜底岛代码（`LocalAssetServer`、`nativeBridge.js`、`folderBridge.js`、`webapp` staging）在 P8 之前不删除，`--target webview` 始终可出包（ADR-003 配套纪律 2）。
-- DOCX 专项回滚：若 vendor `mammoth-java` 路线受阻（`SimpleSax` 补丁不成立 / 需要 core library desugaring 或抬升 minSdk / 两套 mammoth 的输出差异无法收敛），先回退到自研 WordprocessingML 子集（16–24 人/天）；若自研子集在语料上仍不达标（< 80% 可接受率），退回备选 D（按需动态特性模块）或改用导入期转换 + 明确的标注不互通声明。
+- DOCX 专项回滚：若 vendor `mammoth-java` 路线受阻（`SimpleSax` 补丁不成立 / 需要 core library desugaring 或抬升 minSdk / 两套 mammoth 的输出差异无法收敛），先回退到自研 WordprocessingML 子集（16–24 人/天）；若自研子集在语料上仍不达标（< 80% 可接受率），退回备选 D（按需动态功能模块）或改用导入期转换 + 明确的标注不互通声明。
+
+## 实施状态（2026-09-25）
+
+四个生产者模块全部落地并接入原生阅读管线，均为**纯 JVM、零第三方运行时依赖**（走 ADR 的"自研子集"路线，未引 mammoth）：
+
+| 模块 | 交付 | 测试 |
+|---|---|---|
+| `engine/htmlbook` | `HtmlDocument`（HTML/XHTML/HTM/XML → TextBlock，复用 D0 + engine:text 编码探测）、`MhtmlDocument`（MIME 拆包 + base64/quoted-printable + charset，只取 text/html part） | 15 项 |
+| `engine/fb2` | `Fb2Document`：FB2 XML → HTML 等价物（`<title>`→`<h1>`、`<subtitle>`→`<h2>`、epigraph/poem 去标签留文本、`<binary>`/`<description>` 剥离、notes 体跳过）→ 扁平化；声明编码优先（`encoding=`），否则探测 | 8 项 |
+| `engine/docx` | `DocxDocument`：OOXML zip（`:core:archive` 门面）→ `word/document.xml` 段落/run/制表/换行/标题样式/表格拍平 + `docProps/core.xml` 标题 → 扁平化 | 9 项 |
+
+接线（`:app`）：`WebBookSession` / `Fb2BookSession` / `DocxBookSession` 三个 `ReaderSession` 实现，`NativeEpubScreen` 按 format 分派，`ShellNavHost` 路由 HTML/HTM/XHTML/XML/MHTML/MHT/FB2/DOCX → 原生阅读屏。**至此规划的全部可原生格式（EPUB/PDF/TXT/MD/MOBI/AZW/AZW3/CBZ/CBT/CB7/HTML/XHTML/XML/MHTML/FB2/DOCX）共用一条分页+CFI 管线；仅 CBR 按本 ADR §4.2 明确不原生（UnRAR 许可），保留兜底岛。**
+
+**未闭环**：§验证方式 的 ≥20 本真实语料回归与"图片显示"（纯文本阅读不含图片渲染）、桌面⇄安卓 CFI ≥99% 黄金守卫、真机回归——均需设备与语料，挂账后续卡。
