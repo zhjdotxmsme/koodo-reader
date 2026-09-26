@@ -146,6 +146,17 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
             android:theme="@style/Theme.KoodoReader" />
 
+        <!--
+          P5-CBZ-5: native comic viewer for VIEW/SEND intents of CBZ/CBT/CB7
+          (MainActivity copies the payload into cache and hands over the file
+          path). Not exported — only our own routing starts it.
+        -->
+        <activity
+            android:name=".imagehost.ComicViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
+            android:theme="@style/Theme.KoodoReader" />
+
         <activity-alias
             android:name=".LauncherAlias"
             android:targetActivity="${nativeLauncher}"

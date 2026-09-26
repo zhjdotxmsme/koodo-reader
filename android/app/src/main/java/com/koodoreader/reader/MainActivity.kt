@@ -21,6 +21,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import com.koodoreader.core.importer.BookRules
+import com.koodoreader.reader.imagehost.ComicViewerActivity
+import com.koodoreader.reader.shell.IntentRoutePolicy
+import com.koodoreader.reader.shell.LibraryViewModel
+import com.koodoreader.reader.shell.NativeShellActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -238,24 +242,56 @@ class MainActivity : Activity() {
 
     /**
      * Act on a VIEW/SEND intent carrying a book (file manager / share sheet).
-     * The stream is copied into the app cache and exposed through the loopback
-     * server, then handed to the web app's import pipeline via the
-     * `__koodoNative.openLocalFile` hook (see src/utils/android/nativeBridge.js).
+     * P8-F1: the payload is routed by [IntentRoutePolicy] — native readers
+     * first (comics → [ComicViewerActivity]; PDF → import + native shell),
+     * with the web island as the fallback for everything else.
      */
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.action == Intent.ACTION_SEND) {
             val stream = getParcelableUri(intent, Intent.EXTRA_STREAM)
-            if (stream != null) queueBook(stream, intent.type)
+            if (stream != null) routeIntent(stream, intent.type)
             return
         }
         val data = intent.data ?: return
         val scheme = data.scheme?.lowercase() ?: return
         when (scheme) {
-            "content", "file" -> queueBook(data, intent.type)
+            "content", "file" -> routeIntent(data, intent.type)
             // App scheme (koodo-reader://) and plain web links: nothing to import.
             else -> Unit
         }
+    }
+
+    /**
+     * 分流入口（P8-F1 + 全格式适配收尾）：漫画 → 原生漫画屏；PDF 与全部
+     * 文本/文档格式（EPUB/TXT/MD/MOBI/AZW/HTML/MHTML/FB2/DOCX…）→ 导入管线 +
+     * 原生壳（书进书架，READER 路由按格式分派到对应 ReaderSession）；
+     * 仅 CBR 与无法识别的载荷走兜底岛。
+     */
+    private fun routeIntent(uri: Uri, mimeType: String?) {
+        val displayName = uri.lastPathSegment
+        when (IntentRoutePolicy.decide(mimeType, displayName)) {
+            IntentRoutePolicy.Route.NATIVE_COMIC -> queueBook(uri, mimeType)
+            IntentRoutePolicy.Route.NATIVE_PDF,
+            IntentRoutePolicy.Route.NATIVE_SHELL,
+            -> importToNativeShell(uri)
+            IntentRoutePolicy.Route.ISLAND -> queueBook(uri, mimeType)
+        }
+    }
+
+    /**
+     * PDF：走既有导入管线进 Room（LibraryViewModel.importFiles →
+     * ImportPipeline），随后打开原生壳——书在书架可见，READER 路由由
+     * NativePdfScreen 承接。打开即读书（深链）在宿主改造卡挂账。
+     */
+    private fun importToNativeShell(uri: Uri) {
+        runCatching {
+            // MainActivity 是裸 Activity（非 ViewModelStoreOwner）；导入是
+            // 一次性操作（AndroidViewModel 自持 application 上下文，与 UI
+            // 生命周期解耦），直接构造即可。
+            LibraryViewModel(application).importFiles(listOf(uri))
+            startActivity(Intent(this, NativeShellActivity::class.java))
+        }.onFailure { Log.w(TAG, "native pdf import failed: $uri", it) }
     }
 
     /**
@@ -284,6 +320,14 @@ class MainActivity : Activity() {
                     } else {
                         toast("Could not read the shared file.")
                     }
+                    return@runOnUiThread
+                }
+                // P5-CBZ-5 / P8-F1：原生可读的漫画容器（CBZ/CBT/CB7）不再
+                // 绕道兜底岛，直接落原生漫画屏；其余格式维持兜底岛投喂。
+                if (IntentRoutePolicy.decide(mimeType, copied.name) ==
+                    IntentRoutePolicy.Route.NATIVE_COMIC
+                ) {
+                    startActivity(ComicViewerActivity.intent(this, copied))
                     return@runOnUiThread
                 }
                 val exposedPath = assetServer.exposeFile("$BOOKS_PREFIX/${copied.name}", copied)

@@ -1,28 +1,17 @@
-package com.koodoreader.engine.image.host
+package com.koodoreader.reader.imagehost
 
 /*
  * ============================================================================
- * Compose 宿主骨架（单图/双页 + 缩放平移）—— **移植模板，不参与本模块编译**
+ * Compose 宿主（单图/双页 + 缩放平移）—— 自 engine/image 的移植模板落位（P5-CBZ-5）
  * ============================================================================
- * 本文件被 `engine/image/build.gradle` 的
- *   sourceSets.main.kotlin.exclude 'com/koodoreader/engine/image/host/**'
- * 排除：androidx.compose.* 以 AAR 发布，纯 JVM 模块无法解析，而正是「纯 JVM」
- * 让 :engine:image 的排版/窗口/缩放逻辑能在无 Android SDK 的机器上跑单测。
- * 这与 :engine:pdf → `engine/pdfhost`（宿主在 :app）的既有分工一致。
+ * 原 `engine/image/.../host/ComicViewerHost.kt`（纯 JVM 模块不参与编译的模板）
+ * 按 docs/patches/p5-image.patch §3 的步骤 1 移入 :app，包名调整为
+ * com.koodoreader.reader.imagehost。:app 已有 compose 依赖（activity-compose /
+ * material3 / foundation），由 :app:compileDebugKotlin 门禁编译验证。
  *
- * 移植步骤（详见 docs/patches/p5-image.patch §3）：
- *   1. 把本文件移到 app/src/main/java/com/koodoreader/app/reader/imagehost/；
- *   2. :app 已有 compose 依赖（activity-compose / material3 / foundation）；
- *   3. 用 `rememberComicViewerModel(bookFile)` 打开归档：
- *        val extractor = remember { ArchiveExtractors.open(File(path)) }
- *        val loader = remember { DefaultPageLoader(extractor, executor = ioExecutor) }
- *        val model = remember { ComicViewerModel(loader) }
- *      CBR/7z 的 support != READY 时**不要**走到这里：路由回兜底岛
- *      （ArchiveKind.support，见 ADR §4）；
- *   4. 退出时 `DisposableEffect { onDispose { model.close() } }` 释放归档句柄。
- *
- * 本文件里的逻辑边界很薄：所有决策（翻页落点/窗口/缩放夹取）都在
+ * 逻辑边界依旧很薄：所有决策（翻页落点/窗口/缩放夹取）都在
  * engine:image 的纯 Kotlin 侧，宿主只负责「快照 → UI + 手势回灌」。
+ * 入口：ComicViewerActivity（VIEW/SEND intent 的 CBZ/CBT/CB7 原生路由）。
  */
 
 import androidx.compose.foundation.Image

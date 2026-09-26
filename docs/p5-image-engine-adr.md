@@ -146,6 +146,13 @@ seek(4) → 加载 7；卸载 0               驻留 {1..7}   ← 7 页上限，
 | 5 | 契约守卫 `nativeBridge.js` / `folderBridge.js` / `androidBuild.test.js` | 兜底岛↔原生壳兼容层 | **P8 前不得删除**（ADR-003 §1） | `node scripts/check-import-rules.js`、`yarn test` | — |
 | 6 | `target=webview` 构建变体 | 纯 WebView 包 | **永久保留**（ADR-001） | `-Ptarget=webview` 出包 | — |
 
+> **P5-CBZ-5 / P8-F1 状态更新（2026-09-25）**：第 1、2 行的「路由切换」已完成——
+> `MainActivity.handleIntent → IntentRoutePolicy.decide(mime, name)` 数据驱动分流
+> （CBZ/CBT/CB7 → `ComicViewerActivity` 原生屏；CBR/RAR 显式拦截走兜底岛；PDF →
+> 导入管线 + 原生壳 `NativePdfScreen`；其余格式兜底岛 fallback）。路由表 = 单一
+> `IntentRoutePolicy`（16 项 JVM 单测钉死）。真机回归仍未做（无设备），第 2 行的
+> wasm 资产删除留待真机回归通过后执行。
+
 **本卡不做**：删除任何兜底岛资产（第 2 项的前置条件尚未满足）。本卡只交付「开关」与清单。
 
 ## 8. 与 P1 `core/importer` 的衔接
