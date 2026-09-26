@@ -158,6 +158,11 @@ dependencies {
     implementation project(':core:importer')
     implementation project(':core:dbio')
     implementation project(':core:common')
+
+    // Compose design system for the shell (android UI/UX sub-project ①). Brings
+    // the token values (:core:designsystem, re-exported via `api`) and the shared
+    // component primitives. Exposes no :core:data on purpose.
+    implementation project(':core:ui')
     implementation project(':engine:cfi')
     implementation project(':engine:layout')
     implementation project(':engine:gesture')

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Library modules need a manifest, but this one declares nothing: :core:ui is a
+  pure UI/theme library with no components, permissions or providers. The empty
+  <manifest> is what the Android Gradle Plugin requires for the library variant.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -1,0 +1,63 @@
+// core/ui — Compose design system for the app shell.
+//
+// Layering (see .openteams/specs/2026-09-26-android-ui-ux-readest-alignment-design.html §4):
+//   :core:designsystem  token VALUES (pure Kotlin JVM: ColorTokens /
+//                       ShapeTokens / SpaceTokens / Contrast / CssColor).
+//                       Testable on any JVM, no Android SDK required.
+//   :core:ui            THIS module — binds those values to Compose types and
+//                       hosts the shared components. Contains no token values.
+//
+// Deliberately does NOT depend on :core:data. Components take small UI models
+// (e.g. BookCardModel) rather than BookEntity, so the design system can be
+// reused by :app and :feature:* alike and Compose Preview needs no database.
+// Cover decoding stays in :app (it needs Context + CoverStore + bitmap IO).
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.koodoreader.core.ui'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        // Compose compiler compatible with Kotlin 1.9.24 (same as :app and
+        // :feature:stats).
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+}
+
+dependencies {
+    // `api` not `implementation`: consumers of :core:ui also want the token
+    // objects (ColorTokens.LIGHT, ShapeTokens, SpaceTokens) without having to
+    // declare :core:designsystem themselves.
+    api project(':core:designsystem')
+
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-core'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    testImplementation 'junit:junit:4.13.2'
+}

@@ -44,6 +44,14 @@ include ':core:common'
 // it via `implementation project(':core:designsystem')`.
 include ':core:designsystem'
 
+// Compose design system for the app shell (android UI/UX sub-project ①): binds
+// the :core:designsystem token values to Compose types and hosts the shared
+// component primitives. It depends on :core:designsystem and Compose and
+// NOTHING else — in particular it must never depend on :core:data, so the
+// components stay reusable by :app and :feature:* alike and Compose Preview
+// needs no database.
+include ':core:ui'
+
 //
 
 // Native reading-engine modules (Kotlin, no Android dependency) — see
