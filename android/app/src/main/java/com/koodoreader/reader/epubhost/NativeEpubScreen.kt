@@ -60,6 +60,11 @@ fun NativeEpubScreen(
     bookKey: String,
     onBack: () -> Unit,
     viewModel: LibraryViewModel = viewModel(),
+    /**
+     * Optional CFI target to jump to directly (from Notes tab annotation).
+     * Takes priority over the stored reading position. Null → resume last-read.
+     */
+    initialCfi: String? = null,
 ) {
     val context = LocalContext.current
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
@@ -98,10 +103,11 @@ fun NativeEpubScreen(
 
     var currentPage by remember { mutableIntStateOf(0) }
     var showChrome by remember { mutableStateOf(true) }
-    // 打开恢复：会话就绪后按上次位置 CFI 落页（无进度/无效 CFI → 第 0 页）。
+    // 打开恢复：优先用 initialCfi（笔记跳转），否则按上次位置 CFI 落页（无进度 → 第 0 页）。
     LaunchedEffect(session) {
-        val stored = book?.key?.let { progressPrefs.cfiOf(it) }
-        currentPage = session?.resumePage(stored) ?: 0
+        val target = initialCfi?.takeIf { it.isNotBlank() }
+            ?: book?.key?.let { progressPrefs.cfiOf(it) }
+        currentPage = session?.resumePage(target) ?: 0
     }
     // 翻页写回进度（位置 CFI；与桌面 recordLocation 同一寻址格式）。
     LaunchedEffect(session, currentPage) {
@@ -113,6 +119,17 @@ fun NativeEpubScreen(
     val pageCount = session?.pageCount ?: 0
     val lines = session?.pageLines(currentPage) ?: emptyList()
     val cfi = if (pageCount > 0) session?.cfiForPage(currentPage) else null
+
+    // 当前页所有图片位图（spineIndex:"src" → Bitmap），一次性解码避免每帧 IO。
+    val pageImages: Map<String, android.graphics.Bitmap?> = remember(session, currentPage) {
+        val s = session ?: return@remember emptyMap()
+        s.pageLines(currentPage)
+            .filter { it.imageSrc != null }
+            .associate { line ->
+                val key = "${line.position.spineIndex}:${line.imageSrc}"
+                key to loadBitmap(s, line)
+            }
+    }
 
     // 在 composable 上下文捕获颜色（Canvas 的 DrawScope lambda 不是
     // composable 上下文，不能直接读 MaterialTheme.colorScheme）。
@@ -196,15 +213,49 @@ fun NativeEpubScreen(
                     drawRect(color = bgColor)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     paint.color = fgColor.toArgb()
-                    for (line in lines) drawLine(line, paint)
+                    for (line in lines) drawLayoutLine(line, paint, pageImages)
                 }
             }
         }
     }
 }
 
-/** 绘制一行：字体按行字号，位置用引擎产出的 x/baseline（同一测量口径）。 */
-private fun DrawScope.drawLine(line: LayoutLine, paint: android.graphics.Paint) {
+/**
+ * 绘制一行：纯文字走 Canvas drawText；图片行 (imageSrc != null, text 空白)
+ * 从 [pageImages] 取 Bitmap，缩放到页宽以内居中绘制。
+ */
+private fun DrawScope.drawLayoutLine(
+    line: LayoutLine,
+    paint: android.graphics.Paint,
+    pageImages: Map<String, android.graphics.Bitmap?> = emptyMap(),
+) {
+    if (line.imageSrc != null && line.text.isEmpty()) {
+        val bmp = pageImages["${line.position.spineIndex}:${line.imageSrc}"]
+        if (bmp != null) {
+            val canvas = drawContext.canvas.nativeCanvas
+            val maxW = size.width.toInt()
+            val scale = kotlin.math.min(1f, maxW.toFloat() / bmp.width)
+            val drawW = (bmp.width * scale).toInt()
+            val drawH = (bmp.height * scale).toInt()
+            val left = ((size.width - drawW) / 2f).toInt()
+            val top = line.y.toInt()
+            val src = android.graphics.Rect(0, 0, bmp.width, bmp.height)
+            val dst = android.graphics.Rect(left, top, left + drawW, top + drawH)
+            canvas.drawBitmap(bmp, src, dst, null)
+        }
+        return
+    }
     paint.textSize = line.fontSizePx
     drawContext.canvas.nativeCanvas.drawText(line.text, line.x, line.baselineY, paint)
 }
+
+/** Decode an image line's bitmap from the session (EPUB zip / file). Returns null if missing. */
+private fun loadBitmap(session: ReaderSession, line: LayoutLine): android.graphics.Bitmap? {
+    val src = line.imageSrc?.takeIf { it.isNotBlank() } ?: return null
+    val baseHref = session.chapterHref(line.position.spineIndex)
+    val bytes = session.readImage(baseHref, src) ?: return null
+    return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+}
+
+/** 绘制一行：字体按行字号，位置用引擎产出的 x/baseline（同一测量口径）。 */
+// private (removed — merged into the drawLine above)

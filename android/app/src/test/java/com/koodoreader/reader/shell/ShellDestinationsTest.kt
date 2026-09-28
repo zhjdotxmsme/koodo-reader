@@ -72,6 +72,24 @@ class ShellDestinationsTest {
     }
 
     @Test
+    fun `the CFI reader variant also hides the bottom bar`() {
+        assertTrue(ShellNav.hidesBottomBar(ShellNav.READER_WITH_CFI_PATTERN))
+        assertTrue(ShellNav.hidesBottomBar("reader/abc?cfi=epubcfi(/6/2!)"))
+    }
+
+    @Test
+    fun `isReader returns true for the CFI reader variants`() {
+        assertTrue(ShellNav.isReader(ShellNav.READER_WITH_CFI_PATTERN))
+        assertTrue(ShellNav.isReader("reader/book-1?cfi=epubcfi(/6/4!)"))
+    }
+
+    @Test
+    fun `topLevelFor returns null for the CFI reader`() {
+        assertNull(ShellNav.topLevelFor(ShellNav.READER_WITH_CFI_PATTERN))
+        assertNull(ShellNav.topLevelFor("reader/book-1?cfi=epubcfi(/6/4!)"))
+    }
+
+    @Test
     fun `the bar is visible on every tab`() {
         for (tab in ShellTab.barOrder()) {
             assertFalse(ShellNav.hidesBottomBar(tab.route), "bar hidden on ${tab.route}")

@@ -52,10 +52,16 @@ fun ShellNavHost(
         }
 
         composable(ShellNav.NOTES) {
-            // No book-jump wiring yet: the route cannot carry a CFI, and a tap
-            // that opened the book at its last-read page instead of the
-            // annotation would be a lie. See the P0-1 note on this card.
-            NotesScreen()
+            NotesScreen(
+                onJump = { bookKey, cfi ->
+                    val route = if (cfi.isNullOrBlank()) {
+                        ShellNav.reader(bookKey)
+                    } else {
+                        ShellNav.readerWithCfi(bookKey, cfi)
+                    }
+                    navController.navigate(route)
+                },
+            )
         }
 
         composable(ShellNav.SETTINGS) {
@@ -104,6 +110,45 @@ fun ShellNavHost(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
+                )
+                else -> ReaderPlaceholderScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
+                )
+            }
+        }
+
+        // Reader with an optional CFI target (jump to annotation from Notes).
+        composable(
+            route = ShellNav.READER_WITH_CFI_PATTERN,
+            arguments = listOf(
+                navArgument("bookKey") { type = NavType.StringType },
+                navArgument("cfi") {
+                    type = NavType.StringType
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            val key = Uri.decode(entry.arguments?.getString("bookKey").orEmpty())
+            val cfi = entry.arguments?.getString("cfi")
+            val viewModel: LibraryViewModel = viewModel()
+            val book by viewModel.book(key).collectAsStateWithLifecycle(initialValue = null)
+            val format = book?.format?.uppercase()
+            when (format) {
+                "PDF" -> NativePdfScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
+                    assets = assets,
+                    viewModel = viewModel,
+                )
+                "EPUB", "TXT", "MD", "MARKDOWN", "MOBI", "AZW", "AZW3",
+                "HTML", "HTM", "XHTML", "XML", "MHTML", "MHT", "FB2", "DOCX",
+                -> NativeEpubScreen(
+                    bookKey = key,
+                    onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
+                    initialCfi = cfi,
                 )
                 else -> ReaderPlaceholderScreen(
                     bookKey = key,

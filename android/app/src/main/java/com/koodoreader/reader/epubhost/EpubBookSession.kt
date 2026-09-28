@@ -48,6 +48,32 @@ class EpubBookSession private constructor(
         spine.close()
     }
 
+    /** zip-internal path of chapter [index] (for resolving relative `<img src>`). */
+    override fun chapterHref(index: Int): String =
+        spine.chapters.getOrNull(index)?.href ?: ""
+
+    /**
+     * Read image bytes from the EPUB archive.
+     *
+     * [src] is the `<img>` src attribute (relative to the chapter's directory).
+     * Resolution: chapter dir + src → zip entry → bytes.
+     * Example: chapterHref = "OEBPS/chap/ch01.xhtml", src = "images/cover.png"
+     *  → resolved "OEBPS/chap/images/cover.png" → zip.entry() → bytes.
+     */
+    override fun readImage(baseHref: String, src: String): ByteArray? {
+        if (baseHref.isBlank() || src.isBlank()) return null
+        val srcClean = src.trim()
+        if (srcClean.startsWith("data:")) {
+            // data:image/png;base64,... — decode inline (rare in EPUBs)
+            val base64 = srcClean.substringAfter("base64=", "").trim()
+            return runCatching { java.util.Base64.getDecoder().decode(base64) }.getOrNull()
+        }
+        val baseDir = baseHref.substringBeforeLast('/').ifEmpty { "" }
+        val resolved = if (baseDir.isEmpty()) srcClean
+                       else "$baseDir/${srcClean.trimStart('/')}"
+        return spine.readResource(resolved)
+    }
+
     companion object {
 
         /**

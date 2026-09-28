@@ -1,5 +1,6 @@
 package com.koodoreader.reader.shell
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,16 +38,16 @@ import com.koodoreader.engine.annotate.AnnotationKind
  * `observeAll()` DAOs — no schema change) and the list rules come from
  * [NotesAggregation], which is pure and unit-tested.
  *
- * NOT wired yet, on purpose: tapping a row to jump into the book. The reader
- * route cannot carry a CFI today, so a tap could only open the book at its
- * last-read page — landing somewhere other than the annotation the user tapped.
- * The rows are therefore not presented as tappable. The CFI pass-through is the
- * remaining piece of this card (see the P0-1 note).
+ * Tapping a row opens the book at the annotation's CFI position (when one is
+ * recorded) or at last-read position otherwise. The `onJump` callback is
+ * supplied by the [ShellNavHost] route layer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotesScreen(
     viewModel: NotesViewModel = viewModel(),
+    /** Called when the user taps an annotation row: `(bookKey, cfi-or-null)`. */
+    onJump: (bookKey: String, cfi: String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var filterIndex by remember { mutableIntStateOf(0) }
@@ -114,7 +115,9 @@ fun NotesScreen(
                             ),
                         )
                     }
-                    items(section.items, key = { it.key }) { NoteRow(it) }
+                    items(section.items, key = { it.key }) { item ->
+                        NoteRow(item = item, onClick = { onJump(section.bookKey, item.cfi) })
+                    }
                 }
             }
         }
@@ -122,11 +125,12 @@ fun NotesScreen(
 }
 
 @Composable
-private fun NoteRow(item: NoteListItem) {
+private fun NoteRow(item: NoteListItem, onClick: () -> Unit) {
     val i18n = LocalI18n.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(
                 horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
                 vertical = SpaceTokens.sm.dp,

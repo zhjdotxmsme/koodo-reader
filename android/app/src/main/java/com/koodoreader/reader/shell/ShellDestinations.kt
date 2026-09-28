@@ -61,17 +61,30 @@ object ShellNav {
     // ── Full-screen reader ───────────────────────────────────────────────────
     /** NavHost pattern; also the route string reported by NavDestination. */
     const val READER_PATTERN = "reader/{bookKey}"
+    /**
+     * Reader with an optional CFI (Content Fragment Identifier).
+     *
+     * Used to jump straight to an annotation (highlight / note / bookmark)
+     * from the Notes tab. The `cfi` argument is optional so a tap on a note
+     * without a CFI (e.g. a bookmark whose cfiStart was not recorded) still
+     * opens the book at last-read position.
+     */
+    const val READER_WITH_CFI_PATTERN = "reader/{bookKey}?cfi={cfi}"
     private const val READER_PREFIX = "reader/"
 
     /** Concrete route for a book. Book keys can contain '/', so encode. */
     fun reader(bookKey: String): String = "$READER_PREFIX${Uri.encode(bookKey)}"
+
+    /** Concrete reader route that also carries a CFI target. */
+    fun readerWithCfi(bookKey: String, cfi: String): String =
+        "$READER_PREFIX${Uri.encode(bookKey)}?cfi=${Uri.encode(cfi)}"
 
     /** True for both the pattern and any concrete `reader/...` route. */
     fun isReader(route: String?): Boolean =
         route != null && (route == READER_PATTERN || route.startsWith(READER_PREFIX))
 
     /**
-     * The bottom bar is hidden ONLY in the reader.
+     * The bottom bar is hidden ONLY in the reader (both variants).
      *
      * The reader is an immersive surface: a permanent bar would cost vertical
      * space and attention for an action the reader screen already offers. Every
@@ -105,9 +118,11 @@ object ShellNav {
      * whose key collides with a tab name would open the wrong screen.
      */
     fun allRoutes(): List<String> = listOf(
-        LIBRARY, NOTES, STATS, SETTINGS, BACKUP, TRASH, DICTIONARY, READER_PATTERN,
+        LIBRARY, NOTES, STATS, SETTINGS, BACKUP, TRASH, DICTIONARY,
+        READER_PATTERN, READER_WITH_CFI_PATTERN,
     )
 
     /** Routes whose bottom bar is hidden; used by the tests as a single source. */
-    fun routesHidingBottomBar(): List<String> = listOf(READER_PATTERN)
+    fun routesHidingBottomBar(): List<String> =
+        listOf(READER_PATTERN, READER_WITH_CFI_PATTERN)
 }

@@ -33,6 +33,12 @@ interface ReaderSession : AutoCloseable {
 
     /** 章节显示标签（进度条：“第 N 章 · label”）。 */
     fun chapterLabel(chapterOrder: Int): String
+
+    /** The zip-internal href of chapter [index] (e.g. `OEBPS/chapter/01.xhtml`); used to resolve relative `<img src>` paths. */
+    fun chapterHref(index: Int): String = ""
+
+    /** Read an image resource. [baseHref] = chapter's zip path; [src] = `<img>` src (relative to chapter dir). Null for formats without inline images. */
+    fun readImage(baseHref: String, src: String): ByteArray? = null
 }
 
 /**
