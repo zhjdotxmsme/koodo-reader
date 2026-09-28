@@ -126,7 +126,12 @@ fun ShellNavHost(
                 navArgument("bookKey") { type = NavType.StringType },
                 navArgument("cfi") {
                     type = NavType.StringType
-                    defaultValue = null
+                    // 可选查询参数的正确写法：非空 StringType + 空串默认值。
+                    // 用 defaultValue = null 会在 NavArgument 的 require() 上抛
+                    // IllegalArgumentException；而 NavHost 在【启动构图为每条路由建图】
+                    // 时就会触发这条校验 → 库屏渲染前 App 就崩（"一打开就闪退"根因）。
+                    // 空串在读者屏经 `initialCfi?.takeIf{isNotBlank()}` 被当作"无 CFI"。
+                    defaultValue = ""
                 },
             ),
         ) { entry ->
