@@ -60,6 +60,13 @@ import com.koodoreader.engine.toc.SearchHit
 import com.koodoreader.engine.toc.SearchIndex
 import com.koodoreader.engine.toc.SearchQuery
 import com.koodoreader.feature.dictionary.DictRepository
+import com.koodoreader.feature.tts.ForegroundTtsService
+import com.koodoreader.feature.tts.TtsControlUiState
+import com.koodoreader.feature.tts.TtsControlSheet
+import com.koodoreader.feature.tts.TtsMediaCommand
+import com.koodoreader.feature.tts.TtsConfig
+import com.koodoreader.feature.tts.TtsPlaybackSnapshot
+import com.koodoreader.feature.tts.TtsPlaybackState
 import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
@@ -245,6 +252,73 @@ fun NativeEpubScreen(
     // 0=yellow 1=green 2=pink 3=blue
     var selectedHighlightColor by remember { mutableStateOf(0) }
 
+    // ── TTS 朗读 ─────────────────────────────────────────────────────────────
+    var showTtsControl by remember { mutableStateOf(false) }
+    var connectedTtsSvc by remember { mutableStateOf<ForegroundTtsService?>(null) }
+
+    val ttsServiceConn = remember(context) {
+        object : android.content.ServiceConnection {
+            override fun onServiceConnected(
+                name: android.content.ComponentName,
+                service: android.os.IBinder,
+            ) {
+                connectedTtsSvc = (service as ForegroundTtsService.LocalBinder).service()
+            }
+            override fun onServiceDisconnected(name: android.content.ComponentName) {
+                connectedTtsSvc = null
+            }
+        }
+    }
+
+    fun startTts() {
+        val s = session ?: return
+        val chapterIdx = (0 until s.chapterCount)
+            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val chapterText = s.chapterText(chapterIdx)
+        if (chapterText.isBlank()) return
+        if (connectedTtsSvc == null) {
+            context.bindService(
+                android.content.Intent(context, ForegroundTtsService::class.java),
+                ttsServiceConn,
+                android.content.Context.BIND_AUTO_CREATE,
+            )
+        }
+        MainScope().launch {
+            for (i in 0 until 30) { if (connectedTtsSvc != null) break; delay(100) }
+            val svc = connectedTtsSvc ?: return@launch
+            svc.setHostCommandListener { cmd ->
+                if (cmd == TtsMediaCommand.NEXT) {
+                    MainScope().launch {
+                        delay(300)
+                        if (currentPage < s.pageCount - 1) {
+                            currentPage++
+                            val nextIdx = (0 until s.chapterCount)
+                                .lastOrNull { c -> s.pageOfChapter(c) <= currentPage }
+                                ?: s.chapterCount - 1
+                            val nextText = s.chapterText(nextIdx)
+                            if (nextText.isNotBlank()) {
+                                svc.loadChapter(bookKey, book?.name ?: "", s.chapterLabel(nextIdx), nextText)
+                                svc.play()
+                            }
+                        }
+                    }
+                }
+            }
+            svc.loadChapter(bookKey, book?.name ?: "", s.chapterLabel(chapterIdx), chapterText)
+            svc.play()
+            showTtsControl = true
+        }
+    }
+
+    fun stopTts() {
+        connectedTtsSvc?.stop()
+        showTtsControl = false
+    }
+
+    DisposableEffect(ttsServiceConn) {
+        onDispose { runCatching { context.unbindService(ttsServiceConn) } }
+    }
+
     fun isAlreadyHighlighted(line: LayoutLine): Boolean =
         line.blockIndex in highlightBlockColors
 
@@ -410,6 +484,10 @@ fun NativeEpubScreen(
                         TextButton(onClick = { showToc = true }) {
                             Text("☰", style = MaterialTheme.typography.labelLarge)
                         }
+                        // TTS 朗读
+                        TextButton(onClick = { if (showTtsControl) stopTts() else startTts() }) {
+                            Text(if (showTtsControl) "⏹" else "🔊", style = MaterialTheme.typography.labelLarge)
+                        }
                     },
                 )
             }
@@ -546,6 +624,32 @@ fun NativeEpubScreen(
                 TextButton(onClick = { showDictDialog = false }) { Text("关闭") }
             },
         )
+    }
+
+    // ── TTS 控制栏（底部） ────────────────────────────────────────────────────
+    if (showTtsControl) {
+        val svc = connectedTtsSvc
+        if (svc != null) {
+            val uiState = try { svc.controlState() } catch (_: Exception) { null }
+            if (uiState != null) {
+                TtsControlSheet(
+                    state = uiState,
+                    onCommand = { cmd ->
+                        when (cmd) {
+                            TtsMediaCommand.PLAY        -> svc.play()
+                            TtsMediaCommand.PAUSE       -> svc.pause()
+                            TtsMediaCommand.STOP        -> stopTts()
+                            TtsMediaCommand.NEXT        -> svc.next()
+                            TtsMediaCommand.PREVIOUS    -> svc.previous()
+                            TtsMediaCommand.PLAY_PAUSE  -> if (svc.snapshot().state == com.koodoreader.feature.tts.TtsPlaybackState.PLAYING) svc.pause() else svc.play()
+                            TtsMediaCommand.FAST_FORWARD -> svc.next()
+                            TtsMediaCommand.REWIND      -> svc.previous()
+                        }
+                    },
+                    onDismiss = { stopTts() },
+                )
+            }
+        }
     }
 
     // ── 目录对话框 ─────────────────────────────────────────────────────────────
