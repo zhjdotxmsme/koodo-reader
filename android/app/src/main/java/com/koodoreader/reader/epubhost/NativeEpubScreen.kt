@@ -184,15 +184,15 @@ fun NativeEpubScreen(
     val bookNotes by db.noteDao().observeForBook(bookKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val highlightBlockIndices: Set<Int> = remember(bookNotes, session, currentPage) {
-        val s = session ?: return@remember emptySet()
+    val highlightBlockColors: Map<Int, Long> = remember(bookNotes, session, currentPage) {
+        val s = session ?: return@remember emptyMap()
         val layout = s.layoutResult()
         bookNotes.mapNotNull { note ->
             val cfi = note.cfi ?: return@mapNotNull null
             val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
             val line = layout.lineAt(pos) ?: return@mapNotNull null
-            if (line.page == currentPage) line.blockIndex else null
-        }.toSet()
+            if (line.page == currentPage) line.blockIndex to (note.color ?: 0x99FFFFL) else null
+        }.toMap()
     }
 
     // ── 全文搜索 ──────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ fun NativeEpubScreen(
     var selectedHighlightColor by remember { mutableStateOf(0) }
 
     fun isAlreadyHighlighted(line: LayoutLine): Boolean =
-        line.blockIndex in highlightBlockIndices
+        line.blockIndex in highlightBlockColors
 
     fun saveHighlight(colorIdx: Int = 0) {
         val line = selectedLine ?: return
@@ -258,7 +258,7 @@ fun NativeEpubScreen(
             line.position.elementIndex,
             line.start,
         ))
-        val colors = listOf(0x99FFFFL, 0x99AAAAFL, 0x99FFAAFFL, 0x99AACCFFL)
+        val colors = listOf(0x99FFFFL, 0x9988FF88L, 0x99FFAAFFL, 0x99AACCFFL)
         val color = if (colorIdx < colors.size) colors[colorIdx] else 0x99FFFFL
         val entity = NoteEntity(
             key = System.currentTimeMillis().toString(),
@@ -477,7 +477,7 @@ fun NativeEpubScreen(
                     drawRect(color = bgColor)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     paint.color = fgColor.toArgb()
-                    for (line in lines) drawLayoutLine(line, paint, pageImages, highlightBlockIndices)
+                    for (line in lines) drawLayoutLine(line, paint, pageImages, highlightBlockColors)
                 }
             }
         }
@@ -486,7 +486,7 @@ fun NativeEpubScreen(
     // ── 选中行菜单（底部浮动条） ─────────────────────────────────────────────
     if (showSelectionMenu && selectedLine != null) {
         val line = selectedLine!!
-        val highlighted = line.blockIndex in highlightBlockIndices
+        val highlighted = isAlreadyHighlighted(line)
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -684,13 +684,14 @@ private fun DrawScope.drawLayoutLine(
     line: LayoutLine,
     paint: android.graphics.Paint,
     pageImages: Map<String, android.graphics.Bitmap?> = emptyMap(),
-    highlightBlocks: Set<Int> = emptySet(),
+    highlightColors: Map<Int, Long> = emptyMap(),
 ) {
-    // 高亮背景色（半透明黄）
-    if (line.blockIndex in highlightBlocks && line.imageSrc == null) {
+    // 高亮背景色（使用笔记存储的颜色，默认半透明黄）
+    if (line.blockIndex in highlightColors && line.imageSrc == null) {
+        val color = highlightColors[line.blockIndex] ?: 0x99FFFFL
         val canvas = drawContext.canvas.nativeCanvas
         val bg = android.graphics.Paint()
-        bg.color = (0x99 shl 24) or (0xFF shl 16) or (0xFF shl 8) or 0x00  // semi-transparent yellow
+        bg.color = color.toInt()
         bg.style = android.graphics.Paint.Style.FILL
         canvas.drawRect(
             line.x - 2f,
