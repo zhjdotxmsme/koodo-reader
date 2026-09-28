@@ -59,12 +59,16 @@ import com.koodoreader.engine.toc.ChapterText
 import com.koodoreader.engine.toc.SearchHit
 import com.koodoreader.engine.toc.SearchIndex
 import com.koodoreader.engine.toc.SearchQuery
+import com.koodoreader.feature.dictionary.DictRepository
 import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -229,8 +233,22 @@ fun NativeEpubScreen(
     var showSelectionMenu by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var noteText by remember { mutableStateOf("") }
+    // 字典
+    val dictRepo = remember(context) {
+        DictRepository(context.applicationContext.filesDir)
+    }
+    var showDictDialog by remember { mutableStateOf(false) }
+    var dictResultText by remember { mutableStateOf("") }
+    // 目录
+    var showToc by remember { mutableStateOf(false) }
+    // 高亮颜色（0 = 黄色 default）
+    // 0=yellow 1=green 2=pink 3=blue
+    var selectedHighlightColor by remember { mutableStateOf(0) }
 
-    fun saveHighlight() {
+    fun isAlreadyHighlighted(line: LayoutLine): Boolean =
+        line.blockIndex in highlightBlockIndices
+
+    fun saveHighlight(colorIdx: Int = 0) {
         val line = selectedLine ?: return
         val s = session ?: return
         val chapterIdx = (0 until s.chapterCount)
@@ -240,6 +258,8 @@ fun NativeEpubScreen(
             line.position.elementIndex,
             line.start,
         ))
+        val colors = listOf(0x99FFFFL, 0x99AAAAFL, 0x99FFAAFFL, 0x99AACCFFL)
+        val color = if (colorIdx < colors.size) colors[colorIdx] else 0x99FFFFL
         val entity = NoteEntity(
             key = System.currentTimeMillis().toString(),
             bookKey = bookKey,
@@ -249,9 +269,42 @@ fun NativeEpubScreen(
             cfi = cfi,
             notes = "",  // empty = plain highlight
             percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
+            color = color,
         )
         MainScope().launch { db.noteDao().upsert(entity) }
         showSelectionMenu = false
+    }
+
+    fun deleteHighlight() {
+        val line = selectedLine ?: return
+        val cfi = CfiAddressing.toCfi(LayoutPosition(
+            line.position.spineIndex,
+            line.position.elementIndex,
+            line.start,
+        ))
+        MainScope().launch {
+            val notes = db.noteDao().observeForBook(bookKey).first()
+            val target = notes.firstOrNull { it.cfi == cfi }
+            target?.let { db.noteDao().deleteByKey(it.key) }
+            showSelectionMenu = false
+        }
+    }
+
+    fun lookupDictionary() {
+        val line = selectedLine ?: return
+        val word = line.text.trim().takeIf { it.isNotEmpty() } ?: return
+        MainScope().launch {
+            val result = withContext(Dispatchers.IO) { dictRepo.lookup(word) }
+            val htmlSafe = result.html
+            dictResultText = if (htmlSafe != null) {
+                "【${result.entry}】\n" +
+                    htmlSafe.replace(Regex("<[^>]+>"), "").replace(Regex("&[a-z]+;"), "·").trim()
+            } else {
+                "未找到「$word」的释义\n（请确认已导入字典文件）"
+            }
+            showDictDialog = true
+            showSelectionMenu = false
+        }
     }
 
     fun saveNote() {
@@ -285,12 +338,9 @@ fun NativeEpubScreen(
         val pos = layout.positionAt(offset.x, offset.y) ?: return
         val line = s.pageLines(currentPage)
             .firstOrNull { it.containsY(offset.y) && offset.x in it.x..it.rightPx }
-            ?: run {
-                // fallback: use the hit position to find the line
-                layout.lineAt(pos)
-            }
+            ?: layout.lineAt(pos)
             ?: return
-        // expand to a "word" (bounded by whitespace) — simple version: select the whole line
+        if (line.imageSrc != null) return  // 不选图片行
         selectedLine = line
         showSelectionMenu = true
     }
@@ -355,6 +405,10 @@ fun NativeEpubScreen(
                         // 搜索（文字按钮）
                         TextButton(onClick = { showSearch = true }) {
                             Text("🔍", style = MaterialTheme.typography.labelLarge)
+                        }
+                        // 目录
+                        TextButton(onClick = { showToc = true }) {
+                            Text("☰", style = MaterialTheme.typography.labelLarge)
                         }
                     },
                 )
@@ -431,27 +485,97 @@ fun NativeEpubScreen(
 
     // ── 选中行菜单（底部浮动条） ─────────────────────────────────────────────
     if (showSelectionMenu && selectedLine != null) {
+        val line = selectedLine!!
+        val highlighted = line.blockIndex in highlightBlockIndices
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             tonalElevation = 8.dp,
             color = MaterialTheme.colorScheme.surface,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    "「${(selectedLine?.text ?: "").take(24)}」",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
-                TextButton(onClick = { saveHighlight() }) { Text("高亮") }
-                TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text("笔记") }
-                TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                if (highlighted) {
+                    // 已高亮：显示删除 + 字典
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "已高亮「${line.text.take(24)}」",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                        TextButton(onClick = { deleteHighlight() }) { Text("删除") }
+                        TextButton(onClick = { lookupDictionary() }) { Text("字典") }
+                        TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+                    }
+                } else {
+                    // 未高亮：高亮(4色) + 笔记 + 字典
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "「${line.text.take(16)}」",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                        TextButton(onClick = { saveHighlight(0) }) { Text("黄") }
+                        TextButton(onClick = { saveHighlight(1) }) { Text("绿") }
+                        TextButton(onClick = { saveHighlight(2) }) { Text("粉") }
+                        TextButton(onClick = { saveHighlight(3) }) { Text("蓝") }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text("笔记") }
+                        TextButton(onClick = { lookupDictionary() }) { Text("字典") }
+                        TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+                    }
+                }
             }
         }
+    }
+
+    // ── 字典对话框 ─────────────────────────────────────────────────────────────
+    if (showDictDialog) {
+        AlertDialog(
+            onDismissRequest = { showDictDialog = false },
+            title = { Text("字典") },
+            text = {
+                Text(
+                    dictResultText,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDictDialog = false }) { Text("关闭") }
+            },
+        )
+    }
+
+    // ── 目录对话框 ─────────────────────────────────────────────────────────────
+    if (showToc) {
+        AlertDialog(
+            onDismissRequest = { showToc = false },
+            title = { Text("目录") },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                ) {
+                    items((session?.chapterCount ?: 0)) { i ->
+                        TextButton(onClick = {
+                            session?.let { s -> currentPage = s.pageOfChapter(i) }
+                            showToc = false
+                        }) {
+                            Text(
+                                "第 ${i + 1} 章  ${session?.chapterLabel(i) ?: ""}",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showToc = false }) { Text("关闭") }
+            },
+        )
     }
 
     // ── 笔记输入对话框 ─────────────────────────────────────────────────────────
