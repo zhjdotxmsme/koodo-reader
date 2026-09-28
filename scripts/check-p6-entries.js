@@ -56,8 +56,14 @@ const MATRIX = [
   {
     module: 'feature/tts',
     screen: 'TtsControlSheet',
-    state: 'pending',
-    reason: 'needs a text reader to control (EPUB host = gap #1); its manifest/service wiring is done',
+    state: 'wired',
+    // Mounted inside the EPUB/reader host screen (the reader IS the text source
+    // the sheet controls — resolves the old "gap #1: needs a text reader"):
+    // NativeEpubScreen shows TtsControlSheet over the session's chapter text.
+    // Reachability: ShellNavHost dispatches reader formats → NativeEpubScreen,
+    // which mounts TtsControlSheet.
+    hostFile: 'epubhost/NativeEpubScreen.kt',
+    hostEntry: 'NativeEpubScreen',
   },
   {
     module: 'feature/translate',
