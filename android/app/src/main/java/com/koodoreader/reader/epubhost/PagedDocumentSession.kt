@@ -39,6 +39,9 @@ interface ReaderSession : AutoCloseable {
 
     /** Read an image resource. [baseHref] = chapter's zip path; [src] = `<img>` src (relative to chapter dir). Null for formats without inline images. */
     fun readImage(baseHref: String, src: String): ByteArray? = null
+
+    /** Plain text of chapter [chapterOrder] (0-based), for full-text search. */
+    fun chapterText(chapterOrder: Int): String = ""
 }
 
 /**
@@ -103,6 +106,9 @@ class PagedDocumentSession private constructor(
     override fun chapterLabel(chapterOrder: Int): String =
         labels.getOrNull(chapterOrder) ?: ""
 
+    override fun chapterText(chapterOrder: Int): String =
+        spine.getOrNull(chapterOrder)?.blocks?.joinToString("") { it.text } ?: ""
+
     override fun close() {}
 
     /** 每个元素 = 一章：index（0 基阅读序）/ label（进度显示）/ blocks。 */
@@ -131,7 +137,11 @@ class PagedDocumentSession private constructor(
                     )
                 },
             )
-            val tokens = LayoutTokens.defaults(viewportWidthPx, viewportHeightPx)
+            val tokens = LayoutTokens(
+                viewportWidthPx = viewportWidthPx,
+                viewportHeightPx = viewportHeightPx,
+                fontSizePx = options.fontSizePx,
+            )
             val result = LayoutEngine(measurer, options).layout(document, tokens)
             return PagedDocumentSession(document, result, chapters.map { it.label })
         }

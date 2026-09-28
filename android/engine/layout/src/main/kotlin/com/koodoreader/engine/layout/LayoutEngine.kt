@@ -15,10 +15,13 @@ data class PaginatorOptions(
     val columnsPerPage: Int = 1,
     val widowsOrphans: Int = 2,
     val chapterStartsNewPage: Boolean = true,
+    /** User-chosen font size in px (default 17 f = DesktopReaderConfig.FONT_SIZE_DEFAULT). */
+    val fontSizePx: Float = DesktopReaderConfig.FONT_SIZE_DEFAULT,
 ) {
     init {
         require(columnsPerPage in 1..8) { "columnsPerPage must be 1..8 (was $columnsPerPage)" }
         require(widowsOrphans in 0..4) { "widowsOrphans must be 0..4 (was $widowsOrphans)" }
+        require(fontSizePx > 0f) { "fontSizePx must be > 0 (was $fontSizePx)" }
     }
 }
 

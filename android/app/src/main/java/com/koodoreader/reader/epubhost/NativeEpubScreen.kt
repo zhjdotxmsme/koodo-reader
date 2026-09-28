@@ -2,22 +2,30 @@ package com.koodoreader.reader.epubhost
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -39,10 +47,21 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.core.data.KoodoDatabase
+import com.koodoreader.core.data.KoodoDatabaseProvider
+import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.engine.layout.LayoutLine
+import com.koodoreader.engine.layout.PaginatorOptions
+import com.koodoreader.engine.toc.ChapterText
+import com.koodoreader.engine.toc.SearchHit
+import com.koodoreader.engine.toc.SearchIndex
+import com.koodoreader.engine.toc.SearchQuery
 import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -81,11 +100,18 @@ fun NativeEpubScreen(
     }
 
     var viewport by remember { mutableStateOf(IntSize.Zero) }
+    // 字号缩放：1.0 = 默认（DesktopReaderConfig.FONT_SIZE_DEFAULT = 17f）
+    // 持久化到 SharedPreferences（与 ReaderProgressPrefs 同一 prefs 文件）。
+    val fontPrefs = remember(context) { context.getSharedPreferences("reader", 0) }
+    var fontScale by remember { mutableStateOf(fontPrefs.getFloat("fontScale", 1.0f)) }
+    fun setFontScale(v: Float) {
+        val clamped = v.coerceIn(0.7f, 2.5f)
+        fontScale = clamped
+        fontPrefs.edit().putFloat("fontScale", clamped).apply()
+    }
     val format = book?.format?.lowercase()
-    // 会话按 (文件, 格式, 视口) 重建：尺寸未知时 null（首帧后 onSizeChanged 触发）。
-    // 格式 → 会话的分派在 ReaderSessionFactory（纯 JVM、可测、覆盖全部受支持
-    // 文本格式），屏幕只消费 ReaderSession 接口。
-    val session: ReaderSession? = remember(file, format, viewport) {
+    // 会话按 (文件, 格式, 视口, 字号) 重建：尺寸/字号变化时重新分页。
+    val session: ReaderSession? = remember(file, format, viewport, fontScale) {
         val f = file ?: return@remember null
         if (viewport.width == 0 || viewport.height == 0) return@remember null
         val density = context.resources.displayMetrics.density
@@ -95,6 +121,7 @@ fun NativeEpubScreen(
             viewportWidthPx = viewport.width.toFloat(),
             viewportHeightPx = viewport.height.toFloat(),
             measurer = AndroidTextMeasurer(density),
+            options = PaginatorOptions(fontSizePx = 17f * fontScale),
         )
     }
     DisposableEffect(session) {
@@ -119,6 +146,64 @@ fun NativeEpubScreen(
     val pageCount = session?.pageCount ?: 0
     val lines = session?.pageLines(currentPage) ?: emptyList()
     val cfi = if (pageCount > 0) session?.cfiForPage(currentPage) else null
+
+    // ── 书签 ──────────────────────────────────────────────────────────────
+    val db: KoodoDatabase = KoodoDatabaseProvider.get(context)
+    var bookmarkFlash by remember { mutableStateOf(false) }
+
+    fun addBookmark() {
+        val cfi = session?.cfiForPage(currentPage) ?: return
+        val s = session ?: return
+        if (s.pageCount <= 0) return
+        val chapterIdx = (0 until s.chapterCount)
+            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val entity = BookmarkEntity(
+            key = System.currentTimeMillis().toString(),
+            bookKey = bookKey,
+            cfi = cfi,
+            percentage = ((currentPage + 1).toFloat() / s.pageCount).toString(),
+            chapter = s.chapterLabel(chapterIdx),
+        )
+        kotlinx.coroutines.MainScope().launch {
+            db.bookmarkDao().upsert(entity)
+            bookmarkFlash = true
+            delay(1500)
+            bookmarkFlash = false
+        }
+    }
+
+    // ── 全文搜索 ──────────────────────────────────────────────────────────────
+    var showSearch by remember { mutableStateOf(false) }
+    val searchIndex = remember(bookKey, session) {
+        val s = session ?: return@remember null
+        if (s.chapterCount == 0) return@remember null
+        val chapters = (0 until s.chapterCount).map { i ->
+            ChapterText(
+                spineIndex = i,
+                title = s.chapterLabel(i),
+                text = s.chapterText(i),
+                cfiStart = "epubcfi(/6/${i + 1})",
+            )
+        }
+        SearchIndex.build(bookKey, chapters)
+    }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
+
+    fun doSearch() {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) return
+        searchIndex
+            ?.search(SearchQuery(bookKey, q))
+            ?.take(30)
+            ?.let { searchResults = it }
+    }
+
+    fun jumpToHit(hit: SearchHit) {
+        val s = session ?: return
+        currentPage = s.pageOfChapter(hit.spineIndex)
+        showSearch = false
+    }
 
     // 当前页所有图片位图（spineIndex:"src" → Bitmap），一次性解码避免每帧 IO。
     val pageImages: Map<String, android.graphics.Bitmap?> = remember(session, currentPage) {
@@ -147,10 +232,39 @@ fun NativeEpubScreen(
         topBar = {
             if (showChrome) {
                 TopAppBar(
-                    title = { Text(book?.name ?: "") },
+                    title = {
+                        if (bookmarkFlash) {
+                            Text("✓ 已添加书签", color = MaterialTheme.colorScheme.primary)
+                        } else {
+                            Text(book?.name ?: "")
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        // 字号缩小（A-）
+                        TextButton(onClick = { setFontScale(fontScale - 0.1f) }) {
+                            Text("A−", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Text(
+                            text = "${(fontScale * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                        // 字号放大（A+）
+                        TextButton(onClick = { setFontScale(fontScale + 0.1f) }) {
+                            Text("A+", style = MaterialTheme.typography.labelLarge)
+                        }
+                        // 书签（文字按钮，避免图标版本依赖）
+                        TextButton(onClick = { addBookmark() }) {
+                            Text("🔖", style = MaterialTheme.typography.labelLarge)
+                        }
+                        // 搜索（文字按钮）
+                        TextButton(onClick = { showSearch = true }) {
+                            Text("🔍", style = MaterialTheme.typography.labelLarge)
                         }
                     },
                 )
@@ -217,6 +331,77 @@ fun NativeEpubScreen(
                 }
             }
         }
+    }
+
+    // ── 搜索对话框 ──────────────────────────────────────────────────────────────
+    if (showSearch) {
+        AlertDialog(
+            onDismissRequest = { showSearch = false },
+            title = { Text("全文搜索") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("输入关键词") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (searchResults.isEmpty()) {
+                        Text(
+                            "输入关键词后点「搜索」按钮",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text("${searchResults.size} 条结果", style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.height(4.dp))
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp),
+                        ) {
+                            items(searchResults) { hit ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { jumpToHit(hit) }
+                                        .padding(vertical = 6.dp),
+                                ) {
+                                    Row {
+                                        Text(
+                                            hit.contextBefore,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Text(
+                                            hit.matchedText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Text(
+                                            hit.contextAfter,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                    Text(
+                                        "第 ${hit.spineIndex + 1} 页",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { doSearch() }) { Text("搜索") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSearch = false }) { Text("关闭") }
+            },
+        )
     }
 }
 
