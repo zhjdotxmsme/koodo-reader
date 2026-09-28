@@ -148,6 +148,7 @@ jobs:
           # were hiding (docs/android-completeness-2026-09-24.md). Invoking the bare task
           # name runs `test` in every subproject that has it, so a new module is covered
           # the moment it is registered in settings.gradle.
+          chmod +x gradlew
           ./gradlew test --no-daemon --console=plain
 
       - name: Run designsystem selfCheck (pure JVM, no JUnit)
@@ -155,6 +156,7 @@ jobs:
         run: |
           set -e
           cd android
+          chmod +x gradlew
           ./gradlew :core:designsystem:selfCheck --no-daemon
 
       - name: Check every @Test class actually produced results (phantom-test guard)
