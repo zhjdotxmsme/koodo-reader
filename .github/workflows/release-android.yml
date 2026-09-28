@@ -137,30 +137,6 @@ jobs:
           [ -d "$ANDROID_HOME/platforms/android-34" ] || { echo "::error::platforms;android-34 is missing"; exit 1; }
           [ -d "$ANDROID_HOME/build-tools/34.0.0" ] || echo "::warning::build-tools;34.0.0 not found; AGP will use the installed build-tools"
 
-      - name: Install Gradle 8.5 (official distribution)
-        shell: bash
-        run: |
-          set -e
-          curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.5-bin.zip
-          rm -rf /opt/gradle-8.5
-          mkdir -p /opt
-          # The distribution zip contains a top-level gradle-8.5/ directory,
-          # so extracting to /opt yields /opt/gradle-8.5/bin/gradle.
-          unzip -q /tmp/gradle.zip -d /opt
-          test -x /opt/gradle-8.5/bin/gradle
-          /opt/gradle-8.5/bin/gradle --version | grep -q "Gradle 8.5"
-      - name: Activate Gradle (GITHUB_PATH applies to subsequent steps only)
-        shell: bash
-        run: echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
-      - name: Verify Gradle 8.5 is on PATH
-        shell: bash
-        run: |
-          set -e
-          command -v gradle
-          gradle --version | head -4
-          # Hard-fail if the runner-image Gradle (e.g. 9.7.1) shadows ours.
-          gradle --version | grep -q "Gradle 8.5"
-
       - name: "Native unit tests — EVERY module (engine + core + feature + :app)"
         shell: bash
         run: |
@@ -172,7 +148,14 @@ jobs:
           # were hiding (docs/android-completeness-2026-09-24.md). Invoking the bare task
           # name runs `test` in every subproject that has it, so a new module is covered
           # the moment it is registered in settings.gradle.
-          gradle test --no-daemon --console=plain
+          ./gradlew test --no-daemon --console=plain
+
+      - name: Run designsystem selfCheck (pure JVM, no JUnit)
+        shell: bash
+        run: |
+          set -e
+          cd android
+          ./gradlew :core:designsystem:selfCheck --no-daemon
 
       - name: Check every @Test class actually produced results (phantom-test guard)
         run: node scripts/check-phantom-tests.js
