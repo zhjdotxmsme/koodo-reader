@@ -175,6 +175,22 @@ fun NativeEpubScreen(
         }
     }
 
+    // ── 全页高亮集合（blockIndex → 是否需要画背景色） ─────────────────────────
+    // 监听 noteDao：新增/删除笔记都自动触发重渲染
+    val bookNotes by db.noteDao().observeForBook(bookKey)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val highlightBlockIndices: Set<Int> = remember(bookNotes, session, currentPage) {
+        val s = session ?: return@remember emptySet()
+        val layout = s.layoutResult()
+        bookNotes.mapNotNull { note ->
+            val cfi = note.cfi ?: return@mapNotNull null
+            val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+            val line = layout.lineAt(pos) ?: return@mapNotNull null
+            if (line.page == currentPage) line.blockIndex else null
+        }.toSet()
+    }
+
     // ── 全文搜索 ──────────────────────────────────────────────────────────────
     var showSearch by remember { mutableStateOf(false) }
     val searchIndex = remember(bookKey, session) {
@@ -407,7 +423,7 @@ fun NativeEpubScreen(
                     drawRect(color = bgColor)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     paint.color = fgColor.toArgb()
-                    for (line in lines) drawLayoutLine(line, paint, pageImages)
+                    for (line in lines) drawLayoutLine(line, paint, pageImages, highlightBlockIndices)
                 }
             }
         }
@@ -544,7 +560,22 @@ private fun DrawScope.drawLayoutLine(
     line: LayoutLine,
     paint: android.graphics.Paint,
     pageImages: Map<String, android.graphics.Bitmap?> = emptyMap(),
+    highlightBlocks: Set<Int> = emptySet(),
 ) {
+    // 高亮背景色（半透明黄）
+    if (line.blockIndex in highlightBlocks && line.imageSrc == null) {
+        val canvas = drawContext.canvas.nativeCanvas
+        val bg = android.graphics.Paint()
+        bg.color = (0x99 shl 24) or (0xFF shl 16) or (0xFF shl 8) or 0x00  // semi-transparent yellow
+        bg.style = android.graphics.Paint.Style.FILL
+        canvas.drawRect(
+            line.x - 2f,
+            line.y,
+            line.rightPx + 2f,
+            line.y + line.height,
+            bg,
+        )
+    }
     if (line.imageSrc != null && line.text.isEmpty()) {
         val bmp = pageImages["${line.position.spineIndex}:${line.imageSrc}"]
         if (bmp != null) {
