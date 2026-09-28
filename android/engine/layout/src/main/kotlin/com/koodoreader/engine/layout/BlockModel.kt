@@ -72,6 +72,12 @@ data class TextBlock(
     val elementIndex: Int = 0,
     val elementId: String? = null,
     val sourceOffsets: IntArray? = null,
+    /**
+     * The `src` attribute of an `<img>` tag (relative to the chapter file).
+     * Non-null means this block represents an image. `text` is the alt text
+     * (may be empty). When null, this is a plain text block.
+     */
+    val imageSrc: String? = null,
 ) {
     init {
         require(elementIndex >= 0) { "elementIndex must be >= 0 (was $elementIndex)" }
@@ -90,9 +96,9 @@ data class TextBlock(
         return offsets[collapsedIndex.coerceIn(0, (text.length - 1).coerceAtLeast(0))]
     }
 
-    /** True when this block would produce no line at all (whitespace-only text). */
+    /** True when this block would produce no line at all (whitespace-only text and no image). */
     val isEmpty: Boolean
-        get() = text.isEmpty()
+        get() = text.isEmpty() && imageSrc == null
 
     companion object {
         /**
@@ -113,9 +119,10 @@ data class TextBlock(
             elementIndex: Int,
             elementId: String? = null,
             style: ParagraphStyle = ParagraphStyle.DEFAULT,
+            imageSrc: String? = null,
         ): TextBlock {
             val (collapsed, offsets) = collapse(text)
-            return TextBlock(collapsed, style, elementIndex, elementId, offsets)
+            return TextBlock(collapsed, style, elementIndex, elementId, offsets, imageSrc)
         }
 
         /**

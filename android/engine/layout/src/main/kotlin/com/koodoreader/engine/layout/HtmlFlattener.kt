@@ -132,7 +132,26 @@ class DefaultHtmlFlattener : HtmlFlattener {
                         when (name) {
                             "br" -> flush() // hard line break = block boundary
                             "hr" -> flush() // thematic break: separator, no content
-                            // img / link / meta / input / … — no text
+                            // <img>: capture src + alt so the renderer can draw
+                            // the actual bitmap (NativeEpubScreen reads bytes
+                            // from the EPUB zip and drawImages on canvas).
+                            "img" -> {
+                                flush()
+                                val src = token.attrs["src"]
+                                val alt = token.attrs["alt"].orEmpty()
+                                if (src != null) {
+                                    out.add(
+                                        TextBlock.of(
+                                            text = alt,
+                                            elementIndex = siblingIndex,
+                                            elementId = token.attrs["id"],
+                                            style = ParagraphStyle.DEFAULT,
+                                            imageSrc = src,
+                                        ),
+                                    )
+                                }
+                                // link / meta / input / area / base / … — no text
+                            }
                         }
                         depth-- // void elements do not open a scope
                         continue

@@ -34,6 +34,8 @@ private data class ShapedLine(
     val baselinePx: Float,
     val wordGaps: Int,
     val forced: Boolean,
+    /** Carried from [TextBlock.imageSrc]; null for text-only lines. */
+    val imageSrc: String? = null,
 )
 
 /**
@@ -158,6 +160,7 @@ class LayoutEngine(
                         justifyStretchPx = stretch,
                         wordGaps = sl.wordGaps,
                         forced = sl.forced,
+                        imageSrc = sl.imageSrc,
                     ),
                 )
                 yy += sl.heightPx
@@ -342,9 +345,31 @@ class LayoutEngine(
      * after it and never with a leading space.
      */
     private fun shape(block: TextBlock, tokens: LayoutTokens, columnWidthPx: Float): List<ShapedLine> {
-        val text = block.text
         val style = block.style
         val fontSize = tokens.fontSizePx * style.fontSizeScale
+        // Image block with no alt text: one placeholder line sized at 3× line
+        // height so renderers reserve visible space. The render layer draws
+        // the actual bitmap (NativeEpubScreen reads bytes from the archive).
+        if (block.imageSrc != null && block.text.isEmpty()) {
+            val lineHeightMul = style.lineHeightMultiple ?: tokens.lineHeightMultiple
+            val lineH = lineHeightMul * measurer.lineHeightPx(fontSize)
+            return listOf(
+                ShapedLine(
+                    text = "",
+                    start = 0,
+                    end = 0,
+                    fontSizePx = fontSize,
+                    indentPx = 0f,
+                    width = 0f,
+                    heightPx = 3f * lineH,
+                    baselinePx = 3f * lineH,
+                    wordGaps = 0,
+                    forced = false,
+                    imageSrc = block.imageSrc,
+                ),
+            )
+        }
+        val text = block.text
         val lineHeightMul = style.lineHeightMultiple ?: tokens.lineHeightMultiple
         val lineH = lineHeightMul * measurer.lineHeightPx(fontSize)
         val baseline = lineHeightMul * measurer.ascentPx(fontSize)

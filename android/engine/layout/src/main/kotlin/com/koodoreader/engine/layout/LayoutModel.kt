@@ -87,6 +87,12 @@ data class LayoutLine(
     val justifyStretchPx: Float,
     val wordGaps: Int,
     val forced: Boolean,
+    /**
+     * The `src` of an `<img>` tag (relative to the chapter file).
+     * Non-null means this line is an image placeholder; `text` may hold
+     * alt text or be empty. Renderers should draw the image here.
+     */
+    val imageSrc: String? = null,
 ) {
     /** The length in characters. */
     val length: Int get() = end - start

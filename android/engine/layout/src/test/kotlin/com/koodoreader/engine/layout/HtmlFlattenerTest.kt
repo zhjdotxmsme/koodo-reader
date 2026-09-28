@@ -109,7 +109,12 @@ class HtmlFlattenerTest {
 
     @Test
     fun `figcaption becomes a block`() {
-        assertEquals(listOf("cap"), texts("<figure><img src='x'/><figcaption>cap</figcaption></figure>"))
+        // <img> now produces a block with imageSrc (empty text), then <figcaption>
+        // produces the "cap" block — both are valid blocks.
+        val bs = blocks("<figure><img src='x'/><figcaption>cap</figcaption></figure>")
+        assertEquals(2, bs.size)
+        assertEquals("x", bs[0].imageSrc)
+        assertEquals("cap", bs[1].text)
     }
 
     @Test
@@ -199,10 +204,13 @@ class HtmlFlattenerTest {
 
     @Test
     fun `void elements consume a sibling slot for cfi fidelity`() {
+        // <img> now produces a block (imageSrc, empty text); <p>a</p> is the second block.
         val bs = blocks("<div><img src='i.png'/><p>a</p></div>")
-        assertEquals(1, bs.size)
         // img took slot 1, p took slot 2 — matching the CFI element step.
-        assertEquals(2, bs[0].elementIndex)
+        assertEquals(2, bs.size)
+        assertEquals(2, bs[1].elementIndex)
+        assertEquals("i.png", bs[0].imageSrc)
+        assertEquals("a", bs[1].text)
     }
 
     @Test

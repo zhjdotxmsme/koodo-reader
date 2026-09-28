@@ -182,8 +182,8 @@ class SearchIndexTest {
 
         val hits = index.search(SearchQuery("book-x", "Kotlin", caseSensitive = true))
         for (hit in hits) {
-            assert(hit.cfiTarget.startsWith("epubcfi(/6/")) { "CFI should start with epubcfi: ${hit.cfiTarget}" }
-            assert(hit.cfiTarget.contains("!")) { "CFI should contain ! separator: ${hit.cfiTarget}" }
+            assertTrue(hit.cfiTarget.startsWith("epubcfi(/6/"), { "CFI should start with epubcfi: ${hit.cfiTarget}" })
+            assertTrue(hit.cfiTarget.contains("!"), { "CFI should contain ! separator: ${hit.cfiTarget}" })
         }
     }
 
@@ -203,12 +203,12 @@ class SearchIndexTest {
         val index = SearchIndex.build("book-x", makeChapters())
 
         val hits = index.search(SearchQuery("book-x", "on", caseSensitive = false))
-        assert(hits.isNotEmpty())
+        assertTrue(hits.isNotEmpty(), { "expected at least one hit for query 'on'" })
 
         for (i in 0 until hits.size - 1) {
-            assert(hits[i].spineIndex <= hits[i + 1].spineIndex) {
+            assertTrue(hits[i].spineIndex <= hits[i + 1].spineIndex, {
                 "Hit $i (spine=${hits[i].spineIndex}) should not be after hit ${i + 1} (spine=${hits[i + 1].spineIndex})"
-            }
+            })
         }
     }
 
@@ -217,7 +217,7 @@ class SearchIndexTest {
         val index = SearchIndex.build("book-x", makeChapters())
 
         val hits = index.search(SearchQuery("book-x", "is", caseSensitive = false))
-        assert(hits.isNotEmpty())
+        assertTrue(hits.isNotEmpty(), { "expected at least one hit for query 'is'" })
         hits.forEachIndexed { i, hit ->
             assertEquals(i, hit.rank) { "Rank $i mismatch for hit at spine ${hit.spineIndex}" }
         }
