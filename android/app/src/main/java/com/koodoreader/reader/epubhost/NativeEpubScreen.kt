@@ -644,6 +644,7 @@ fun NativeEpubScreen(
                             TtsMediaCommand.PLAY_PAUSE  -> if (svc.snapshot().state == com.koodoreader.feature.tts.TtsPlaybackState.PLAYING) svc.pause() else svc.play()
                             TtsMediaCommand.FAST_FORWARD -> svc.next()
                             TtsMediaCommand.REWIND      -> svc.previous()
+                            else -> {}
                         }
                     },
                     onDismiss = { stopTts() },
