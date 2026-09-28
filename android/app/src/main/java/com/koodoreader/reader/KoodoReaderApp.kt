@@ -11,6 +11,7 @@ import android.app.Application
 class KoodoReaderApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLogWriter.install(this)
         AndroidDesktopDb.install()
     }
 }
