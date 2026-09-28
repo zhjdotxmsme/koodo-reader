@@ -4,6 +4,7 @@ import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.EpubDocument
 import com.koodoreader.engine.layout.LayoutEngine
 import com.koodoreader.engine.layout.LayoutLine
+import com.koodoreader.engine.layout.LayoutPosition
 import com.koodoreader.engine.layout.LayoutResult
 import com.koodoreader.engine.layout.LayoutTokens
 import com.koodoreader.engine.layout.PaginatorOptions
@@ -42,6 +43,9 @@ interface ReaderSession : AutoCloseable {
 
     /** Plain text of chapter [chapterOrder] (0-based), for full-text search. */
     fun chapterText(chapterOrder: Int): String = ""
+
+    /** Direct layout result for hit-testing / word selection (null for non-layout sessions). */
+    fun layoutResult(): LayoutResult = error("Not a layout session")
 }
 
 /**
@@ -108,6 +112,8 @@ class PagedDocumentSession private constructor(
 
     override fun chapterText(chapterOrder: Int): String =
         spine.getOrNull(chapterOrder)?.blocks?.joinToString("") { it.text } ?: ""
+
+    override fun layoutResult(): LayoutResult = result
 
     override fun close() {}
 

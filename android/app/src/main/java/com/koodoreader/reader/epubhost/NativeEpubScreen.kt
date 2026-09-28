@@ -50,7 +50,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
+import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.LayoutLine
+import com.koodoreader.engine.layout.LayoutPosition
 import com.koodoreader.engine.layout.PaginatorOptions
 import com.koodoreader.engine.toc.ChapterText
 import com.koodoreader.engine.toc.SearchHit
@@ -205,6 +208,77 @@ fun NativeEpubScreen(
         showSearch = false
     }
 
+    // ── 双击选词 + 高亮/笔记 ────────────────────────────────────────────────
+    var selectedLine: LayoutLine? by remember { mutableStateOf(null) }
+    var showSelectionMenu by remember { mutableStateOf(false) }
+    var showNoteDialog by remember { mutableStateOf(false) }
+    var noteText by remember { mutableStateOf("") }
+
+    fun saveHighlight() {
+        val line = selectedLine ?: return
+        val s = session ?: return
+        val chapterIdx = (0 until s.chapterCount)
+            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val cfi = CfiAddressing.toCfi(LayoutPosition(
+            line.position.spineIndex,
+            line.position.elementIndex,
+            line.start,
+        ))
+        val entity = NoteEntity(
+            key = System.currentTimeMillis().toString(),
+            bookKey = bookKey,
+            chapter = s.chapterLabel(chapterIdx),
+            chapterIndex = chapterIdx.toLong(),
+            text = line.text,
+            cfi = cfi,
+            notes = "",  // empty = plain highlight
+            percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
+        )
+        MainScope().launch { db.noteDao().upsert(entity) }
+        showSelectionMenu = false
+    }
+
+    fun saveNote() {
+        val line = selectedLine ?: return
+        val s = session ?: return
+        val chapterIdx = (0 until s.chapterCount)
+            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val cfi = CfiAddressing.toCfi(LayoutPosition(
+            line.position.spineIndex,
+            line.position.elementIndex,
+            line.start,
+        ))
+        val entity = NoteEntity(
+            key = System.currentTimeMillis().toString(),
+            bookKey = bookKey,
+            chapter = s.chapterLabel(chapterIdx),
+            chapterIndex = chapterIdx.toLong(),
+            text = line.text,
+            cfi = cfi,
+            notes = noteText,
+            percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
+        )
+        MainScope().launch { db.noteDao().upsert(entity) }
+        showNoteDialog = false
+        noteText = ""
+    }
+
+    fun onDoubleTap(offset: androidx.compose.ui.geometry.Offset) {
+        val s = session ?: return
+        val layout = s.layoutResult()
+        val pos = layout.positionAt(offset.x, offset.y) ?: return
+        val line = s.pageLines(currentPage)
+            .firstOrNull { it.containsY(offset.y) && offset.x in it.x..it.rightPx }
+            ?: run {
+                // fallback: use the hit position to find the line
+                layout.lineAt(pos)
+            }
+            ?: return
+        // expand to a "word" (bounded by whitespace) — simple version: select the whole line
+        selectedLine = line
+        showSelectionMenu = true
+    }
+
     // 当前页所有图片位图（spineIndex:"src" → Bitmap），一次性解码避免每帧 IO。
     val pageImages: Map<String, android.graphics.Bitmap?> = remember(session, currentPage) {
         val s = session ?: return@remember emptyMap()
@@ -314,7 +388,13 @@ fun NativeEpubScreen(
                         .fillMaxSize()
                         .onSizeChanged { viewport = it }
                         .pointerInput(pageCount) {
-                            detectTapGestures { offset ->
+                            detectTapGestures(
+                                onDoubleTap = { offset -> onDoubleTap(offset) },
+                            ) { offset ->
+                                if (showSelectionMenu) {
+                                    showSelectionMenu = false
+                                    return@detectTapGestures
+                                }
                                 val w = size.width
                                 when {
                                     offset.x < w / 3f -> if (currentPage > 0) currentPage--
@@ -331,6 +411,57 @@ fun NativeEpubScreen(
                 }
             }
         }
+    }
+
+    // ── 选中行菜单（底部浮动条） ─────────────────────────────────────────────
+    if (showSelectionMenu && selectedLine != null) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            tonalElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "「${(selectedLine?.text ?: "").take(24)}」",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                )
+                TextButton(onClick = { saveHighlight() }) { Text("高亮") }
+                TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text("笔记") }
+                TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+            }
+        }
+    }
+
+    // ── 笔记输入对话框 ─────────────────────────────────────────────────────────
+    if (showNoteDialog) {
+        AlertDialog(
+            onDismissRequest = { showNoteDialog = false },
+            title = { Text("添加笔记") },
+            text = {
+                Column {
+                    Text(selectedLine?.text.orEmpty().take(80), style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = noteText,
+                        onValueChange = { noteText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("笔记内容") },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { saveNote() }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoteDialog = false }) { Text("取消") }
+            },
+        )
     }
 
     // ── 搜索对话框 ──────────────────────────────────────────────────────────────
