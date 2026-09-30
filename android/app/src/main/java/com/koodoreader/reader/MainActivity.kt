@@ -117,7 +117,7 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun getInfo(): String {
             return JSONObject()
-                .put("appName", "Koodo Reader")
+                .put("appName", "Readme Reader")
                 .put("packageName", packageName)
                 .put("versionName", packageManager.getPackageInfo(packageName, 0).versionName)
                 .put("platform", "android")
@@ -315,7 +315,7 @@ class MainActivity : Activity() {
                     if (uri.scheme == "file") {
                         toast(
                             "This file cannot be opened directly. " +
-                                "Please share it to Koodo Reader or import it from inside the app."
+                                "Please share it to Readme Reader or import it from inside the app."
                         )
                     } else {
                         toast("Could not read the shared file.")

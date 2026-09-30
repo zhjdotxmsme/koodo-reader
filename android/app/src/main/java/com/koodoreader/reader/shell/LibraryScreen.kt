@@ -18,9 +18,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,10 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.reader.R
 
 /**
  * Bookshelf (P1): Room-backed grid/list of `books` rows, SAF import entry,
@@ -77,7 +76,7 @@ fun LibraryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Koodo Reader") },
+                title = { Text("Readme Reader") },
                 actions = {
                     when (val state = importState) {
                         is ImportState.Running -> Text(
@@ -107,7 +106,7 @@ fun LibraryScreen(
                     // picker wore a hamburger, backup wore a list icon).
                     Box {
                         IconButton(onClick = { importMenuOpen = true }) {
-                            Icon(Icons.Filled.Add, contentDescription = t("Import"))
+                            Icon(painterResource(R.drawable.ic_import), contentDescription = t("Import"))
                         }
                         DropdownMenu(
                             expanded = importMenuOpen,
@@ -135,7 +134,7 @@ fun LibraryScreen(
                     // Stats → its own tab, Language → Settings › Language.
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = t("View"))
+                            Icon(painterResource(R.drawable.ic_more), contentDescription = t("View"))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(

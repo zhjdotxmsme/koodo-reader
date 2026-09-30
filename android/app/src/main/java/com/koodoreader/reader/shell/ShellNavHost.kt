@@ -1,9 +1,25 @@
 package com.koodoreader.reader.shell
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -132,6 +148,11 @@ fun ShellNavHost(
                     viewModel = viewModel,
                     onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
+                "CBZ", "CBT", "CB7" -> ComicBookRoute(
+                    bookKey = key,
+                    book = book,
+                    onBack = { navController.popBackStack() },
+                )
                 else -> ReaderPlaceholderScreen(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
@@ -177,12 +198,77 @@ fun ShellNavHost(
                     initialCfi = cfi,
                     onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
+                "CBZ", "CBT", "CB7" -> ComicBookRoute(
+                    bookKey = key,
+                    book = book,
+                    onBack = { navController.popBackStack() },
+                )
                 else -> ReaderPlaceholderScreen(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
                 )
             }
+        }
+    }
+}
+
+/**
+ * 漫画轨在 App 内的入口（P5-CBZ-5 补全）：文件在导入时已落到 filesDir/books，
+ * 直接以 EXTRA_FILE 拉起 [ComicViewerActivity]——与外部 VIEW intent 同一条路
+ * （MainActivity → IntentRoutePolicy.NATIVE_COMIC）。此前书架点击落
+ * ReaderPlaceholderScreen，「外部能开、App 内点开却是占位屏」的缺口。
+ *
+ * 屏在 Activity 下方：启动动画完成后被盖住；返回键回到书架（back stack 保留）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComicBookRoute(
+    bookKey: String,
+    book: com.koodoreader.core.data.entity.BookEntity?,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    var launched by remember { mutableStateOf(false) }
+
+    // `book` 是 Flow 收集，可能晚于构图到达——以 (book, bookKey) 为 key，
+    // 到齐后重跑效果；launched 守卫防重复启动。解析不到文件则留在提示屏。
+    LaunchedEffect(book, bookKey) {
+        if (launched) return@LaunchedEffect
+        val b = book ?: return@LaunchedEffect
+        val file = ReaderFiles.resolveBookFile(
+            booksDir = java.io.File(context.filesDir, "books"),
+            bookKey = b.key,
+            format = b.format,
+            recordedPath = b.path,
+        )
+        if (file != null && file.isFile) {
+            launched = true
+            context.startActivity(
+                com.koodoreader.reader.imagehost.ComicViewerActivity.intent(context, file),
+            )
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(book?.name.orEmpty()) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("正在打开发票…")
         }
     }
 }

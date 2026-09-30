@@ -13,7 +13,7 @@
   "webBuildDir": "build",
   "webBuildEntry": "index.html",
   "assetStageDir": "android/app/src/main/assets/webapp",
-  "icon": "assets/icons/readme-reader-logo.png",
+  "icon": "assets/icons/512x512.png",
   "outputDir": "android/app/build/outputs/apk",
   "requireSigning": false,
   "signing": {

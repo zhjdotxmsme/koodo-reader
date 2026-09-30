@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- List view: rounded list with thumbnails, Readest style -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,5 L5,5 C5.55,5 6,5.45 6,6 L6,8 C6,8.55 5.55,9 5,9 L3,9 C2.45,9 2,8.55 2,8 L2,6 C2,5.45 2.45,5 3,5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5 L21,5 C21.55,5 22,5.45 22,6 C22,6.55 21.55,7 21,7 L8,7 C7.45,7 7,6.55 7,6 C7,5.45 7.45,5 8,5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,10 L21,10 C21.55,10 22,10.45 22,11 C22,11.55 21.55,12 21,12 L8,12 C7.45,12 7,11.55 7,11 C7,10.45 7.45,10 8,10 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,15 L5,15 C5.55,15 6,15.45 6,16 L6,18 C6,18.55 5.55,19 5,19 L3,19 C2.45,19 2,18.55 2,18 L2,16 C2,15.45 2.45,15 3,15 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,15 L21,15 C21.55,15 22,15.45 22,16 C22,16.55 21.55,17 21,17 L8,17 C7.45,17 7,16.55 7,16 C7,15.45 7.45,15 8,15 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,20 L21,20 C21.55,20 22,20.45 22,21 C22,21.55 21.55,22 21,22 L8,22 C7.45,22 7,21.55 7,21 C7,20.45 7.45,20 8,20 Z" />
+</vector>

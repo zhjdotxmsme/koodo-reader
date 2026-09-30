@@ -23,11 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +53,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -70,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.koodoreader.engine.pdf.OutlineResolver
 import com.koodoreader.engine.pdf.PdfSearchEngine
 import com.koodoreader.feature.ocr.OcrScript
+import com.koodoreader.reader.R
 import com.koodoreader.reader.pdfhost.PdfJsHostBridge
 import com.koodoreader.reader.pdfhost.PdfRendererSnapshot
 import java.io.File
@@ -203,13 +200,13 @@ fun NativePdfScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Back"))
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
                     }
                 },
                 actions = {
-                    // Zoom is rendered as ± glyphs on purpose: this project depends
-                    // only on material-icons-core (material-icons-extended would add
-                    // ~20 MB of classes to the debug APK).
+                    // Zoom is rendered as ± glyphs on purpose: keeping the toolbar
+                    // textual avoids pulling material-icons-extended (~20 MB of
+                    // classes into the debug APK).
                     IconButton(onClick = controller::zoomOut, enabled = state.pageCount > 0) {
                         Text("−", style = MaterialTheme.typography.titleLarge)
                     }
@@ -224,12 +221,12 @@ fun NativePdfScreen(
                         enabled = state.pageCount > 0,
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.List,
+                            painterResource(R.drawable.ic_list_view),
                             contentDescription = t("PDF outline"),
                         )
                     }
                     IconButton(onClick = { showSearch = true }, enabled = state.pageCount > 0) {
-                        Icon(Icons.Filled.Search, contentDescription = t("Search in book"))
+                        Icon(painterResource(R.drawable.ic_search), contentDescription = t("Search in book"))
                     }
                     IconButton(
                         onClick = {
@@ -238,9 +235,7 @@ fun NativePdfScreen(
                         },
                         enabled = state.pageCount > 0,
                     ) {
-                        // Text glyph on purpose: material-icons-core has no OCR icon
-                        // and material-icons-extended would add ~20 MB of classes.
-                        Text(t("OCR"), style = MaterialTheme.typography.labelMedium)
+                        Icon(painterResource(R.drawable.ic_ocr), contentDescription = t("OCR"))
                     }
                     IconButton(
                         onClick = {
@@ -248,7 +243,7 @@ fun NativePdfScreen(
                         },
                         enabled = state.pageCount > 0 && !state.exporting,
                     ) {
-                        Icon(Icons.Filled.Share, contentDescription = t("Share"))
+                        Icon(painterResource(R.drawable.ic_share), contentDescription = t("Share"))
                     }
                 },
             )
@@ -395,7 +390,7 @@ private fun PdfUnavailableScreen(title: String, bookKey: String, onBack: () -> U
                 title = { Text(if (title.isEmpty()) bookKey else title, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Back"))
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
                     }
                 },
             )

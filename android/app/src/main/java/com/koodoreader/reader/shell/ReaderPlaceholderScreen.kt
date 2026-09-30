@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,9 +17,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.reader.R
 
 /**
  * Reader placeholder (P1). Shows the book record plus live annotation counts
@@ -46,7 +46,7 @@ fun ReaderPlaceholderScreen(
                 title = { Text(book?.name.orEmpty(), maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
                     }
                 },
             )
@@ -72,10 +72,10 @@ fun ReaderPlaceholderScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Native reader engine lands in P2.", style = MaterialTheme.typography.titleSmall)
+                    Text("This format is not openable natively yet (CBR / rar).", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "This screen already reads koodo.db through Room — " +
-                            "annotation data below is live:",
+                        "Read it in the desktop version or a web viewer. " +
+                            "Bookshelf and annotation data below are live:",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

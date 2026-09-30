@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -74,6 +73,7 @@ import com.koodoreader.feature.tts.TtsConfig
 import com.koodoreader.feature.tts.TtsPlaybackSnapshot
 import com.koodoreader.feature.tts.TtsPlaybackState
 import com.koodoreader.reader.shell.LibraryViewModel
+import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
@@ -493,7 +493,7 @@ fun NativeEpubScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
                         }
                     },
                     actions = {
@@ -510,21 +510,24 @@ fun NativeEpubScreen(
                         TextButton(onClick = { setFontScale(fontScale + 0.1f) }) {
                             Text("A+", style = MaterialTheme.typography.labelLarge)
                         }
-                        // 书签（文字按钮，避免图标版本依赖）
-                        TextButton(onClick = { addBookmark() }) {
-                            Text("🔖", style = MaterialTheme.typography.labelLarge)
+                        // 书签
+                        IconButton(onClick = { addBookmark() }) {
+                            Icon(painterResource(R.drawable.ic_bookmark), contentDescription = "Bookmark")
                         }
-                        // 搜索（文字按钮）
-                        TextButton(onClick = { showSearch = true }) {
-                            Text("🔍", style = MaterialTheme.typography.labelLarge)
+                        // 搜索
+                        IconButton(onClick = { showSearch = true }) {
+                            Icon(painterResource(R.drawable.ic_search), contentDescription = "Search")
                         }
                         // 目录
-                        TextButton(onClick = { showToc = true }) {
-                            Text("☰", style = MaterialTheme.typography.labelLarge)
+                        IconButton(onClick = { showToc = true }) {
+                            Icon(painterResource(R.drawable.ic_list_view), contentDescription = "TOC")
                         }
                         // TTS 朗读
-                        TextButton(onClick = { if (showTtsControl) stopTts() else startTts() }) {
-                            Text(if (showTtsControl) "⏹" else "🔊", style = MaterialTheme.typography.labelLarge)
+                        IconButton(onClick = { if (showTtsControl) stopTts() else startTts() }) {
+                            Icon(
+                                painterResource(R.drawable.ic_tts_notification),
+                                contentDescription = if (showTtsControl) "Stop TTS" else "Start TTS",
+                            )
                         }
                     },
                 )
@@ -729,8 +732,10 @@ fun NativeEpubScreen(
                             session?.let { s -> currentPage = s.pageOfChapter(i) }
                             showToc = false
                         }) {
+                            // 标签优先取书自带目录（EpubToc：NAV/NCX 真章节名）；
+                            // 没有 TOC 的降级 spine 文件名；两者皆空时兜底序号。
                             Text(
-                                "第 ${i + 1} 章  ${session?.chapterLabel(i) ?: ""}",
+                                (session?.chapterLabel(i) ?: "").ifEmpty { "第 ${i + 1} 章" },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }

@@ -1,6 +1,7 @@
 package com.koodoreader.reader.epubhost
 
 import com.koodoreader.core.importer.EpubSpine
+import com.koodoreader.core.importer.EpubToc
 import com.koodoreader.engine.layout.HtmlFlattener
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.PaginatorOptions
@@ -92,11 +93,16 @@ class EpubBookSession private constructor(
         ): EpubBookSession {
             val spine = EpubSpine.open(file)
             try {
+                // 章节标签：书自带目录（EPUB3 NAV / EPUB2 NCX，EpubToc）优先；
+                // 没有 TOC 的降级回 spine 文件名（旧行为）。解析失败返回空，
+                // 永不抛异常（容错优先，与 EpubSpine 同族约定）。调用一次，
+                // 后面按 href 键查表，O(1)/章。
+                val labels = EpubToc.chapterLabels(spine)
                 val chapters = spine.chapters.mapIndexed { order, chapter ->
                     val html = spine.readChapter(chapter.index).orEmpty()
                     PagedDocumentSession.Chapter(
                         index = order,
-                        label = chapter.href.substringAfterLast('/'),
+                        label = labels[chapter.href.lowercase()] ?: chapter.href.substringAfterLast('/'),
                         blocks = HtmlFlattener.DEFAULT.flatten(
                             html = html,
                             spineIndex = order + 1, // CFI spine 步是 1 基

@@ -173,7 +173,7 @@ fun SettingsScreen(
         // ── 关于 ───────────────────────────────────────────────────────────
         SectionHeader(t("About"))
         SettingRow(
-            title = "Koodo Reader",
+            title = "Readme Reader",
             // Reuses the existing desktop keys rather than adding near-duplicates.
             summary = t("Version") + " " + t("License"),
             onClick = onOpenAbout,
