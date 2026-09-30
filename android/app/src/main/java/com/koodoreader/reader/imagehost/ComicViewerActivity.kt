@@ -7,18 +7,23 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.reader.shell.I18nState
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.ShellAppearancePrefs
+import com.koodoreader.reader.shell.darkThemeOf
 import com.koodoreader.engine.image.ArchiveExtractors
 import com.koodoreader.engine.image.ComicPage
 import com.koodoreader.engine.image.ComicViewerModel
@@ -58,9 +63,11 @@ class ComicViewerActivity : ComponentActivity() {
         }
 
         val i18n = I18nState.create(this)
+        val appearance = ShellAppearancePrefs(applicationContext)
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
-                KoodoTheme {
+                val appMode by appearance.appThemeModeFlow.collectAsStateWithLifecycle()
+                KoodoTheme(darkTheme = appMode.darkThemeOf(isSystemInDarkTheme())) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         ComicViewerScreen(file) { finish() }
                     }

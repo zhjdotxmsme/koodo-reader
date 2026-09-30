@@ -5,13 +5,13 @@
   ],
   "source": {
     "en": {
-      "keys": 1410,
-      "sha256": "b9bdc6d41929fff3c1150d931311aa385486df73800c1334d7803562372f3a2d"
+      "keys": 1428,
+      "sha256": "030fd4d7676c42125345fde530b76938a37a40dbba8a04ab413a9ffa21cbbaa7"
     },
     "zh-CN": {
-      "keys": 1420,
-      "sha256": "0768d15cb336780f80d9bd5187ae3a439357ef02c0152dd1a24f52a55aa6a2a8"
+      "keys": 1437,
+      "sha256": "40019b57d4dab735ce9a3a55af0bfd98ccd9d7d5041057ce78a6d5fff791deee"
     }
   },
-  "syncedAt": "2026-09-26T14:12:36.629Z"
+  "syncedAt": "2026-09-30T07:39:14.092Z"
 }

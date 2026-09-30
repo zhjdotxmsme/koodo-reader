@@ -5,15 +5,12 @@ import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.koodoreader.feature.translate.CredentialsStore
-import com.koodoreader.feature.translate.DeepLTranslateProvider
 import com.koodoreader.feature.translate.EncryptedSecretStore
-import com.koodoreader.feature.translate.GoogleTranslateProvider
 import com.koodoreader.feature.translate.HttpRequest
 import com.koodoreader.feature.translate.HttpResponse
 import com.koodoreader.feature.translate.HttpTransport
 import com.koodoreader.feature.translate.HttpTransportException
 import com.koodoreader.feature.translate.Logger
-import com.koodoreader.feature.translate.MicrosoftTranslateProvider
 import com.koodoreader.feature.translate.ProviderSelector
 import com.koodoreader.feature.translate.TranslationHistoryDatabase
 import com.koodoreader.feature.translate.TranslationHistoryRepository
@@ -107,9 +104,7 @@ fun rememberTranslationPopupController(context: Context): TranslationPopupContro
         // itself — every log path must go through it, never through a raw logger.
         val logger = credentials.logger
         TranslationPopupController(
-            selector = ProviderSelector(
-                listOf(GoogleTranslateProvider(), MicrosoftTranslateProvider(), DeepLTranslateProvider()),
-            ),
+            selector = ProviderSelector(TRANSLATION_PROVIDERS),
             credentialsStore = credentials,
             transport = AppHttpTransport(),
             logger = logger,

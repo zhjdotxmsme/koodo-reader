@@ -4,11 +4,14 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.ui.theme.KoodoTheme
 import com.koodoreader.reader.LocalAssetServer
 
@@ -34,9 +37,13 @@ class NativeShellActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val i18n = I18nState.create(this)
         val assetHost = startAssetServer()
+        val appearance = ShellAppearancePrefs(applicationContext)
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
-                KoodoTheme {
+                // Settings「外观」writes the same backing file; the flow re-emits
+                // and this recolors without an activity restart.
+                val appMode by appearance.appThemeModeFlow.collectAsStateWithLifecycle()
+                KoodoTheme(darkTheme = appMode.darkThemeOf(isSystemInDarkTheme())) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,

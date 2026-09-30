@@ -54,6 +54,7 @@ import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.core.ui.theme.ThemeSpecBridge
 import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.LayoutPosition
@@ -76,6 +77,8 @@ import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.shell.ShellAppearancePrefs
+import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.translate.rememberTranslationPopupController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
@@ -105,6 +108,11 @@ fun NativeEpubScreen(
      * Takes priority over the stored reading position. Null → resume last-read.
      */
     initialCfi: String? = null,
+    /**
+     * Navigation to the translation credentials form (设置 → 翻译与 AI).
+     * Shown by the popup when no API key is configured; null → hide the link.
+     */
+    onOpenTranslateSettings: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
@@ -454,10 +462,16 @@ fun NativeEpubScreen(
             }
     }
 
-    // 在 composable 上下文捕获颜色（Canvas 的 DrawScope lambda 不是
-    // composable 上下文，不能直接读 MaterialTheme.colorScheme）。
-    val bgColor = MaterialTheme.colorScheme.background
-    val fgColor = MaterialTheme.colorScheme.onSurface
+    // 在 composable 上下文捕获颜色：阅读页配色独立于 App 主题
+    // （settings-page spec §8.3）——取「外观」设置选定的 ThemeKind 预设，
+    // 未设置的默认预设 = 白底黑字（与桌面 themeUtil 默认一致）。
+    // Canvas 的 DrawScope lambda 不是 composable 上下文，不能直接读 MaterialTheme。
+    val appearancePrefs = remember(context) { ShellAppearancePrefs(context) }
+    DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
+    val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
+    val readerPreset = remember(readerThemeKind) { readerThemeKind.builtInPreset() }
+    val bgColor = ThemeSpecBridge.background(readerPreset)
+    val fgColor = ThemeSpecBridge.foreground(readerPreset)
     val chapterInfo = remember(session, currentPage) {
         session?.let { s ->
             val idx = (0 until s.chapterCount)
@@ -649,6 +663,7 @@ fun NativeEpubScreen(
                 onRetry = { MainScope().launch { translateController.translate() } },
                 onCopy = { payload -> clipboard.setText(AnnotatedString(payload)) },
                 onDismiss = { translateController.dismiss() },
+                onOpenSettings = onOpenTranslateSettings,
                 labels = TranslationPopupLabels.from { key -> i18n.localization.t(key) },
             )
         }

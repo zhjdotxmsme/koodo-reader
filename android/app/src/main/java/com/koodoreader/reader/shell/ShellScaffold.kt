@@ -1,11 +1,6 @@
 package com.koodoreader.reader.shell
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -14,11 +9,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.koodoreader.reader.R
 
 /**
  * The shell: a bottom navigation bar over the shared [ShellNavHost].
@@ -90,13 +86,14 @@ private fun NavHostController.switchToTab(tab: ShellTab) {
 }
 
 /**
- * Bar icons come from `material-icons-core` (the small core set), which is why
- * there is no chart glyph for Stats — `DateRange` is the closest core icon for a
- * time-based screen. Swapping in an extended-set icon is a one-line change here.
+ * Bar icons come from the Readest-style vector drawable set
+ * (R.drawable.ic_*, rounded monochrome flat). Stats uses ic_stats (bar chart),
+ * which replaces the previous DateRange approximation from material-icons-core.
  */
-private fun ShellTab.icon(): ImageVector = when (this) {
-    ShellTab.LIBRARY -> Icons.Filled.Home
-    ShellTab.NOTES -> Icons.Filled.Create
-    ShellTab.STATS -> Icons.Filled.DateRange
-    ShellTab.SETTINGS -> Icons.Filled.Settings
+@Composable
+private fun ShellTab.icon() = when (this) {
+    ShellTab.LIBRARY -> painterResource(R.drawable.ic_library)
+    ShellTab.NOTES -> painterResource(R.drawable.ic_note)
+    ShellTab.STATS -> painterResource(R.drawable.ic_stats)
+    ShellTab.SETTINGS -> painterResource(R.drawable.ic_settings)
 }

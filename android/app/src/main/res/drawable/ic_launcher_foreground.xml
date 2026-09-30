@@ -1,24 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Simple "open book" foreground. Centred within the 108dp adaptive safe zone. -->
+<!--
+  Readme Reader launcher icon foreground.
+  Based on the user-provided logo: open book (cream pages) + teal folder,
+  on a deep navy rounded-square background. The wordmark is omitted here;
+  it lives in the full-bleed mipmap PNGs instead.
+  Safe zone: centred within the 108dp adaptive viewport.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Left page -->
+
+    <!-- ==== Background rounded square (deep navy, matches #0F172A) ==== -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M32,38 C40,30 51,30 53,34 L53,74 C51,70 40,70 32,78 Z" />
-    <!-- Right page -->
+        android:fillColor="#0F172A"
+        android:pathData="M24,4 L84,4 A20,20 0 0 1 104,24 L104,84 A20,20 0 0 1 84,104 L24,104 A20,20 0 0 1 4,84 L4,24 A20,20 0 0 1 24,4 Z" />
+
+    <!-- ==== Teal folder back panel (slightly darker, gives depth) ==== -->
     <path
-        android:fillColor="#DBEAFE"
-        android:pathData="M76,38 C68,30 57,30 55,34 L55,74 C57,70 68,70 76,78 Z" />
-    <!-- Spine line -->
+        android:fillColor="#0D9488"
+        android:pathData="M30,34 L78,34 A4,4 0 0 1 82,38 L82,74 A4,4 0 0 1 78,78 L30,78 A4,4 0 0 1 26,74 L26,38 A4,4 0 0 1 30,34 Z" />
+
+    <!-- ==== Yellow tab on folder (top-right) ==== -->
     <path
-        android:fillColor="#93C5FD"
-        android:pathData="M52,34 L56,34 L56,74 L52,74 Z" />
-    <!-- Bookmark / reading cue -->
+        android:fillColor="#F59E0B"
+        android:pathData="M62,34 L78,34 A4,4 0 0 1 82,38 L82,42 L62,42 Z" />
+
+    <!-- ==== Cream open book (left page) ==== -->
     <path
-        android:fillColor="#2563EB"
-        android:pathData="M40,40 L46,40 L43,47 Z" />
+        android:fillColor="#FEF3C7"
+        android:pathData="M32,30 C38,26 48,26 52,30 L52,68 C48,64 38,64 32,68 Z" />
+
+    <!-- ==== Cream open book (right page) ==== -->
+    <path
+        android:fillColor="#FEF3C7"
+        android:pathData="M76,30 C70,26 60,26 56,30 L56,68 C60,64 70,64 76,68 Z" />
+
+    <!-- ==== Book spine shadow ==== -->
+    <path
+        android:fillColor="#E5E7EB"
+        android:pathData="M52,30 L56,30 L56,68 L52,68 Z" />
+
+    <!-- ==== Teal folder front panel (overlaps book bottom) ==== -->
+    <path
+        android:fillColor="#14B8A6"
+        android:pathData="M26,52 L82,52 L82,74 A4,4 0 0 1 78,78 L30,78 A4,4 0 0 1 26,74 Z" />
+
+    <!-- ==== Folder tab highlight ==== -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M26,52 L44,52 L44,56 L26,56 Z" />
+
 </vector>

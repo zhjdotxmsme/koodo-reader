@@ -69,6 +69,11 @@ fun ShellNavHost(
                 onOpenBackup = { navController.navigate(ShellNav.BACKUP) },
                 onOpenTrash = { navController.navigate(ShellNav.TRASH) },
                 onOpenDictionary = { navController.navigate(ShellNav.DICTIONARY) },
+                onOpenAppearance = { navController.navigate(ShellNav.APPEARANCE) },
+                onOpenReading = { navController.navigate(ShellNav.READING) },
+                onOpenTranslate = { navController.navigate(ShellNav.TRANSLATE) },
+                onOpenTts = { navController.navigate(ShellNav.TTS) },
+                onOpenAbout = { navController.navigate(ShellNav.ABOUT) },
             )
         }
 
@@ -81,6 +86,21 @@ fun ShellNavHost(
         }
         composable(ShellNav.DICTIONARY) {
             DictionaryRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.APPEARANCE) {
+            AppearanceRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.READING) {
+            ReadingSettingsRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.TRANSLATE) {
+            TranslateSettingsRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.TTS) {
+            TtsSettingsRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.ABOUT) {
+            AboutRoute(onBack = { navController.popBackStack() })
         }
 
         composable(
@@ -110,6 +130,7 @@ fun ShellNavHost(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
+                    onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
                 else -> ReaderPlaceholderScreen(
                     bookKey = key,
@@ -154,6 +175,7 @@ fun ShellNavHost(
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
                     initialCfi = cfi,
+                    onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
                 else -> ReaderPlaceholderScreen(
                     bookKey = key,

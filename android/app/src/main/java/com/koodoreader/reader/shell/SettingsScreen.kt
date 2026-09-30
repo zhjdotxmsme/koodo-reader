@@ -16,7 +16,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.SpaceTokens
-import com.koodoreader.reader.BuildConfig
 
 /**
  * One tappable row inside a settings group.
@@ -67,20 +66,23 @@ private fun SectionHeader(title: String) {
 }
 
 /**
- * Settings tab — the grouped shell that absorbs what used to be buried in the
- * library's overflow menu (design doc §5).
+ * Settings tab — the grouped shell (settings page 2026-09-29 spec §2), the
+ * readest-style section list: every section is a row that leads to a REAL
+ * feature row that does nothing ("a settings row that does nothing is a lie" —
+ * that is why each section below has an owning screen or a working control).
  *
- * W4 scope: the groups and the wiring to the screens that ALREADY exist
- * (dictionary management, backup & restore, trash). No new setting is invented
- * here — the reader/appearance/voice rows are deliberately absent rather than
- * rendered as dead entries, because a settings row that does nothing is a lie.
- * Those land with their owning feature work.
+ * Sections: 通用 / 外观 / 阅读 / 内容源 / 翻译与 AI / 语音朗读 / 数据 / 关于.
  */
 @Composable
 fun SettingsScreen(
     onOpenBackup: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
     onOpenDictionary: () -> Unit = {},
+    onOpenAppearance: () -> Unit = {},
+    onOpenReading: () -> Unit = {},
+    onOpenTranslate: () -> Unit = {},
+    onOpenTts: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val i18n = LocalI18n.current
@@ -101,17 +103,9 @@ fun SettingsScreen(
             ),
         )
 
-        SectionHeader(t("Content Sources"))
-        SettingRow(
-            title = t("Dictionary"),
-            summary = t("Import and manage offline dictionaries"),
-            onClick = onOpenDictionary,
-        )
-
-        // Language moved here from the library's overflow menu. It is added in
-        // the same change that removes it from there, so the feature is never
-        // unreachable — "no functional loss" is the acceptance bar for W5a.
-        SectionHeader(t("Language"))
+        // ── 通用 ─────────────────────────────────────────────────────────────
+        SectionHeader(t("General"))
+        // Language lives here (moved from the library overflow in W5a).
         val language by i18n.language.collectAsState()
         SettingRow(
             title = t("Language"),
@@ -123,8 +117,47 @@ fun SettingsScreen(
             },
         )
 
-        HorizontalDivider()
+        // ── 外观 ─────────────────────────────────────────────────────────────
+        SectionHeader(t("Appearance"))
+        SettingRow(
+            title = t("App theme and reader page theme"),
+            summary = t("App theme + reader page colours"),
+            onClick = onOpenAppearance,
+        )
 
+        // ── 阅读 ─────────────────────────────────────────────────────────────
+        SectionHeader(t("Reading"))
+        SettingRow(
+            title = t("Font size"),
+            summary = t("Reader default font size"),
+            onClick = onOpenReading,
+        )
+
+        // ── 内容源 ──────────────────────────────────────────────────────────
+        SectionHeader(t("Content Sources"))
+        SettingRow(
+            title = t("Dictionary"),
+            summary = t("Import and manage offline dictionaries"),
+            onClick = onOpenDictionary,
+        )
+
+        // ── 翻译与 AI ──────────────────────────────────────────────────────
+        SectionHeader(t("Translation"))
+        SettingRow(
+            title = t("API key"),
+            summary = t("Selection translation (Google / Microsoft / DeepL)"),
+            onClick = onOpenTranslate,
+        )
+
+        // ── 语音朗读 ───────────────────────────────────────────────────────
+        SectionHeader(t("Text to speech"))
+        SettingRow(
+            title = t("Speed"),
+            summary = t("Rate, pitch, volume"),
+            onClick = onOpenTts,
+        )
+
+        // ── 数据 ───────────────────────────────────────────────────────────
         SectionHeader(t("Data"))
         SettingRow(
             title = t("Backup / restore"),
@@ -137,14 +170,15 @@ fun SettingsScreen(
             onClick = onOpenTrash,
         )
 
-        HorizontalDivider()
-
+        // ── 关于 ───────────────────────────────────────────────────────────
         SectionHeader(t("About"))
         SettingRow(
             title = "Koodo Reader",
-            // Reuses the existing desktop key ("Version: ") rather than adding a
-            // near-duplicate one.
-            summary = t("Version") + BuildConfig.VERSION_NAME,
+            // Reuses the existing desktop keys rather than adding near-duplicates.
+            summary = t("Version") + " " + t("License"),
+            onClick = onOpenAbout,
         )
+
+        HorizontalDivider()
     }
 }

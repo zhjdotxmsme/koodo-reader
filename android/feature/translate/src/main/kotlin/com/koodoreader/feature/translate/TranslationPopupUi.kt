@@ -37,6 +37,7 @@ data class TranslationPopupLabels(
     val close: String = "Close",
     val retry: String = "Retry",
     val configureKey: String = "AI service",
+    val goToSettings: String = "Go to settings",
 ) {
     companion object {
         fun from(translate: (String) -> String): TranslationPopupLabels = TranslationPopupLabels(
@@ -47,6 +48,7 @@ data class TranslationPopupLabels(
             close = translate("Close"),
             retry = translate("Retry"),
             configureKey = translate("AI service"),
+            goToSettings = translate("Go to settings"),
         )
     }
 }
@@ -68,6 +70,7 @@ fun TranslationPopup(
     onRetry: () -> Unit,
     onCopy: (String) -> Unit,
     onDismiss: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     labels: TranslationPopupLabels = TranslationPopupLabels(),
 ) {
@@ -88,7 +91,14 @@ fun TranslationPopup(
             Spacer(Modifier.height(8.dp))
             Body(state = state, labels = labels)
             Spacer(Modifier.height(4.dp))
-            Actions(state = state, onCopy = onCopy, onRetry = onRetry, onDismiss = onDismiss, labels = labels)
+            Actions(
+                state = state,
+                onCopy = onCopy,
+                onRetry = onRetry,
+                onDismiss = onDismiss,
+                onOpenSettings = onOpenSettings,
+                labels = labels,
+            )
         }
     }
 }
@@ -182,6 +192,7 @@ private fun Actions(
     onCopy: (String) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenSettings: (() -> Unit)?,
     labels: TranslationPopupLabels,
 ) {
     Row(
@@ -189,6 +200,14 @@ private fun Actions(
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Only shown when nothing is configured: the one-click way to the
+        // credentials form (hosted on the shell when provided).
+        if (state.status == PopupStatus.NEEDS_CREDENTIALS) {
+            val settings = onOpenSettings
+            if (settings != null) {
+                TextButton(onClick = settings) { Text(labels.goToSettings, color = MaterialTheme.colorScheme.primary) }
+            }
+        }
         TextButton(
             onClick = { state.translatedText?.let(onCopy) },
             enabled = state.hasResult,

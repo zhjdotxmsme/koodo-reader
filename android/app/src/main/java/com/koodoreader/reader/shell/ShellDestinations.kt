@@ -58,6 +58,13 @@ object ShellNav {
     const val TRASH = "trash"
     const val DICTIONARY = "dictionary"
 
+    // ── Leaves under SETTINGS (settings page 2026-09-29 spec §2) ────────────
+    const val APPEARANCE = "appearance"
+    const val READING = "reading"
+    const val TRANSLATE = "translate"
+    const val TTS = "tts"
+    const val ABOUT = "about"
+
     // ── Full-screen reader ───────────────────────────────────────────────────
     /** NavHost pattern; also the route string reported by NavDestination. */
     const val READER_PATTERN = "reader/{bookKey}"
@@ -99,6 +106,11 @@ object ShellNav {
         BACKUP to ShellTab.SETTINGS,
         TRASH to ShellTab.SETTINGS,
         DICTIONARY to ShellTab.SETTINGS,
+        APPEARANCE to ShellTab.SETTINGS,
+        READING to ShellTab.SETTINGS,
+        TRANSLATE to ShellTab.SETTINGS,
+        TTS to ShellTab.SETTINGS,
+        ABOUT to ShellTab.SETTINGS,
     )
 
     /**
@@ -119,6 +131,7 @@ object ShellNav {
      */
     fun allRoutes(): List<String> = listOf(
         LIBRARY, NOTES, STATS, SETTINGS, BACKUP, TRASH, DICTIONARY,
+        APPEARANCE, READING, TRANSLATE, TTS, ABOUT,
         READER_PATTERN, READER_WITH_CFI_PATTERN,
     )
 
