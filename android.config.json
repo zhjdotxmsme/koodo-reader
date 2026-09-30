@@ -1,5 +1,5 @@
 {
-  "name": "Koodo Reader",
+  "name": "Readme Reader",
   "packageName": "com.koodoreader.reader",
   "versionName": "",
   "versionCode": 0,
@@ -13,7 +13,7 @@
   "webBuildDir": "build",
   "webBuildEntry": "index.html",
   "assetStageDir": "android/app/src/main/assets/webapp",
-  "icon": "assets/icons/512x512.png",
+  "icon": "assets/icons/readme-reader-logo.png",
   "outputDir": "android/app/build/outputs/apk",
   "requireSigning": false,
   "signing": {

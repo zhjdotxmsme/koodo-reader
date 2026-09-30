@@ -79,6 +79,8 @@
 
 ### 安卓版：[下载](https://koodoreader.com/zh/download)
 
+安卓版使用说明：[docs/android-user-guide.md](./docs/android-user-guide.md)（安装、书库、PDF/漫画/兜底阅读、TTS、词典、统计、OCR、备份还原等）。
+
 ### iOS 版：[下载](https://koodoreader.com/zh/download)
 
 ### 浏览器拓展：[下载](https://www.koodoreader.com/zh/use-extension)

@@ -1,8 +1,8 @@
 {
-  "name": "koodo-reader",
+  "name": "readme-reader",
   "main": "main.js",
   "version": "2.4.4",
-  "description": "Koodo Reader is a cross-platform ebook reader",
+  "description": "Readme Reader is a cross-platform ebook reader",
   "author": {
     "name": "App by Troye",
     "email": "feedback@koodoreader.com"
@@ -127,7 +127,7 @@
   "homepage": "./",
   "build": {
     "appId": "xyz.960960.koodo",
-    "productName": "Koodo Reader",
+    "productName": "Readme Reader",
     "copyright": "Copyright (c) 2020-2025 ${author}",
     "files": [
       "build/**/*",

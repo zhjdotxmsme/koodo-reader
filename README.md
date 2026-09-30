@@ -80,6 +80,8 @@
 
 ### Android version：[Download](https://koodoreader.com/en/download)
 
+User guide: [docs/android-user-guide.md](./docs/android-user-guide.md) — covers install, library, PDF/comic/island reading, TTS, dictionaries, stats, OCR, and backup/restore.
+
 ### iOS version：[Download](https://koodoreader.com/en/download)
 
 ### Browser extension：[Download](https://www.koodoreader.com/en/use-extension)
