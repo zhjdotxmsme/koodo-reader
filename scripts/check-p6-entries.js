@@ -68,8 +68,14 @@ const MATRIX = [
   {
     module: 'feature/translate',
     screen: 'TranslationPopup',
-    state: 'pending',
-    reason: 'needs a text selection source (reader); the popup is stateless and ready',
+    state: 'wired',
+    // The reader IS the text selection source the popup was waiting for:
+    // NativeEpubScreen's selection menu (双击选词) has a 翻译 action that feeds
+    // the selected line into TranslationPopupController.show() + translate()
+    // (host binding: app/translate/TranslateHost.kt). Reachability: ShellNavHost
+    // dispatches reader formats → NativeEpubScreen, which mounts TranslationPopup.
+    hostFile: 'epubhost/NativeEpubScreen.kt',
+    hostEntry: 'NativeEpubScreen',
   },
 ];
 

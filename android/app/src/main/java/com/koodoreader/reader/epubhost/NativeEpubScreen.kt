@@ -37,12 +37,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,6 +63,8 @@ import com.koodoreader.engine.toc.SearchHit
 import com.koodoreader.engine.toc.SearchIndex
 import com.koodoreader.engine.toc.SearchQuery
 import com.koodoreader.feature.dictionary.DictRepository
+import com.koodoreader.feature.translate.TranslationPopup
+import com.koodoreader.feature.translate.TranslationPopupLabels
 import com.koodoreader.feature.tts.ForegroundTtsService
 import com.koodoreader.feature.tts.TtsControlUiState
 import com.koodoreader.feature.tts.TtsControlSheet
@@ -68,8 +73,10 @@ import com.koodoreader.feature.tts.TtsConfig
 import com.koodoreader.feature.tts.TtsPlaybackSnapshot
 import com.koodoreader.feature.tts.TtsPlaybackState
 import com.koodoreader.reader.shell.LibraryViewModel
+import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.translate.rememberTranslationPopupController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
@@ -246,6 +253,10 @@ fun NativeEpubScreen(
     }
     var showDictDialog by remember { mutableStateOf(false) }
     var dictResultText by remember { mutableStateOf("") }
+    // 翻译弹窗（P6 feature/translate）：弹窗本身 stateless，这里是选词源宿主。
+    // 控制器持有加密凭据库 + 历史库，选词菜单一键触发翻译。
+    val translateController = rememberTranslationPopupController(context)
+    val translateState by translateController.state.collectAsStateWithLifecycle()
     // 目录
     var showToc by remember { mutableStateOf(false) }
     // 高亮颜色（0 = 黄色 default）
@@ -379,6 +390,19 @@ fun NativeEpubScreen(
             showDictDialog = true
             showSelectionMenu = false
         }
+    }
+
+    fun startTranslation() {
+        val line = selectedLine ?: return
+        val text = line.text.trim().takeIf { it.isNotEmpty() } ?: return
+        val cfi = CfiAddressing.toCfi(LayoutPosition(
+            line.position.spineIndex,
+            line.position.elementIndex,
+            line.start,
+        ))
+        translateController.show(text, bookKey = bookKey, cfi = cfi)
+        showSelectionMenu = false
+        MainScope().launch { translateController.translate() }
     }
 
     fun saveNote() {
@@ -583,6 +607,7 @@ fun NativeEpubScreen(
                         )
                         TextButton(onClick = { deleteHighlight() }) { Text("删除") }
                         TextButton(onClick = { lookupDictionary() }) { Text("字典") }
+                        TextButton(onClick = { startTranslation() }) { Text("翻译") }
                         TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
                     }
                 } else {
@@ -602,10 +627,30 @@ fun NativeEpubScreen(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text("笔记") }
                         TextButton(onClick = { lookupDictionary() }) { Text("字典") }
+                        TextButton(onClick = { startTranslation() }) { Text("翻译") }
                         TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
                     }
                 }
             }
+        }
+    }
+
+    // ── 翻译弹窗（选词翻译，P6 feature/translate 接线点） ──────────────────────
+    if (translateState.visible) {
+        val i18n = LocalI18n.current
+        val clipboard = LocalClipboardManager.current
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            TranslationPopup(
+                state = translateState,
+                sources = translateController.sources(),
+                onSourceSelected = { id ->
+                    MainScope().launch { translateController.switchProviderAndTranslate(id) }
+                },
+                onRetry = { MainScope().launch { translateController.translate() } },
+                onCopy = { payload -> clipboard.setText(AnnotatedString(payload)) },
+                onDismiss = { translateController.dismiss() },
+                labels = TranslationPopupLabels.from { key -> i18n.localization.t(key) },
+            )
         }
     }
 
