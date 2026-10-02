@@ -127,6 +127,6 @@ object EpubToc {
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&#160;", " ")
-        .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.let { Character(it).toString() } ?: m.value }
-        .replace(Regex("&#x([0-9a-fA-F]+);")) { m -> m.groupValues[1].toIntOrNull(16)?.let { Character(it).toString() } ?: m.value }
+        .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.let { it.toChar().toString() } ?: m.value }
+        .replace(Regex("&#x([0-9a-fA-F]+);")) { m -> m.groupValues[1].toIntOrNull(16)?.let { it.toChar().toString() } ?: m.value }
 }
