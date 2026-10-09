@@ -66,6 +66,9 @@ import com.koodoreader.feature.dictionary.DictRepository
 import com.koodoreader.feature.translate.TranslationPopup
 import com.koodoreader.feature.translate.TranslationPopupLabels
 import com.koodoreader.feature.tts.ForegroundTtsService
+// ic_tts_notification 是 feature/tts 模块的资源（非转置 R：app 模块的 R 不含它），
+// 这里用 alias 引用该模块的 R。
+import com.koodoreader.feature.tts.R as TtsR
 import com.koodoreader.feature.tts.TtsControlUiState
 import com.koodoreader.feature.tts.TtsControlSheet
 import com.koodoreader.feature.tts.TtsMediaCommand
@@ -525,7 +528,7 @@ fun NativeEpubScreen(
                         // TTS 朗读
                         IconButton(onClick = { if (showTtsControl) stopTts() else startTts() }) {
                             Icon(
-                                painterResource(R.drawable.ic_tts_notification),
+                                painterResource(TtsR.drawable.ic_tts_notification),
                                 contentDescription = if (showTtsControl) "Stop TTS" else "Start TTS",
                             )
                         }

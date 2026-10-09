@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -119,8 +120,11 @@ val TRANSLATION_PROVIDERS: List<TranslationProvider> = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranslateSettingsRoute(onBack: () -> Unit) {
+    // `LocalContext.current` 是 @Composable 调用——必须在 remember 回调之外求值，
+    // 再捕获进 lambda（remember 回调内不得调用 composable）。
+    val context = LocalContext.current
     val store: CredentialsStore = remember {
-        EncryptedSecretStore.credentialsStore(LocalContext.current.applicationContext, AppLogLogger())
+        EncryptedSecretStore.credentialsStore(context.applicationContext, AppLogLogger())
     }
     // `selector` is only used to keep the provider registry in one place with
     // the popup; the form below enumerates TRANSLATION_PROVIDERS directly.
@@ -221,10 +225,13 @@ private fun ProviderCredentialCard(
             ) { Text(t("Save")) }
             if (store.isConfigured(id)) {
                 Spacer(Modifier.width(8.dp))
+                // `t` 是 @Composable——文案在此处求值，onClick 内只使用结果
+                // （点击回调不是 composable 上下文）。
+                val clearedText = t("Cleared")
                 TextButton(onClick = {
                     store.clear(id)
                     form.resetTo(ApiPlan.FREE)
-                    Toast.makeText(context, t("Cleared"), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, clearedText, Toast.LENGTH_SHORT).show()
                 }) { Text(t("Clear")) }
             }
             if (!form.isValid) {

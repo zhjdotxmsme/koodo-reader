@@ -3,6 +3,7 @@ package com.koodoreader.reader.shell
 import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.koodoreader.reader.epubhost.NativeEpubScreen
+// TranslateSettingsRoute 定义在 reader.translate 包（其余 settings 叶子路由都在
+// shell 包），必须显式导入——同包可见性规则对跨包组件不生效，漏了就是
+// Unresolved reference。
+import com.koodoreader.reader.translate.TranslateSettingsRoute
 
 /**
  * Route table of the native shell.
