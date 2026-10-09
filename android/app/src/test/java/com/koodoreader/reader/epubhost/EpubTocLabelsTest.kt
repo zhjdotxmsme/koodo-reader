@@ -63,8 +63,10 @@ class EpubTocLabelsTest {
             assertEquals("第一章 启程", s.chapterLabel(0))
             assertEquals("第二章 远方", s.chapterLabel(1))
             // 分页 / CFI 主线不受标签来源影响
+            // s.cfiForPage 返回 String?——用 ?.let 把它当 null 时整条断言也 null，
+            // 避免把可空值硬塞给 pageForCfi(String) 触发编译错。
             val cfi = s.cfiForPage(0)
-            assertEquals(0, s.pageForCfi(cfi))
+            assertEquals(0, cfi?.let { s.pageForCfi(it) })
         }
     }
 
