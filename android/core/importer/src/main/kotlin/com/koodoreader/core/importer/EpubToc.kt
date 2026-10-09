@@ -46,13 +46,17 @@ object EpubToc {
             }?.first
             ?: return emptyList()
 
-        val text = spine.readResource(spine.resolve(navHref))?.toString(Charsets.UTF_8)
+        val navResolved = spine.resolve(navHref)
+        val text = spine.readResource(navResolved)?.toString(Charsets.UTF_8)
             ?: return emptyList()
         // NCX 判定必须先于 NAV：NCX 里的 <navPoint>/<navMap> 同样含 "<nav" 子串，
         // 若按子串判 NAV 会把合法 NCX 书解析成空目录。
+        // 内部 href 必须以 navResolved 为锚点解析（相对 nav 文档所在目录），
+        // 之后才与 spine.chapters[i].href 在同一 OPF-相对键空间——EPUB2 NCX
+        // 几乎一定在 OPF 子目录（OEBPS/...），不解析会得到空目录映射。
         return when {
-            text.contains("<navpoint", true) || text.contains("<navmap", true) -> ncxEntriesOf(text)
-            else -> navEntriesOf(text)
+            text.contains("<navpoint", true) || text.contains("<navmap", true) -> ncxEntriesOf(text, navResolved)
+            else -> navEntriesOf(text, navResolved)
         }
     }
 
@@ -68,7 +72,7 @@ object EpubToc {
 
     // ---- EPUB3 NAV ---------------------------------------------------------
 
-    private fun navEntriesOf(xhtml: String): List<Entry> {
+    private fun navEntriesOf(xhtml: String, navPath: String): List<Entry> {
         // Prefer the toc-typed nav block; else the first <nav> at all.
         val openTag = Regex("""<nav\b[^>]*>""").findAll(xhtml)
             .map { it.value }
@@ -86,14 +90,16 @@ object EpubToc {
         for (m in Regex("""<a\b[^>]*\bhref\s*=\s*("([^"]*)"|'([^']*)')[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL).findAll(block)) {
             val href = m.groupValues[2].ifEmpty { m.groupValues[3] }
             val label = entities(m.groupValues[4].replace(Regex("<[^>]+>"), " ").trim())
-            if (href.isNotEmpty() && label.isNotEmpty()) entries.add(Entry(label, href))
+            if (href.isNotEmpty() && label.isNotEmpty()) {
+                entries.add(Entry(label, EpubBook.resolvePath(navPath, href)))
+            }
         }
         return entries
     }
 
     // ---- EPUB2 NCX ---------------------------------------------------------
 
-    private fun ncxEntriesOf(ncx: String): List<Entry> {
+    private fun ncxEntriesOf(ncx: String, navPath: String): List<Entry> {
         val entries = ArrayList<Entry>()
         for (m in Regex("""<navPoint\b[^>]*>.*?</navPoint>""", RegexOption.DOT_MATCHES_ALL).findAll(ncx)) {
             val block = m.value
@@ -102,7 +108,9 @@ object EpubToc {
                 ?.let { entities(it.trim()) }
             val src = Regex("""<content\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)')""").find(block)
                 ?.let { it.groupValues[2].ifEmpty { it.groupValues[3] } }
-            if (label != null && src != null) entries.add(Entry(label, src))
+            if (label != null && src != null) {
+                entries.add(Entry(label, EpubBook.resolvePath(navPath, src)))
+            }
         }
         return entries
     }
