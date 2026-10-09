@@ -423,9 +423,16 @@ function findApks(config) {
 function spawnGradle(step, androidDir) {
   console.log(`[build-android] $ ${step.command} ${step.args.join(" ")}  (cwd: android/)`);
 
+  // Windows: Node >= 20 cannot CreateProcess a .bat/.cmd without a shell
+  // (returns EINVAL, status null) — spawn gradlew.bat through cmd.
+  // On POSIX the shell flag is not needed (./gradlew is an executable
+  // script with an env shebang); it stays off to keep CI behaviour identical.
+  const useShell =
+    process.platform === "win32" && /\.bat$/i.test(String(step.command));
   const r = spawnSync(step.command, step.args, {
     cwd: androidDir,
     stdio: "inherit",
+    shell: useShell,
     env: Object.assign({}, process.env, {
       ANDROID_HOME: process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || "",
     }),
