@@ -83,6 +83,7 @@ fun SettingsScreen(
     onOpenTranslate: () -> Unit = {},
     onOpenTts: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val i18n = LocalI18n.current
@@ -170,6 +171,11 @@ fun SettingsScreen(
             title = t("Trash"),
             summary = t("Books removed from the library"),
             onClick = onOpenTrash,
+        )
+        SettingRow(
+            title = t("Logs"),
+            summary = t("App log (includes WebView console)"),
+            onClick = onOpenLogs,
         )
 
         // ── 关于 ───────────────────────────────────────────────────────────

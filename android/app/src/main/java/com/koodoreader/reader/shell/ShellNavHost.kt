@@ -95,6 +95,7 @@ fun ShellNavHost(
                 onOpenTranslate = { navController.navigate(ShellNav.TRANSLATE) },
                 onOpenTts = { navController.navigate(ShellNav.TTS) },
                 onOpenAbout = { navController.navigate(ShellNav.ABOUT) },
+                onOpenLogs = { navController.navigate(ShellNav.LOGS) },
             )
         }
 
@@ -122,6 +123,9 @@ fun ShellNavHost(
         }
         composable(ShellNav.ABOUT) {
             AboutRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.LOGS) {
+            LogScreen(onBack = { navController.popBackStack() })
         }
 
         composable(

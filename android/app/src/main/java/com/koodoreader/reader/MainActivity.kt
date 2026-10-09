@@ -12,6 +12,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import android.view.KeyEvent
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.ValueCallback
@@ -195,12 +196,28 @@ class MainActivity : Activity() {
                 return true
             }
 
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                // pdfjs / EPUB 引擎的 JS 报错都走 console —— 捕获进 AppLog,
+                // 设置 → 数据 → 日志 可直接看到 "webview 报错" 背后的真实错误.
+                if (consoleMessage != null) {
+                    val text = "[${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}] " +
+                        consoleMessage.message()
+                    when (consoleMessage.messageLevel()) {
+                        ConsoleMessage.MessageLevel.ERROR -> AppLog.e("WebView.Console", text)
+                        ConsoleMessage.MessageLevel.WARNING -> AppLog.w("WebView.Console", text)
+                        else -> AppLog.i("WebView.Console", text)
+                    }
+                }
+                return super.onConsoleMessage(consoleMessage)
+            }
+
             override fun onJsAlert(
                 view: WebView?,
                 url: String?,
                 message: String?,
                 result: JsResult?
             ): Boolean {
+                AppLog.w(TAG, "JS alert: $message")
                 result?.confirm()
                 return true
             }
@@ -228,7 +245,7 @@ class MainActivity : Activity() {
         try {
             webView.loadUrl(pageUrl())
         } catch (t: Throwable) {
-            Log.e(TAG, "loopback server failed to start; refusing to fall back to file://", t)
+            AppLog.e(TAG, "loopback server failed to start; refusing to fall back to file://", t)
             toast("PDF 服务启动失败 (${t.javaClass.simpleName}); 请重启应用")
             return
         }
@@ -302,7 +319,8 @@ class MainActivity : Activity() {
             // 生命周期解耦），直接构造即可。
             LibraryViewModel(application).importFiles(listOf(uri))
             startActivity(Intent(this, NativeShellActivity::class.java))
-        }.onFailure { Log.w(TAG, "native pdf import failed: $uri", it) }
+        }.onFailure { AppLog.w(TAG, "native import failed: $uri", it) }
+        AppLog.i(TAG, "import to native shell: $uri")
     }
 
     /**
@@ -312,7 +330,7 @@ class MainActivity : Activity() {
      */
     private fun queueBook(uri: Uri, mimeType: String?) {
         if (!assetServer.isRunning && runCatching { assetServer.start() }.isFailure) {
-            Log.w(TAG, "loopback server unavailable; cannot hand over $uri")
+            AppLog.w(TAG, "loopback server unavailable; cannot hand over $uri")
             toast("Cannot import: the local service failed to start.")
             return
         }
@@ -320,7 +338,7 @@ class MainActivity : Activity() {
             val copied = runCatching { copyToCache(uri, mimeType) }.getOrNull()
             runOnUiThread {
                 if (copied == null) {
-                    Log.w(TAG, "could not read intent payload: $uri")
+                    AppLog.w(TAG, "could not read intent payload: $uri")
                     // `content://` carries a system read grant; a bare `file://`
                     // has none, so scoped storage usually blocks the direct read.
                     if (uri.scheme == "file") {

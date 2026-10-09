@@ -64,6 +64,7 @@ object ShellNav {
     const val TRANSLATE = "translate"
     const val TTS = "tts"
     const val ABOUT = "about"
+    const val LOGS = "logs"
 
     // ── Full-screen reader ───────────────────────────────────────────────────
     /** NavHost pattern; also the route string reported by NavDestination. */
@@ -111,6 +112,7 @@ object ShellNav {
         TRANSLATE to ShellTab.SETTINGS,
         TTS to ShellTab.SETTINGS,
         ABOUT to ShellTab.SETTINGS,
+        LOGS to ShellTab.SETTINGS,
     )
 
     /**
@@ -131,7 +133,7 @@ object ShellNav {
      */
     fun allRoutes(): List<String> = listOf(
         LIBRARY, NOTES, STATS, SETTINGS, BACKUP, TRASH, DICTIONARY,
-        APPEARANCE, READING, TRANSLATE, TTS, ABOUT,
+        APPEARANCE, READING, TRANSLATE, TTS, ABOUT, LOGS,
         READER_PATTERN, READER_WITH_CFI_PATTERN,
     )
 
