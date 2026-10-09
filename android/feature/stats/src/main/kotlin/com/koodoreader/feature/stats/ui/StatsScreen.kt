@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -135,7 +136,12 @@ fun StatsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 20.dp, vertical = 24.dp)
-                .horizontalScroll(rememberScrollState()),
+                // 竖向滚动：原来是 horizontalScroll——横向滚动容器给子组件
+                // 无限最大宽度，HeatmapSection 内层的 horizontalScroll Row
+                // (checkScrollableContainerConstraints) 收到 Infinity 直接抛
+                // IllegalStateException，统计 tab 一打开就崩。整屏横向滚动
+                // 本来也不对（热力图自己已横向滚动），竖向滚动兜住小屏溢出。
+                .verticalScroll(rememberScrollState()),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
