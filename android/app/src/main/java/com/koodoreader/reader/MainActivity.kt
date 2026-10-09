@@ -34,8 +34,11 @@ import java.io.File
  *
  * Loads the bundled web build in a [WebView] and exposes a small JS bridge. The
  * page is served by [LocalAssetServer] over `http://127.0.0.1:<port>/index.html`
- * (real origin), with a `file:///android_asset/webapp/index.html` fallback when
- * the loopback server cannot start. The bridge mirrors the
+ * (real origin). When the loopback server cannot start we surface the failure
+ * via a Toast instead of falling back to `file:///android_asset/...` — a
+ * `file://` page has a null origin and the bundled pdf.js worker fails to load
+ * (Android WebView defaults to `allowFileAccessFromFileURLs=false`), which
+ * React renders as a generic "webview error" message. The bridge mirrors the
  * `window.ReactNativeWebView` surface that the reading engine (`kookit-extra`)
  * already knows how to talk to:
  *   - web -> native: `window.ReactNativeWebView.postMessage(json)`
@@ -215,21 +218,29 @@ class MainActivity : Activity() {
         // Leftover intent copies from a previous session are stale by now;
         // drop them before the next import copies its own payload.
         cleanupIntentBooks()
-        // Prefer the loopback HTTP origin (real origin: IndexedDB/localStorage/
-        // CORS behave) and fall back to file:// when the server cannot start.
-        webView.loadUrl(pageUrl())
+        // 优先走 loopback HTTP 真实 origin (LocalAssetServer on 127.0.0.1:<port>).
+        // 启动失败时 (BindException/IOException) 弹 Toast 让用户知道, 而不是悄悄切到
+        // file:// —— file:// 模式下 WebView 默认 allowFileAccessFromFileURLs=false,
+        // 跨源加载 pdf.worker.mjs 会被拒, pdfjs 抛 "Setting up fake worker failed"
+        // → React 包错 → i18n 翻译成 "webview 报错" 用户看到的现象.
+        // 历史: 之前用 runCatching 静默 fallback file:// 兜底, 但兜底路径根本打不开 PDF,
+        // 反而把根因藏起来. 现在直接报失败更易定位.
+        try {
+            webView.loadUrl(pageUrl())
+        } catch (t: Throwable) {
+            Log.e(TAG, "loopback server failed to start; refusing to fall back to file://", t)
+            toast("PDF 服务启动失败 (${t.javaClass.simpleName}); 请重启应用")
+            return
+        }
         handleIntent(intent)
     }
 
-    /** URL the web app is loaded from (loopback HTTP when available). */
+    /** URL the web app is loaded from (loopback HTTP). Throws on bind failure. */
     private fun pageUrl(): String {
         if (!assetServer.isRunning) {
-            val started = runCatching { assetServer.start() }.getOrNull()
-            if (started == null) {
-                Log.w(TAG, "loopback server failed to start; falling back to file://")
-                return FALLBACK_URL
-            }
+            val port = assetServer.start()
             Log.i(TAG, "loopback server on ${assetServer.baseUrl()}")
+            check(port > 0) { "LocalAssetServer.start() returned a non-positive port" }
         }
         return "${assetServer.baseUrl()}/index.html"
     }
@@ -663,7 +674,10 @@ class MainActivity : Activity() {
         private const val REQ_FILE_CHOOSER = 0x4F4B // "OK"
         private const val REQ_FOLDER_PICKER = 0x504B // "PK"
         private const val TAG = "KoodoReader"
-        private const val FALLBACK_URL = "file:///android_asset/webapp/index.html"
+        // 之前有 FALLBACK_URL = "file:///android_asset/webapp/index.html" 兜底.
+        // 移除: file:// 模式 WebView 默认 allowFileAccessFromFileURLs=false,
+        // 跨源 pdf.worker.mjs 加载被拒 → "webview 报错". 改用 onCreate 里 try/catch
+        // 弹 Toast 提示启动失败, 让用户知道是网络/服务问题而不是 App 神秘卡死.
         private const val BOOKS_PREFIX = "__books__"
         private const val MAX_DELIVER_ATTEMPTS = 20
         private const val DELIVER_RETRY_MS = 400L
