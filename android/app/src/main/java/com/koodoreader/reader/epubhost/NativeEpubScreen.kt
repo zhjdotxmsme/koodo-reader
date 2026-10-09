@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -84,7 +85,6 @@ import com.koodoreader.reader.shell.ShellAppearancePrefs
 import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.translate.rememberTranslationPopupController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -183,6 +183,11 @@ fun NativeEpubScreen(
     val db: KoodoDatabase = KoodoDatabaseProvider.get(context)
     var bookmarkFlash by remember { mutableStateOf(false) }
 
+    // P9-r3-T-mv0hf34m-3j1k07: 替换 9 处 MainScope().launch → readerScope.launch.
+    // readerScope 由 Composition 持有，离开 Composition (Activity finish 或导航离开)
+    // 时自动取消 —— 避免 Activity 泄漏与配置变更 (旋转/字号) 时协程错过取消时机。
+    val readerScope = rememberCoroutineScope()
+
     fun addBookmark() {
         val cfi = session?.cfiForPage(currentPage) ?: return
         val s = session ?: return
@@ -196,7 +201,7 @@ fun NativeEpubScreen(
             percentage = ((currentPage + 1).toFloat() / s.pageCount).toString(),
             chapter = s.chapterLabel(chapterIdx),
         )
-        kotlinx.coroutines.MainScope().launch {
+        readerScope.launch {
             db.bookmarkDao().upsert(entity)
             bookmarkFlash = true
             delay(1500)
@@ -278,6 +283,10 @@ fun NativeEpubScreen(
     var showTtsControl by remember { mutableStateOf(false) }
     var connectedTtsSvc by remember { mutableStateOf<ForegroundTtsService?>(null) }
 
+    // TTS 长任务用了 ServiceConnection 30 次重试循环，明显长于 readerScope 的平均寿命，
+    // 单独的 ttsScope 拿 cancellation 语义专门驱动 (含 setHostCommandListener 嵌套回调 line 313)。
+    val ttsScope = rememberCoroutineScope()
+
     val ttsServiceConn = remember(context) {
         object : android.content.ServiceConnection {
             override fun onServiceConnected(
@@ -305,12 +314,12 @@ fun NativeEpubScreen(
                 android.content.Context.BIND_AUTO_CREATE,
             )
         }
-        MainScope().launch {
+        ttsScope.launch {
             for (i in 0 until 30) { if (connectedTtsSvc != null) break; delay(100) }
             val svc = connectedTtsSvc ?: return@launch
             svc.setHostCommandListener { cmd ->
                 if (cmd == TtsMediaCommand.NEXT) {
-                    MainScope().launch {
+                    readerScope.launch {
                         delay(300)
                         if (currentPage < s.pageCount - 1) {
                             currentPage++
@@ -367,7 +376,7 @@ fun NativeEpubScreen(
             percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
             color = color,
         )
-        MainScope().launch { db.noteDao().upsert(entity) }
+        readerScope.launch { db.noteDao().upsert(entity) }
         showSelectionMenu = false
     }
 
@@ -378,7 +387,7 @@ fun NativeEpubScreen(
             line.position.elementIndex,
             line.start,
         ))
-        MainScope().launch {
+        readerScope.launch {
             val notes = db.noteDao().observeForBook(bookKey).first()
             val target = notes.firstOrNull { it.cfi == cfi }
             target?.let { db.noteDao().deleteByKey(it.key) }
@@ -389,7 +398,7 @@ fun NativeEpubScreen(
     fun lookupDictionary() {
         val line = selectedLine ?: return
         val word = line.text.trim().takeIf { it.isNotEmpty() } ?: return
-        MainScope().launch {
+        readerScope.launch {
             val result = withContext(Dispatchers.IO) { dictRepo.lookup(word) }
             val htmlSafe = result.html
             dictResultText = if (htmlSafe != null) {
@@ -413,7 +422,7 @@ fun NativeEpubScreen(
         ))
         translateController.show(text, bookKey = bookKey, cfi = cfi)
         showSelectionMenu = false
-        MainScope().launch { translateController.translate() }
+        readerScope.launch { translateController.translate() }
     }
 
     fun saveNote() {
@@ -436,7 +445,7 @@ fun NativeEpubScreen(
             notes = noteText,
             percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
         )
-        MainScope().launch { db.noteDao().upsert(entity) }
+        readerScope.launch { db.noteDao().upsert(entity) }
         showNoteDialog = false
         noteText = ""
     }
@@ -561,7 +570,12 @@ fun NativeEpubScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(MaterialTheme.colorScheme.background),
+                .background(MaterialTheme.colorScheme.background)
+                // 视口尺寸必须在这里捕获：session 的创建依赖 viewport 非零，而
+                // Canvas（原来唯一设置 viewport 的地方）只在 session 非空时才
+                // 组合——挂在 Canvas 上是鸡生蛋死锁，首帧后永远空白。挂在
+                // 常驻的 Box 上，任何分支都能拿到尺寸并触发重组。
+                .onSizeChanged { viewport = it },
         ) {
             when {
                 session == null && viewport == IntSize.Zero -> Unit // 首帧：等尺寸
@@ -578,7 +592,6 @@ fun NativeEpubScreen(
                 else -> Canvas(
                     modifier = Modifier
                         .fillMaxSize()
-                        .onSizeChanged { viewport = it }
                         .pointerInput(pageCount) {
                             detectTapGestures(
                                 onDoubleTap = { offset -> onDoubleTap(offset) },
@@ -664,9 +677,9 @@ fun NativeEpubScreen(
                 state = translateState,
                 sources = translateController.sources(),
                 onSourceSelected = { id ->
-                    MainScope().launch { translateController.switchProviderAndTranslate(id) }
+                    readerScope.launch { translateController.switchProviderAndTranslate(id) }
                 },
-                onRetry = { MainScope().launch { translateController.translate() } },
+                onRetry = { readerScope.launch { translateController.translate() } },
                 onCopy = { payload -> clipboard.setText(AnnotatedString(payload)) },
                 onDismiss = { translateController.dismiss() },
                 onOpenSettings = onOpenTranslateSettings,

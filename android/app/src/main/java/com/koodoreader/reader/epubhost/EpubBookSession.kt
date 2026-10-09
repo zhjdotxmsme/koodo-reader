@@ -99,7 +99,11 @@ class EpubBookSession private constructor(
                 // 后面按 href 键查表，O(1)/章。
                 val labels = EpubToc.chapterLabels(spine)
                 val chapters = spine.chapters.mapIndexed { order, chapter ->
-                    val html = spine.readChapter(chapter.index).orEmpty()
+                    // readChapter 按【过滤后 chapters 列表的位置】取（内部
+                    // chapters.getOrNull(index)），必须传 order 而不是
+                    // chapter.index（OPF 原始 spine 位）——spine 含
+                    // linear="no" 条目时两者错位，会读错章节甚至越界拿空。
+                    val html = spine.readChapter(order).orEmpty()
                     PagedDocumentSession.Chapter(
                         index = order,
                         label = labels[chapter.href.lowercase()] ?: chapter.href.substringAfterLast('/'),
