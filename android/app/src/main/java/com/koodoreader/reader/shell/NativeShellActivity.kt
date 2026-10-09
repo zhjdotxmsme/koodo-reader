@@ -36,6 +36,8 @@ class NativeShellActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val i18n = I18nState.create(this)
+        // P6 简繁 AUTO mode needs the reader language before the first layout.
+        com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(i18n.language.value)
         val assetHost = startAssetServer()
         val appearance = ShellAppearancePrefs(applicationContext)
         setContent {

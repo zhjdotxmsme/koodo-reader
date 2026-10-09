@@ -1,8 +1,11 @@
 package com.koodoreader.reader.shell
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +41,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.designsystem.CssColor
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.core.designsystem.ThemeSpec
+import com.koodoreader.core.locale.ZhConvertMode
+import com.koodoreader.reader.zhconvert.ZhConvertBridge
 
 /**
  * Settings → Appearance (settings page 2026-09-29 spec §3.2).
@@ -127,8 +132,77 @@ fun AppearanceRoute(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // ── P6 简繁转换 (t-mv0hf31y-u2jmbe) ──────────────────────────
+            // Reads/writes the process-wide ZhConvertBridge (installed from
+            // KoodoReaderApp.onCreate). Mode choice is persisted to DataStore
+            // under the desktop-parity key `convertChinese` (see
+            // com.koodoreader.core.locale.ZhConvertPrefsCodec); the layout
+            // pipeline hook (PagedDocumentSession.textTransform) is re-armed
+            // on every repository change by the bridge listener. While the
+            // first DataStore load is still pending, the bridge reports the
+            // desktop default (AUTO) — indistinguishable from "not configured".
+            val zhMode = ZhConvertBridge.settings
+                .collectAsStateWithLifecycle(
+                    initialValue = null,
+                ).value?.mode
+                ?: ZhConvertMode.AUTO
+            Text(text = "Simplified / Traditional 简繁", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Auto 跟随阅读语言 · 繁 → 简 双向",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            ZhConvertMode.entries.forEach { mode ->
+                ModeRow(
+                    label = zhModeLabel(mode),
+                    selected = zhMode == mode,
+                    onClick = { ZhConvertBridge.setMode(mode) },
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+/** 3-option mode row (selected dot), matching the reader-theme row styling. */
+@Composable
+private fun ModeRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.width(8.dp))
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                ),
+        )
+    }
+}
+
+private fun zhModeLabel(mode: ZhConvertMode): String = when (mode) {
+    ZhConvertMode.AUTO -> "Auto (跟随阅读语言)"
+    ZhConvertMode.TRADITIONAL -> "简转繁 · 输出繁体"
+    ZhConvertMode.SIMPLIFIED -> "繁转简 · 输出简体"
 }
 
 /** Display name for a reader page preset; rendered through the catalogs. */

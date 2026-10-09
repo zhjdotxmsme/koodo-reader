@@ -206,6 +206,7 @@ dependencies {
     // P6 simplified/traditional conversion + on-demand locale packs. :app binds
     // ZhConvertSettingsStore to DataStore (docs/p6-zh-locale-design.md §4.1).
     implementation project(':core:locale')
+    implementation 'androidx.datastore:datastore-preferences:1.1.1'
 
     // P6 statistics screen + reading-time accounting.
     implementation project(':feature:stats')

@@ -126,6 +126,15 @@ class PagedDocumentSession private constructor(
 
     companion object {
 
+        /**
+         * Optional text transform applied to every non-image [TextBlock] before
+         * layout. Set by [com.koodoreader.reader.zhconvert.ZhConvertBridge] on
+         * application start; `null` (default) = no transform. This single hook
+         * covers all text formats (EPUB/TXT/MD/MOBI/WEB/FB2/DOCX) because they
+         * all funnel through [create].
+         */
+        var textTransform: ((String) -> String)? = null
+
         fun create(
             chapters: List<Chapter>,
             viewportWidthPx: Float,
@@ -133,8 +142,25 @@ class PagedDocumentSession private constructor(
             measurer: TextMeasurer,
             options: PaginatorOptions = PaginatorOptions(),
         ): PagedDocumentSession {
-            val document = EpubDocument(
+            val effective = textTransform?.let { tr ->
                 chapters.map { ch ->
+                    ch.copy(blocks = ch.blocks.map { b ->
+                        if (b.imageSrc != null || b.text.isEmpty()) return@map b
+                        val transformed = tr(b.text)
+                        if (transformed == b.text) {
+                            b
+                        } else {
+                            // Text length changed: the old collapsed→source char offsets
+                            // no longer align with the (converted) text. Drop them so
+                            // TextBlock's length invariant holds and CFI char offsets
+                            // fall back to clamping (expected for a script conversion).
+                            b.copy(text = transformed, sourceOffsets = null)
+                        }
+                    })
+                }
+            } ?: chapters
+            val document = EpubDocument(
+                effective.map { ch ->
                     SpineItem(
                         index = ch.index + 1, // CFI spine 步是 1 基
                         href = "",

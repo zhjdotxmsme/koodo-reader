@@ -114,6 +114,8 @@ fun SettingsScreen(
                 val idx = I18nState.CHOICES.indexOf(language)
                 val next = I18nState.CHOICES[(idx + 1) % I18nState.CHOICES.size]
                 i18n.setLanguage(next)
+                // Keep 简繁 AUTO mode in step with the reader language.
+                com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(next)
             },
         )
 
