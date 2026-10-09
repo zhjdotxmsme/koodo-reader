@@ -98,17 +98,22 @@ include ':engine:pdf'
 // prerequisites on the board are done: D0 (XHTML→TextBlock flattener) and R1
 // (core/archive abstraction), then the P5.5 card(s).
 //
-// // Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
-// // desktop backup bundles — see docs/fb2-docx-html-mhtml-eval.md risk R1.
+// D0 (t-mufbaotg-g1abhm) + R1 (t-mufbaou8-ew1jbe) + P5-FB2 立项评估
+// (t-muexn64a-j64yvl) all done as of 2026-10-09; the four modules below are
+// uncommented so :app:assembleDebug and `gradle :app:dependencies` resolve.
+// T-mv0hf2u7-sacyrv.
+//
+// Shared archive (zip) facade: ONE zip reader for EPUB / CBZ / DOCX (OOXML) /
+// desktop backup bundles — see docs/fb2-docx-html-mhtml-eval.md risk R1.
 include ':core:archive'
-// // Native FB2 (FictionBook 2) converter (P5.5a) — IMPLEMENTED
-// // (Fb2Document: FB2 XML → HTML → blocks); registered below.
+// Native FB2 (FictionBook 2) converter (P5.5a) — IMPLEMENTED
+// (Fb2Document: FB2 XML → HTML → blocks); registered below.
 include ':engine:fb2'
-// // Native single-file HTML / MHTML converter (P5.5b/c) — IMPLEMENTED
-// // (HtmlDocument + MhtmlDocument, ADR-006); registered below.
+// Native single-file HTML / MHTML converter (P5.5b/c) — IMPLEMENTED
+// (HtmlDocument + MhtmlDocument, ADR-006); registered below.
 include ':engine:htmlbook'
-// // Native DOCX (WordprocessingML subset) converter (P5.5d) — IMPLEMENTED
-// // (DocxDocument: OOXML zip → document.xml → blocks); registered below.
+// Native DOCX (WordprocessingML subset) converter (P5.5d) — IMPLEMENTED
+// (DocxDocument: OOXML zip → document.xml → blocks); registered below.
 include ':engine:docx'
 // ---------------------------------------------------------------------------
 
