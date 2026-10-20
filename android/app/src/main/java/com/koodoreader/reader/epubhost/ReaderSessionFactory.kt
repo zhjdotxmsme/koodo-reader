@@ -38,8 +38,9 @@ object ReaderSessionFactory {
         BookRules.BOOK_EXTENSIONS.toSet() - COMIC_EXTENSIONS - ISLAND_ONLY_EXTENSIONS - PDF_EXTENSIONS
 
     /**
-     * 打开 [file] 并分页。未知格式或解析失败返回 null（屏幕据此显示错误态，
-     * 不崩、不空指针）。
+     * 打开 [file] 并分页。未知格式返回 null；文件认领后解析失败则抛出
+     *（[NativeEpubScreen] 用 `runCatching` 收成 `openError`）。原先在这里
+     * `getOrNull()` 会把原因吞掉，打包 APK 上只剩空白「无法分页」。
      */
     fun open(
         format: String?,
@@ -49,30 +50,16 @@ object ReaderSessionFactory {
         measurer: TextMeasurer,
         options: PaginatorOptions = PaginatorOptions(),
     ): ReaderSession? = when (kindOf(format)) {
-        Kind.EPUB -> runCatching {
-            EpubBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
-        Kind.TEXT -> runCatching {
-            TextBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
-        Kind.MOBI -> runCatching {
-            MobiBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
-        Kind.WEB -> runCatching {
-            WebBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
-        Kind.FB2 -> runCatching {
-            Fb2BookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
-        Kind.DOCX -> runCatching {
-            DocxBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
-        }.getOrNull()
-
+        // Let parse/paginate failures throw. NativeEpubScreen already wraps
+        // this in runCatching and surfaces `openError` — swallowing here made
+        // packaged-APK open failures look like a blank "could not paginate"
+        // with no cause.
+        Kind.EPUB -> EpubBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.TEXT -> TextBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.MOBI -> MobiBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.WEB -> WebBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.FB2 -> Fb2BookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.DOCX -> DocxBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
         null -> null
     }
 

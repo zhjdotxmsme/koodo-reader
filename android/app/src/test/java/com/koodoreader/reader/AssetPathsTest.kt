@@ -42,8 +42,11 @@ class AssetPathsTest {
             listOf("webapp/index.html", "pdfengine/index.html"),
             AssetPaths.candidates("index.html", roots),
         )
+        // A request that already names a root (`/pdfengine/index.html`) must
+        // resolve to that root's file, not `$root/$path` which double-prefixes
+        // to the non-existent `assets/pdfengine/pdfengine/index.html`.
         assertEquals(
-            listOf("webapp/pdfengine/index.html", "pdfengine/pdfengine/index.html"),
+            listOf("webapp/pdfengine/index.html", "pdfengine/index.html"),
             AssetPaths.candidates("pdfengine/index.html", roots),
         )
     }
@@ -59,18 +62,29 @@ class AssetPathsTest {
     @Test
     fun `the pdf engine request resolves inside the pdfengine root`() {
         // The exact request PdfJsHostBridge makes for its bootstrap page.
+        // APK layout: assets/pdfengine/index.html — NOT assets/pdfengine/pdfengine/.
         val path = AssetPaths.normalize("/pdfengine/index.html")
         assertEquals("pdfengine/index.html", path)
-        assertEquals(
-            listOf("webapp/pdfengine/index.html", "pdfengine/pdfengine/index.html"),
-            AssetPaths.candidates(path, AssetPaths.DEFAULT_ROOTS),
+        val candidates = AssetPaths.candidates(path, AssetPaths.DEFAULT_ROOTS)
+        assertTrue(
+            "bootstrap must hit assets/pdfengine/index.html",
+            candidates.contains("pdfengine/index.html"),
         )
-        // …and the module/worker/cmaps the page imports resolve the same way.
+        assertTrue(
+            "must not double-prefix the engine root",
+            !candidates.contains("pdfengine/pdfengine/index.html"),
+        )
+        // Relative imports from that page (`./engine.mjs`, `./pdf.mjs`, cmaps)
+        // become `/pdfengine/<file>` and must map the same way.
         for (asset in listOf("engine.mjs", "pdf.mjs", "pdf.worker.mjs", "cmaps/UniGB-UCS2-H.bcmap")) {
-            val candidates = AssetPaths.candidates(AssetPaths.normalize("pdfengine/$asset"))
+            val hits = AssetPaths.candidates(AssetPaths.normalize("pdfengine/$asset"))
             assertTrue(
-                "$asset must be reachable under the pdfengine root",
-                candidates.contains("pdfengine/pdfengine/$asset"),
+                "$asset must be reachable at assets/pdfengine/$asset",
+                hits.contains("pdfengine/$asset"),
+            )
+            assertTrue(
+                "$asset must not resolve under a doubled root",
+                !hits.contains("pdfengine/pdfengine/$asset"),
             )
         }
     }

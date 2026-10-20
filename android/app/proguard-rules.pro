@@ -9,6 +9,14 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
+# Native PDF host: JS calls `__koodoPdfHost.onEvent/onResult/onLog` by name.
+# R8 would otherwise rename or strip the inner shim and the packaged APK
+# never sees the engine's `ready` event.
+-keep class com.koodoreader.reader.pdfhost.PdfJsHostBridge { *; }
+-keep class com.koodoreader.reader.pdfhost.PdfJsHostBridge$* {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
 # Keep Java interfaces annotated for JS.
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;

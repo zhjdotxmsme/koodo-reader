@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Looper
 import android.util.Log
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import com.koodoreader.engine.pdf.CfiPdfMapper
@@ -57,6 +60,9 @@ class PdfJsHostBridge(
 
     /** Pending JS promise handlers keyed by call id. */
     private val pending: MutableMap<String, PendingCall> = HashMap()
+
+    /** Completes on `host.onEvent('ready')`, not on `onPageFinished`. */
+    private val readyLatch = PdfEngineReadyLatch()
 
     init {
         webView.addJavascriptInterface(JsShim(), "__koodoPdfHost")
@@ -142,15 +148,36 @@ class PdfJsHostBridge(
      * value (`/assets/pdfengine/index.html`) matched no asset in the APK.
      */
     fun bootstrap() {
-        val latch = CountDownLatch(1)
         webView.webViewClient = object : android.webkit.WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
-                latch.countDown()
+                // HTML parse only — ES modules have not installed __koodoPdf yet.
+                readyLatch.onPageFinished()
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?,
+            ) {
+                if (request?.isForMainFrame == true) {
+                    readyLatch.fail("engine page error: ${error?.description}")
+                }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?,
+            ) {
+                if (request?.isForMainFrame == true) {
+                    readyLatch.fail("engine page HTTP ${errorResponse?.statusCode}")
+                }
             }
         }
         webView.post { webView.loadUrl("$baseUrl/$BOOTSTRAP_PATH") }
-        if (!latch.await(BOOTSTRAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            throw RuntimeException("PDF engine bootstrap timed out ($baseUrl/$BOOTSTRAP_PATH)")
+        if (!readyLatch.await(BOOTSTRAP_TIMEOUT_MS)) {
+            val reason = readyLatch.failure ?: "timed out waiting for ready event"
+            throw RuntimeException("PDF engine bootstrap failed ($baseUrl/$BOOTSTRAP_PATH): $reason")
         }
     }
 
@@ -211,6 +238,7 @@ class PdfJsHostBridge(
 
         @JavascriptInterface
         fun onEvent(name: String, payload: String) {
+            readyLatch.onHostEvent(name)
             try {
                 eventSink.onEvent(name, JSONObject(payload))
             } catch (e: Exception) {

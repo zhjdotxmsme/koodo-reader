@@ -74,6 +74,13 @@ class PagedDocumentSession private constructor(
     private val document: EpubDocument,
     val result: LayoutResult,
     private val labels: List<String>,
+    /**
+     * monotonic 章边界：`chapterStartPages[i]` = spineIndex i 首行的页号。
+     * 长度 = chapterCount（与 [chapterCount] 同步，越界 clamp 到 0/末页）。
+     * 一次 O(pages×columns×lines)，之后每次 [pageOfChapter] /
+     * [currentPageFrom] 都是 O(log n) binarySearch。
+     */
+    private val chapterStartPages: IntArray,
 ) : ReaderSession {
 
     val spine: List<SpineItem> = document.spine
@@ -102,10 +109,37 @@ class PagedDocumentSession private constructor(
             }.takeIf { it >= 0 }
     }
 
+    // P9-anr (round-3 真机): 原实现每章线性扫全部 pages×columns×lines，
+    // `chapterInfo` 在**每次 currentPage 变更的 recomposition** 调 chapterCount
+    // 次 → 几百页的 EPUB 上 O(chapters×pages×lines) → 首次翻页 recomposition
+    // 卡 ≥ 5s → 系统 "Input dispatching timed out" 强杀 (ANR in
+    // com.koodoreader.reader … Waited 5001ms for MotionEvent DOWN)。
+    // 改：构造时预计算一次 chapterStartPages，此处 binary search — 从
+    // O(n×m) 降到 O(log m)，且完全复用缓存。
     override fun pageOfChapter(chapterOrder: Int): Int =
-        result.pages.indexOfFirst { page ->
-            page.columns.any { col -> col.lines.any { it.position.spineIndex >= chapterOrder } }
-        }.coerceAtLeast(0)
+        if (chapterStartPages.isEmpty()) 0
+        else {
+            val clamped = chapterOrder.coerceIn(0, chapterStartPages.lastIndex)
+            chapterStartPages.getOrElse(clamped) { 0 }.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+        }
+
+    /**
+     * 页号 → 章节号（最大 i 满足 chapterStartPages[i] <= page）。
+     * 用于 `chapterInfo` / `addBookmark`：O(log n) 一次到位，
+     * 替代调用侧的 O(n) `lastOrNull` 循环。
+     */
+    fun chapterOf(page: Int): Int {
+        if (chapterStartPages.isEmpty() || pageCount == 0) return 0
+        val p = page.coerceIn(0, pageCount - 1)
+        // 二分：找到最后一个 chapterStart[i] <= p 的 i。
+        var lo = 0; var hi = chapterStartPages.size - 1; var ans = 0
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (chapterStartPages[mid] <= p) { ans = mid; lo = mid + 1 }
+            else hi = mid - 1
+        }
+        return ans
+    }
 
     override fun chapterLabel(chapterOrder: Int): String =
         labels.getOrNull(chapterOrder) ?: ""
@@ -173,9 +207,44 @@ class PagedDocumentSession private constructor(
                 viewportWidthPx = viewportWidthPx,
                 viewportHeightPx = viewportHeightPx,
                 fontSizePx = options.fontSizePx,
+                lineHeightMultiple = options.lineHeightMultiple,
+                marginHorizontalPx = options.marginHorizontalPx,
+                marginVerticalPx = options.marginVerticalPx,
             )
             val result = LayoutEngine(measurer, options).layout(document, tokens)
-            return PagedDocumentSession(document, result, chapters.map { it.label })
+            // P9-anr (round-3): 预计算 chapterStartPages（monotonic）
+            // chapterStartPages[i] = 章 i 首行的页号（无首行的章复用上一章值）。
+            // 一次 O(pages×cols×lines)；之后 [pageOfChapter] 全走 binarySearch。
+            // 用 first-line-of-spine 判定（与旧 indexOfFirst 语义等价：
+            // 「首行 spineIndex ≥ chapterOrder 的页」）。
+            val chapterStart = IntArray(chapters.size) { 0 }
+            if (chapters.isNotEmpty() && result.pages.isNotEmpty()) {
+                // 对 pages 做单次归并扫：记录每章**最小**首行页。
+                // pages 按阅读序，cols 按阅读序，所以「章 i 的首行 page」
+                // 随 i 单调不减 → 归并扫 O(pages × 章数) → 退化为 O(pages)。
+                // 简单实现：遍历 pages，为每一行**首次**出现的 spineIndex 记页。
+                val firstSeen = IntArray(chapters.size) { -1 }
+                for ((pIdx, page) in result.pages.withIndex()) {
+                    for (col in page.columns) {
+                        for (line in col.lines) {
+                            val s = line.position.spineIndex
+                            if (s in firstSeen.indices && firstSeen[s] == -1) {
+                                firstSeen[s] = pIdx
+                            }
+                        }
+                    }
+                    // 早停：所有章都见过了
+                    if (firstSeen.all { it != -1 }) break
+                }
+                // 前缀填充（某章可能整段被合并/无首行 → 复用上一章首行页）。
+                // chapterStart[0] = 0（首章必在第 0 页或 -1），保持单调不减。
+                var last = 0
+                for (i in chapters.indices) {
+                    val v = firstSeen[i]
+                    chapterStart[i] = if (v >= 0) { last = v; v } else last
+                }
+            }
+            return PagedDocumentSession(document, result, chapters.map { it.label }, chapterStart)
         }
     }
 }

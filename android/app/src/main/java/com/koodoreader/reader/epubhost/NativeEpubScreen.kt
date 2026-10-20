@@ -12,9 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,10 +60,23 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.ui.theme.ThemeSpecBridge
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import com.koodoreader.engine.feature.BionicConfig
+import com.koodoreader.engine.feature.BionicReading
+import com.koodoreader.engine.feature.ParagraphMode
+import com.koodoreader.engine.feature.ReadingRuler
+import com.koodoreader.engine.feature.ReadingRulerConfig
+import com.koodoreader.engine.feature.SpeedReading
 import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.LayoutPosition
 import com.koodoreader.engine.layout.PaginatorOptions
+import com.koodoreader.reader.shell.ReaderFeatureCodec
+import com.koodoreader.reader.shell.ReaderFeaturePrefs
+import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.ReaderTextPipeline
 import com.koodoreader.engine.toc.ChapterText
 import com.koodoreader.engine.toc.SearchHit
 import com.koodoreader.engine.toc.SearchIndex
@@ -77,12 +95,17 @@ import com.koodoreader.feature.tts.TtsConfig
 import com.koodoreader.feature.tts.TtsPlaybackSnapshot
 import com.koodoreader.feature.tts.TtsPlaybackState
 import com.koodoreader.reader.shell.LibraryViewModel
+import com.koodoreader.reader.AppLog
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.ReaderChromeAction
 import com.koodoreader.reader.shell.ReaderFiles
+import com.koodoreader.reader.shell.ReaderPageGesture
+import com.koodoreader.reader.shell.ReaderPageGestures
 import com.koodoreader.reader.shell.ReaderProgressPrefs
 import com.koodoreader.reader.shell.ShellAppearancePrefs
 import com.koodoreader.reader.shell.builtInPreset
+import com.koodoreader.reader.shell.t
 import com.koodoreader.reader.translate.rememberTranslationPopupController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -132,41 +155,110 @@ fun NativeEpubScreen(
     }
 
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    // 字号缩放：1.0 = 默认（DesktopReaderConfig.FONT_SIZE_DEFAULT = 17f）
-    // 持久化到 SharedPreferences（与 ReaderProgressPrefs 同一 prefs 文件）。
-    val fontPrefs = remember(context) { context.getSharedPreferences("reader", 0) }
-    var fontScale by remember { mutableStateOf(fontPrefs.getFloat("fontScale", 1.0f)) }
+    val featurePrefs = remember(context) { ReaderFeaturePrefs(context) }
+    var features by remember { mutableStateOf(featurePrefs.load()) }
+    fun commitFeatures(next: ReaderFeatureState) {
+        features = next
+        featurePrefs.save(next)
+        ReaderTextPipeline.setRulesJson(next.textRulesJson)
+    }
     fun setFontScale(v: Float) {
-        val clamped = v.coerceIn(0.7f, 2.5f)
-        fontScale = clamped
-        fontPrefs.edit().putFloat("fontScale", clamped).apply()
+        commitFeatures(features.copy(fontScale = v.coerceIn(ReaderFeatureCodec.FONT_SCALE_MIN, ReaderFeatureCodec.FONT_SCALE_MAX)))
+    }
+    val fontScale = features.fontScale
+    DisposableEffect(featurePrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            features = featurePrefs.load()
+            ReaderTextPipeline.setRulesJson(features.textRulesJson)
+        }
+        featurePrefs.register(listener)
+        onDispose { featurePrefs.unregister(listener) }
     }
     val format = book?.format?.lowercase()
     // 会话按 (文件, 格式, 视口, 字号) 重建：尺寸/字号变化时重新分页。
-    val session: ReaderSession? = remember(file, format, viewport, fontScale) {
-        val f = file ?: return@remember null
-        if (viewport.width == 0 || viewport.height == 0) return@remember null
+    //
+    // P9-anr (round-2 真机根因): 分页 open 不能跑在主 UI 线程。原实现在
+    // remember {} 里内联执行 ReaderSessionFactory.open(...) —— 整本 EPUB
+    // 解包 + 逐页分页 + 逐字符 Paint 测量都压在 Compose 的 UI 线程上。JVM
+    // 单测用 10 章小 fixture + 确定性 measurer 且 JVM 已热，毫秒级全绿；真机
+    // (OPPO PKT110)上冷启动 JIT + 几百页的书要数十秒 → 系统在 5s
+    // "Input dispatching timed out" 后强杀进程 (ANR logcat: "MotionEvent
+    // action=DOWN ... Waited 5000ms")，即「点开书就 ANR 闪退」。
+    // 修复：open 挪进 LaunchedEffect 的 withContext(Dispatchers.IO)。
+    // Paint.measureText 走 TextSizeCache (synchronized) — 纯读跨线程安全；
+    // UI 线程保持响应，分页期间显示进度条，session 落地后首帧渲染页面。
+    // 旧 session 在新 session 替换时关闭，避免归档句柄泄漏。
+    var session by remember { mutableStateOf<ReaderSession?>(null) }
+    var opening by remember { mutableStateOf(true) }
+    var openError by remember { mutableStateOf<String?>(null) }
+    var moreMenu by remember { mutableStateOf(false) }
+    // openKey 变化（翻页不触发；旋转/字号/换文件触发）→ 重新分页。
+    val openKey = Triple(
+        file,
+        viewport,
+        listOf(
+            format,
+            features.fontScale,
+            features.lineHeightRatio,
+            features.marginHorizontalPx,
+            features.textRulesJson,
+        ),
+    )
+    LaunchedEffect(openKey) {
+        val (f, vp, rest) = openKey
+        val fmt = rest[0] as String?
+        if (f == null || vp.width == 0 || vp.height == 0 || fmt == null) {
+            session = null
+            opening = false
+            return@LaunchedEffect
+        }
+        opening = true
+        openError = null
+        ReaderTextPipeline.setRulesJson(features.textRulesJson)
+        val prev = session
         val density = context.resources.displayMetrics.density
-        ReaderSessionFactory.open(
-            format = format,
-            file = f,
-            viewportWidthPx = viewport.width.toFloat(),
-            viewportHeightPx = viewport.height.toFloat(),
-            measurer = AndroidTextMeasurer(density),
-            options = PaginatorOptions(fontSizePx = 17f * fontScale),
-        )
-    }
-    DisposableEffect(session) {
-        onDispose { session?.close() }
+        val margin = ReaderFeatureCodec.clampedMargin(features)
+        val opened = withContext(Dispatchers.IO) {
+            runCatching {
+                ReaderSessionFactory.open(
+                    format = fmt,
+                    file = f,
+                    viewportWidthPx = vp.width.toFloat(),
+                    viewportHeightPx = vp.height.toFloat(),
+                    measurer = AndroidTextMeasurer(density),
+                    options = PaginatorOptions(
+                        fontSizePx = ReaderFeatureCodec.fontSizePx(features),
+                        lineHeightMultiple = ReaderFeatureCodec.clampedLineHeight(features),
+                        marginHorizontalPx = margin,
+                        marginVerticalPx = margin,
+                    ),
+                )
+            }
+        }
+        opened.exceptionOrNull()?.let { err ->
+            AppLog.e("NativeEpub", "paginate failed: ${f.name}", err)
+            openError = err.message ?: err.javaClass.simpleName
+        }
+        val s = opened.getOrNull()
+        if (s != null) {
+            session = s
+            prev?.close()
+        } else {
+            session = null
+        }
+        opening = false
     }
 
     var currentPage by remember { mutableIntStateOf(0) }
     var showChrome by remember { mutableStateOf(true) }
     // 打开恢复：优先用 initialCfi（笔记跳转），否则按上次位置 CFI 落页（无进度 → 第 0 页）。
+    // P9-anr (round-2): resumePage 是**扫描全书找目标 CFI → 页**，几百页的书
+    // 在主线程跑会再次 ANR — 与 session.open 同理，放 IO。
     LaunchedEffect(session) {
         val target = initialCfi?.takeIf { it.isNotBlank() }
             ?: book?.key?.let { progressPrefs.cfiOf(it) }
-        currentPage = session?.resumePage(target) ?: 0
+        val pg = withContext(Dispatchers.IO) { session?.resumePage(target) } ?: 0
+        currentPage = pg
     }
     // 翻页写回进度（位置 CFI；与桌面 recordLocation 同一寻址格式）。
     LaunchedEffect(session, currentPage) {
@@ -192,8 +284,10 @@ fun NativeEpubScreen(
         val cfi = session?.cfiForPage(currentPage) ?: return
         val s = session ?: return
         if (s.pageCount <= 0) return
-        val chapterIdx = (0 until s.chapterCount)
-            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        // P9-anr (round-3): 用 chapterOf 避免 O(n) 扫描。
+        val chapterIdx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
+                         else (0 until s.chapterCount)
+                             .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
         val entity = BookmarkEntity(
             key = System.currentTimeMillis().toString(),
             bookKey = bookKey,
@@ -227,18 +321,25 @@ fun NativeEpubScreen(
 
     // ── 全文搜索 ──────────────────────────────────────────────────────────────
     var showSearch by remember { mutableStateOf(false) }
-    val searchIndex = remember(bookKey, session) {
-        val s = session ?: return@remember null
-        if (s.chapterCount == 0) return@remember null
-        val chapters = (0 until s.chapterCount).map { i ->
-            ChapterText(
-                spineIndex = i,
-                title = s.chapterLabel(i),
-                text = s.chapterText(i),
-                cfiStart = "epubcfi(/6/${i + 1})",
-            )
+    // P9-anr (round-3): 全书文本拼接 + SearchIndex 构建在**首次组合**时跑在主
+    // 线程 —— 几百章的书上可能 1s+ 卡顿；挪 IO + IO-dispatched LaunchedEffect
+    // 让构建期间 searchIndex 暂为空（搜索按钮在 ready 后自动可用，
+    // remember key = bookKey/session 不变则不重复构建）。
+    var searchIndex by remember { mutableStateOf<SearchIndex?>(null) }
+    LaunchedEffect(bookKey, session) {
+        val s = session ?: run { searchIndex = null; return@LaunchedEffect }
+        if (s.chapterCount == 0) { searchIndex = null; return@LaunchedEffect }
+        searchIndex = withContext(Dispatchers.IO) {
+            val chapters = (0 until s.chapterCount).map { i ->
+                ChapterText(
+                    spineIndex = i,
+                    title = s.chapterLabel(i),
+                    text = s.chapterText(i),
+                    cfiStart = "epubcfi(/6/${i + 1})",
+                )
+            }
+            SearchIndex.build(bookKey, chapters)
         }
-        SearchIndex.build(bookKey, chapters)
     }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
@@ -428,8 +529,10 @@ fun NativeEpubScreen(
     fun saveNote() {
         val line = selectedLine ?: return
         val s = session ?: return
-        val chapterIdx = (0 until s.chapterCount)
-            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        // P9-anr (round-3): 用 chapterOf 避免 O(n) 扫描。
+        val chapterIdx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
+                         else (0 until s.chapterCount)
+                             .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
         val cfi = CfiAddressing.toCfi(LayoutPosition(
             line.position.spineIndex,
             line.position.elementIndex,
@@ -450,7 +553,7 @@ fun NativeEpubScreen(
         noteText = ""
     }
 
-    fun onDoubleTap(offset: androidx.compose.ui.geometry.Offset) {
+    fun selectAt(offset: androidx.compose.ui.geometry.Offset) {
         val s = session ?: return
         val layout = s.layoutResult()
         val pos = layout.positionAt(offset.x, offset.y) ?: return
@@ -464,14 +567,19 @@ fun NativeEpubScreen(
     }
 
     // 当前页所有图片位图（spineIndex:"src" → Bitmap），一次性解码避免每帧 IO。
-    val pageImages: Map<String, android.graphics.Bitmap?> = remember(session, currentPage) {
-        val s = session ?: return@remember emptyMap()
-        s.pageLines(currentPage)
-            .filter { it.imageSrc != null }
-            .associate { line ->
-                val key = "${line.position.spineIndex}:${line.imageSrc}"
-                key to loadBitmap(s, line)
+    // P9-anr (round-2): 大图 PNG/JPEG 解码在 remember{} 主线程跑会再卡 5s+，
+    // 挪 Dispatchers.IO；页码切换时新 effect 取消旧 effect（LaunchedEffect
+    // key 含 currentPage 自动取消），避免累积解码。
+    var pageImages by remember { mutableStateOf<Map<String, android.graphics.Bitmap?>>(emptyMap()) }
+    LaunchedEffect(session, currentPage) {
+        val s = session ?: run { pageImages = emptyMap(); return@LaunchedEffect }
+        val lines = s.pageLines(currentPage).filter { it.imageSrc != null }
+        if (lines.isEmpty()) { pageImages = emptyMap(); return@LaunchedEffect }
+        pageImages = withContext(Dispatchers.IO) {
+            lines.associate { line ->
+                "${line.position.spineIndex}:${line.imageSrc}" to loadBitmap(s, line)
             }
+        }
     }
 
     // 在 composable 上下文捕获颜色：阅读页配色独立于 App 主题
@@ -486,12 +594,17 @@ fun NativeEpubScreen(
     val fgColor = ThemeSpecBridge.foreground(readerPreset)
     val chapterInfo = remember(session, currentPage) {
         session?.let { s ->
-            val idx = (0 until s.chapterCount)
-                .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+            // P9-anr (round-3): 原实现 O(chapters×log pages)（每次 currentPage
+            // 变更都 lastOrNull 扫描）；现用 PagedDocumentSession.chapterOf
+            // 一次 O(log chapters) binary search。
+            val idx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
+                      else (0 until s.chapterCount)
+                          .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
             "c ${idx + 1}/${s.chapterCount} · ${s.chapterLabel(idx)}"
         } ?: ""
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             if (showChrome) {
@@ -509,37 +622,88 @@ fun NativeEpubScreen(
                         }
                     },
                     actions = {
-                        // 字号缩小（A-）
-                        TextButton(onClick = { setFontScale(fontScale - 0.1f) }) {
-                            Text("A−", style = MaterialTheme.typography.labelLarge)
+                        // Primary chrome stays on-screen on a phone TopAppBar.
+                        // Font / bookmark / TTS used to sit here too and pushed
+                        // TOC off the right edge — the packaged native APK then
+                        // looked like it had no contents list.
+                        if (ReaderChromeAction.TOC in ReaderChromeAction.PRIMARY) {
+                            IconButton(onClick = { showToc = true }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_list_view),
+                                    contentDescription = t("Content"),
+                                )
+                            }
                         }
-                        Text(
-                            text = "${(fontScale * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                        )
-                        // 字号放大（A+）
-                        TextButton(onClick = { setFontScale(fontScale + 0.1f) }) {
-                            Text("A+", style = MaterialTheme.typography.labelLarge)
+                        if (ReaderChromeAction.SEARCH in ReaderChromeAction.PRIMARY) {
+                            IconButton(onClick = { showSearch = true }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_search),
+                                    contentDescription = t("Search"),
+                                )
+                            }
                         }
-                        // 书签
-                        IconButton(onClick = { addBookmark() }) {
-                            Icon(painterResource(R.drawable.ic_bookmark), contentDescription = "Bookmark")
-                        }
-                        // 搜索
-                        IconButton(onClick = { showSearch = true }) {
-                            Icon(painterResource(R.drawable.ic_search), contentDescription = "Search")
-                        }
-                        // 目录
-                        IconButton(onClick = { showToc = true }) {
-                            Icon(painterResource(R.drawable.ic_list_view), contentDescription = "TOC")
-                        }
-                        // TTS 朗读
-                        IconButton(onClick = { if (showTtsControl) stopTts() else startTts() }) {
-                            Icon(
-                                painterResource(TtsR.drawable.ic_tts_notification),
-                                contentDescription = if (showTtsControl) "Stop TTS" else "Start TTS",
-                            )
+                        Box {
+                            IconButton(onClick = { moreMenu = true }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_more),
+                                    contentDescription = t("More"),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = moreMenu,
+                                onDismissRequest = { moreMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("A−  ${(fontScale * 100).toInt()}%") },
+                                    onClick = { setFontScale(fontScale - 0.1f) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("A+") },
+                                    onClick = { setFontScale(fontScale + 0.1f) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Bookmark")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        addBookmark()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Speak the text")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        if (showTtsControl) stopTts() else startTts()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(bionic = !features.bionic))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable reading ruler")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(ruler = !features.ruler))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable paragraph mode")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable speed reading")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(speedReading = !features.speedReading))
+                                    },
+                                )
+                            }
                         }
                     },
                 )
@@ -551,6 +715,7 @@ fun NativeEpubScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { showToc = true }
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                     ) {
                         Text("$chapterInfo · p ${currentPage + 1}/$pageCount", style = MaterialTheme.typography.labelSmall)
@@ -579,52 +744,124 @@ fun NativeEpubScreen(
         ) {
             when {
                 session == null && viewport == IntSize.Zero -> Unit // 首帧：等尺寸
+                session == null && opening && file != null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // P9-anr (round-2): 分页期间显示进度条，UI 线程保持响应
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "正在打开…",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
                 session == null -> Text(
                     if (file == null) {
                         "Book file unavailable on device."
                     } else {
-                        "Could not paginate this EPUB.\nImport it again or use the web viewer."
+                        val detail = openError?.let { "\n($it)" } ?: ""
+                        "Could not paginate this EPUB.$detail\nImport it again or use the web viewer."
                     },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(24.dp),
                 )
-                else -> Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(pageCount) {
-                            detectTapGestures(
-                                onDoubleTap = { offset -> onDoubleTap(offset) },
-                            ) { offset ->
-                                if (showSelectionMenu) {
-                                    showSelectionMenu = false
-                                    return@detectTapGestures
+                else -> Box(Modifier.fillMaxSize()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(pageCount, currentPage, features.paragraphMode) {
+                                detectTapGestures(
+                                    onLongPress = { offset ->
+                                        if (ReaderPageGestures.onLongPress() == ReaderPageGesture.SELECT) {
+                                            selectAt(offset)
+                                        }
+                                    },
+                                    onDoubleTap = { offset ->
+                                        if (ReaderPageGestures.onDoubleTap() == ReaderPageGesture.SELECT) {
+                                            selectAt(offset)
+                                        }
+                                    },
+                                ) { offset ->
+                                    if (showSelectionMenu) {
+                                        showSelectionMenu = false
+                                        return@detectTapGestures
+                                    }
+                                    when (ReaderPageGestures.onTap(offset.x, size.width.toFloat())) {
+                                        ReaderPageGesture.PREV_PAGE ->
+                                            if (currentPage > 0) currentPage--
+                                        ReaderPageGesture.NEXT_PAGE ->
+                                            if (currentPage < pageCount - 1) currentPage++
+                                        ReaderPageGesture.TOGGLE_CHROME ->
+                                            showChrome = !showChrome
+                                        ReaderPageGesture.SELECT -> Unit
+                                    }
                                 }
-                                val w = size.width
-                                when {
-                                    offset.x < w / 3f -> if (currentPage > 0) currentPage--
-                                    offset.x > 2f * w / 3f -> if (currentPage < pageCount - 1) currentPage++
-                                    else -> showChrome = !showChrome
-                                }
-                            }
-                        },
-                ) {
-                    drawRect(color = bgColor)
-                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                    paint.color = fgColor.toArgb()
-                    for (line in lines) drawLayoutLine(line, paint, pageImages, highlightBlockColors)
+                            },
+                    ) {
+                        drawRect(color = bgColor)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        paint.color = fgColor.toArgb()
+                        for (line in lines) {
+                            drawLayoutLine(
+                                line,
+                                paint,
+                                pageImages,
+                                highlightBlockColors,
+                                bionic = features.bionic,
+                            )
+                        }
+                        if (features.ruler) {
+                            val area = ReadingRuler.resolve(
+                                fingerY = size.height / 2f,
+                                viewportHeight = size.height,
+                                config = ReadingRulerConfig(
+                                    lineHeight = features.rulerLineHeight,
+                                    lineHeightPx = lines.firstOrNull()?.height ?: 24f,
+                                    followFinger = false,
+                                ),
+                            )
+                            drawRect(
+                                color = fgColor.copy(alpha = 0.12f),
+                                topLeft = Offset(0f, area.top),
+                                size = Size(size.width, area.height),
+                            )
+                        }
+                    }
+                    if (features.paragraphMode && session != null) {
+                        ParagraphModeLayer(
+                            session = session!!,
+                            currentPage = currentPage,
+                            onPrevPage = { if (currentPage > 0) currentPage-- },
+                            onNextPage = { if (currentPage < pageCount - 1) currentPage++ },
+                            onToggleChrome = { showChrome = !showChrome },
+                        )
+                    }
+                    if (features.speedReading && lines.isNotEmpty()) {
+                        SpeedReadingLayer(
+                            text = lines.joinToString(" ") { it.text },
+                            wpm = ReaderFeatureCodec.clampedWpm(features),
+                            onTap = { showChrome = !showChrome },
+                        )
+                    }
                 }
             }
         }
     }
 
-    // ── 选中行菜单（底部浮动条） ─────────────────────────────────────────────
+    // ── 选中行菜单（叠在阅读页底部，不能作为 Scaffold 的兄弟节点
+    // 被 NavHost 顶到屏幕外） ───────────────────────────────────────────────
     if (showSelectionMenu && selectedLine != null) {
         val line = selectedLine!!
         val highlighted = isAlreadyHighlighted(line)
 
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
             tonalElevation = 8.dp,
             color = MaterialTheme.colorScheme.surface,
         ) {
@@ -667,6 +904,7 @@ fun NativeEpubScreen(
             }
         }
     }
+    } // Box wrapping Scaffold + selection overlay
 
     // ── 翻译弹窗（选词翻译，P6 feature/translate 接线点） ──────────────────────
     if (translateState.visible) {
@@ -871,6 +1109,7 @@ private fun DrawScope.drawLayoutLine(
     paint: android.graphics.Paint,
     pageImages: Map<String, android.graphics.Bitmap?> = emptyMap(),
     highlightColors: Map<Int, Long> = emptyMap(),
+    bionic: Boolean = false,
 ) {
     // 高亮背景色（使用笔记存储的颜色，默认半透明黄）
     if (line.blockIndex in highlightColors && line.imageSrc == null) {
@@ -904,7 +1143,18 @@ private fun DrawScope.drawLayoutLine(
         return
     }
     paint.textSize = line.fontSizePx
-    drawContext.canvas.nativeCanvas.drawText(line.text, line.x, line.baselineY, paint)
+    val canvas = drawContext.canvas.nativeCanvas
+    if (bionic && line.text.isNotEmpty()) {
+        var x = line.x
+        for (run in BionicReading.split(line.text, BionicConfig.DESKTOP_PARITY)) {
+            paint.isFakeBoldText = run.emphasized
+            canvas.drawText(run.text, x, line.baselineY, paint)
+            x += paint.measureText(run.text)
+        }
+        paint.isFakeBoldText = false
+    } else {
+        canvas.drawText(line.text, line.x, line.baselineY, paint)
+    }
 }
 
 /** Decode an image line's bitmap from the session (EPUB zip / file). Returns null if missing. */
@@ -917,3 +1167,110 @@ private fun loadBitmap(session: ReaderSession, line: LayoutLine): android.graphi
 
 /** 绘制一行：字体按行字号，位置用引擎产出的 x/baseline（同一测量口径）。 */
 // private (removed — merged into the drawLine above)
+
+@Composable
+private fun ParagraphModeLayer(
+    session: ReaderSession,
+    currentPage: Int,
+    onPrevPage: () -> Unit,
+    onNextPage: () -> Unit,
+    onToggleChrome: () -> Unit,
+) {
+    val chapter = remember(session, currentPage) {
+        (0 until session.chapterCount)
+            .lastOrNull { c -> session.pageOfChapter(c) <= currentPage } ?: 0
+    }
+    val paragraphs = remember(session, chapter) {
+        ParagraphMode.split(session.chapterText(chapter))
+    }
+    var startAtEnd by remember { mutableStateOf(false) }
+    var index by remember { mutableIntStateOf(0) }
+    LaunchedEffect(chapter, paragraphs.size) {
+        index = if (startAtEnd) (paragraphs.size - 1).coerceAtLeast(0) else 0
+        startAtEnd = false
+    }
+    val text = paragraphs.getOrElse(index) { "" }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .pointerInput(index, paragraphs.size) {
+                detectTapGestures { offset ->
+                    when (ReaderPageGestures.onTap(offset.x, size.width.toFloat())) {
+                        ReaderPageGesture.PREV_PAGE -> {
+                            if (index > 0) {
+                                index--
+                            } else if (currentPage > 0) {
+                                startAtEnd = true
+                                onPrevPage()
+                            }
+                        }
+                        ReaderPageGesture.NEXT_PAGE -> {
+                            if (index < paragraphs.lastIndex) {
+                                index++
+                            } else {
+                                startAtEnd = false
+                                onNextPage()
+                            }
+                        }
+                        ReaderPageGesture.TOGGLE_CHROME -> onToggleChrome()
+                        ReaderPageGesture.SELECT -> Unit
+                    }
+                }
+            }
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text.ifBlank { t("Empty") },
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+        )
+    }
+}
+
+@Composable
+private fun SpeedReadingLayer(
+    text: String,
+    wpm: Int,
+    onTap: () -> Unit,
+) {
+    val engine = remember(wpm) { SpeedReading(wpm) }
+    val chunks = remember(text, engine) { engine.chunks(text) }
+    var index by remember(chunks) { mutableIntStateOf(0) }
+    LaunchedEffect(chunks) {
+        index = 0
+        while (index < chunks.size) {
+            delay(chunks[index].durationMs.toLong().coerceAtLeast(1L))
+            if (index >= chunks.lastIndex) break
+            index++
+        }
+    }
+    val chunk = chunks.getOrNull(index)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .pointerInput(Unit) {
+                detectTapGestures { onTap() }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (chunk == null) {
+            Text(t("Empty"), style = MaterialTheme.typography.headlineSmall)
+        } else {
+            val before = chunk.text.take(chunk.orpIndex)
+            val pivot = chunk.text.getOrNull(chunk.orpIndex)?.toString().orEmpty()
+            val after = chunk.text.drop(chunk.orpIndex + 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(before, style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    pivot,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(after, style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+    }
+}

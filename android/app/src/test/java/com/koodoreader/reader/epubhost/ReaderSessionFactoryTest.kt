@@ -5,6 +5,7 @@ import com.koodoreader.engine.layout.TextMeasurers
 import com.koodoreader.reader.shell.IntentRoutePolicy
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -224,11 +225,11 @@ class ReaderSessionFactoryTest {
     }
 
     @Test
-    fun `unparseable file yields null instead of crashing`() {
+    fun `unparseable file throws so the reader can surface the cause`() {
         val junk = File(dir, "junk.epub").apply { writeText("not a zip") }
-        assertEquals(null, open("EPUB", junk))
+        assertThrows(Throwable::class.java) { open("EPUB", junk) }
         val junkDocx = File(dir, "junk.docx").apply { writeText("not a zip") }
-        assertEquals(null, open("DOCX", junkDocx))
+        assertThrows(Throwable::class.java) { open("DOCX", junkDocx) }
         assertEquals(null, open("UNKNOWN", junk))
     }
 }

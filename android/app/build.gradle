@@ -182,6 +182,9 @@ dependencies {
     // separately in docs/BOARD-2026-09-24.html.
     // ---------------------------------------------------------------------
 
+    // P6 reading enhancements (bionic / ruler / RSVP / paragraph / text rules).
+    implementation project(':engine:feature')
+
     // P2 reading-engine decision layers (highlights/notes/bookmarks, links and
     // footnotes, TOC/progress/search).
     implementation project(':engine:annotate')

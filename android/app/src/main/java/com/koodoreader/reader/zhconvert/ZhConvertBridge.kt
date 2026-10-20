@@ -132,7 +132,9 @@ object ZhConvertBridge {
         val settings = repo.settings
         val engine = repo.engine()
         val language = readerLanguage
-        PagedDocumentSession.textTransform = { text -> engine.convert(text, settings.mode, language) }
+        com.koodoreader.reader.shell.installReaderTextTransform { text ->
+            engine.convert(text, settings.mode, language)
+        }
     }
 
     fun setMode(mode: ZhConvertMode) {

@@ -36,9 +36,22 @@ object AssetPaths {
      * Asset-manager paths to try for a normalised request [path], in order.
      * Roots are relative to the APK `assets/` directory; a blank root means the
      * request path is used as-is.
+     *
+     * If [path] already starts with a root (`pdfengine/index.html`), that root
+     * is not prefixed again — otherwise the native PDF host 404s looking for
+     * `assets/pdfengine/pdfengine/index.html`.
      */
-    fun candidates(path: String, roots: List<String> = DEFAULT_ROOTS): List<String> =
-        roots.map { root -> if (root.isEmpty()) path else "$root/$path" }
+    fun candidates(path: String, roots: List<String> = DEFAULT_ROOTS): List<String> {
+        val out = linkedSetOf<String>()
+        for (root in roots) {
+            when {
+                root.isEmpty() -> out.add(path)
+                path == root || path.startsWith("$root/") -> out.add(path)
+                else -> out.add("$root/$path")
+            }
+        }
+        return out.toList()
+    }
 
     /**
      * Whether [path] may fall back to [INDEX_FILE]: a client-side route has no

@@ -25,6 +25,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -123,6 +125,8 @@ fun NativePdfScreen(
     var showOutline by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showOcr by remember { mutableStateOf(false) }
+    var showPageMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // One engine WebView per book URL; the controller tears the document down on
@@ -204,15 +208,6 @@ fun NativePdfScreen(
                     }
                 },
                 actions = {
-                    // Zoom is rendered as ± glyphs on purpose: keeping the toolbar
-                    // textual avoids pulling material-icons-extended (~20 MB of
-                    // classes into the debug APK).
-                    IconButton(onClick = controller::zoomOut, enabled = state.pageCount > 0) {
-                        Text("−", style = MaterialTheme.typography.titleLarge)
-                    }
-                    IconButton(onClick = controller::zoomIn, enabled = state.pageCount > 0) {
-                        Text("+", style = MaterialTheme.typography.titleLarge)
-                    }
                     IconButton(
                         onClick = {
                             controller.loadOutline()
@@ -228,22 +223,48 @@ fun NativePdfScreen(
                     IconButton(onClick = { showSearch = true }, enabled = state.pageCount > 0) {
                         Icon(painterResource(R.drawable.ic_search), contentDescription = t("Search in book"))
                     }
-                    IconButton(
-                        onClick = {
-                            ocrController.refresh()
-                            showOcr = true
-                        },
-                        enabled = state.pageCount > 0,
-                    ) {
-                        Icon(painterResource(R.drawable.ic_ocr), contentDescription = t("OCR"))
-                    }
-                    IconButton(
-                        onClick = {
-                            controller.exportCurrentPage { file -> shareSnapshot(context, file) }
-                        },
-                        enabled = state.pageCount > 0 && !state.exporting,
-                    ) {
-                        Icon(painterResource(R.drawable.ic_share), contentDescription = t("Share"))
+                    Box {
+                        IconButton(onClick = { moreMenu = true }, enabled = state.pageCount > 0) {
+                            Icon(
+                                painterResource(R.drawable.ic_more),
+                                contentDescription = t("More"),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = moreMenu,
+                            onDismissRequest = { moreMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("−") },
+                                onClick = {
+                                    moreMenu = false
+                                    controller.zoomOut()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("+") },
+                                onClick = {
+                                    moreMenu = false
+                                    controller.zoomIn()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("OCR")) },
+                                onClick = {
+                                    moreMenu = false
+                                    ocrController.refresh()
+                                    showOcr = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Share")) },
+                                enabled = !state.exporting,
+                                onClick = {
+                                    moreMenu = false
+                                    controller.exportCurrentPage { file -> shareSnapshot(context, file) }
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -257,12 +278,16 @@ fun NativePdfScreen(
                 // Tap zones: the outer quarters page back/forward. The middle is
                 // deliberately inert so the P2 gesture layer can take it.
                 .pointerInput(state.pageCount) {
-                    detectTapGestures { offset ->
-                        val width = size.width
-                        when {
-                            offset.x < width * 0.25f -> controller.previousPage()
-                            offset.x > width * 0.75f -> controller.nextPage()
-                            else -> Unit
+                    detectTapGestures(
+                        onLongPress = { showPageMenu = true },
+                    ) { offset ->
+                        val width = size.width.toFloat()
+                        when (ReaderPageGestures.onTap(offset.x, width, edgeFraction = 0.25f)) {
+                            ReaderPageGesture.PREV_PAGE -> controller.previousPage()
+                            ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
+                            ReaderPageGesture.TOGGLE_CHROME,
+                            ReaderPageGesture.SELECT,
+                            -> Unit
                         }
                     }
                 }
@@ -321,6 +346,40 @@ fun NativePdfScreen(
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
+            }
+        }
+    }
+
+    if (showPageMenu) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showPageMenu = false },
+            sheetState = sheetState,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                TextButton(
+                    onClick = {
+                        showPageMenu = false
+                        controller.loadOutline()
+                        showOutline = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("PDF outline")) }
+                TextButton(
+                    onClick = {
+                        showPageMenu = false
+                        showSearch = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Search in book")) }
+                TextButton(
+                    onClick = {
+                        showPageMenu = false
+                        controller.exportCurrentPage { file -> shareSnapshot(context, file) }
+                    },
+                    enabled = state.pageCount > 0 && !state.exporting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Share")) }
             }
         }
     }

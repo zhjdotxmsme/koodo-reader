@@ -17,6 +17,11 @@ data class PaginatorOptions(
     val chapterStartsNewPage: Boolean = true,
     /** User-chosen font size in px (default 17 f = DesktopReaderConfig.FONT_SIZE_DEFAULT). */
     val fontSizePx: Float = DesktopReaderConfig.FONT_SIZE_DEFAULT,
+    /** Desktop `lineHeight` multiple (1…2, default 1.5). */
+    val lineHeightMultiple: Float = DesktopReaderConfig.LINE_HEIGHT_DEFAULT,
+    /** Desktop `margin` in px (signed, −40…80). Applied on all four sides. */
+    val marginHorizontalPx: Float = DesktopReaderConfig.MARGIN_DEFAULT,
+    val marginVerticalPx: Float = DesktopReaderConfig.MARGIN_DEFAULT,
 ) {
     init {
         require(columnsPerPage in 1..8) { "columnsPerPage must be 1..8 (was $columnsPerPage)" }
