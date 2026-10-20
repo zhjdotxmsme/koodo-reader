@@ -33,6 +33,8 @@ class TextBookSession private constructor(
     override fun pageForCfi(cfi: String): Int? = paged.pageForCfi(cfi)
     override fun pageOfChapter(chapterOrder: Int): Int = paged.pageOfChapter(chapterOrder)
     override fun chapterLabel(chapterOrder: Int): String = paged.chapterLabel(chapterOrder)
+    override fun chapterText(chapterOrder: Int): String = paged.chapterText(chapterOrder)
+    override fun layoutResult() = paged.layoutResult()
     override fun close() {}
 
     companion object {

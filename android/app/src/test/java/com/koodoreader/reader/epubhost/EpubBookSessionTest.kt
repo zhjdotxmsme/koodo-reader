@@ -83,6 +83,18 @@ class EpubBookSessionTest {
     }
 
     @Test
+    fun `layoutResult is delegated so the reader highlight pass cannot crash`() {
+        makeEpub("layout.epub").let { file ->
+            open(file).use { s ->
+                val layout = s.layoutResult()
+                assertNotNull(layout, "EpubBookSession must forward PagedDocumentSession.layoutResult")
+                assertTrue(layout!!.pages.isNotEmpty())
+                assertTrue(s.chapterText(0).contains("Chapter 1"))
+            }
+        }
+    }
+
+    @Test
     fun `all three chapters land in the document in order`() {
         makeEpub("b.epub").let { file ->
             open(file).use { s ->

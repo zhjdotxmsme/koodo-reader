@@ -45,6 +45,10 @@ class EpubBookSession private constructor(
     /** 章节显示标签（进度条；EPUB 用 OPF 里的章节文件名）。 */
     override fun chapterLabel(chapterOrder: Int): String = paged.chapterLabel(chapterOrder)
 
+    override fun chapterText(chapterOrder: Int): String = paged.chapterText(chapterOrder)
+
+    override fun layoutResult() = paged.layoutResult()
+
     override fun close() {
         spine.close()
     }

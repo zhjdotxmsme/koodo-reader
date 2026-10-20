@@ -310,7 +310,7 @@ fun NativeEpubScreen(
 
     val highlightBlockColors: Map<Int, Long> = remember(bookNotes, session, currentPage) {
         val s = session ?: return@remember emptyMap()
-        val layout = s.layoutResult()
+        val layout = s.layoutResult() ?: return@remember emptyMap()
         bookNotes.mapNotNull { note ->
             val cfi = note.cfi ?: return@mapNotNull null
             val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
@@ -555,7 +555,7 @@ fun NativeEpubScreen(
 
     fun selectAt(offset: androidx.compose.ui.geometry.Offset) {
         val s = session ?: return
-        val layout = s.layoutResult()
+        val layout = s.layoutResult() ?: return
         val pos = layout.positionAt(offset.x, offset.y) ?: return
         val line = s.pageLines(currentPage)
             .firstOrNull { it.containsY(offset.y) && offset.x in it.x..it.rightPx }

@@ -45,7 +45,7 @@ interface ReaderSession : AutoCloseable {
     fun chapterText(chapterOrder: Int): String = ""
 
     /** Direct layout result for hit-testing / word selection (null for non-layout sessions). */
-    fun layoutResult(): LayoutResult = error("Not a layout session")
+    fun layoutResult(): LayoutResult? = null
 }
 
 /**
