@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,12 +28,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +59,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -540,7 +545,7 @@ fun NativeEpubScreen(
                 "【${result.entry}】\n" +
                     htmlSafe.replace(Regex("<[^>]+>"), "").replace(Regex("&[a-z]+;"), "·").trim()
             } else {
-                "未找到「$word」的释义\n（请确认已导入字典文件）"
+                "${t("Dictionary")}: $word"
             }
             showDictDialog = true
             showSelectionMenu = false
@@ -700,9 +705,13 @@ fun NativeEpubScreen(
                 TopAppBar(
                     title = {
                         if (bookmarkFlash) {
-                            Text("✓ 已添加书签", color = MaterialTheme.colorScheme.primary)
+                            Text("✓ ${t("Bookmark")}", color = MaterialTheme.colorScheme.primary, maxLines = 1)
                         } else {
-                            Text(book?.name ?: "")
+                            Text(
+                                book?.name ?: "",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     },
                     navigationIcon = {
@@ -822,13 +831,11 @@ fun NativeEpubScreen(
                             .clickable { showToc = true }
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                     ) {
-                        Text("$chapterInfo · p ${currentPage + 1}/$pageCount", style = MaterialTheme.typography.labelSmall)
-                        Spacer(Modifier.weight(1f))
                         Text(
-                            (cfi ?: "").take(48),
+                            "$chapterInfo · p ${currentPage + 1}/$pageCount",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -857,7 +864,7 @@ fun NativeEpubScreen(
                         CircularProgressIndicator()
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "正在打开…",
+                            t("Loading"),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
@@ -1001,15 +1008,15 @@ fun NativeEpubScreen(
                     // 已高亮：显示删除 + 字典
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "已高亮「${line.text.take(24)}」",
+                            "${t("Highlight")} 「${line.text.take(24)}」",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                         )
-                        TextButton(onClick = { deleteHighlight() }) { Text("删除") }
-                        TextButton(onClick = { lookupDictionary() }) { Text("字典") }
-                        TextButton(onClick = { startTranslation() }) { Text("翻译") }
-                        TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+                        TextButton(onClick = { deleteHighlight() }) { Text(t("Delete")) }
+                        TextButton(onClick = { lookupDictionary() }) { Text(t("Dictionary")) }
+                        TextButton(onClick = { startTranslation() }) { Text(t("Translate")) }
+                        TextButton(onClick = { showSelectionMenu = false }) { Text(t("Close")) }
                     }
                 } else {
                     // 未高亮：高亮(4色) + 笔记 + 字典
@@ -1020,16 +1027,16 @@ fun NativeEpubScreen(
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                         )
-                        TextButton(onClick = { saveHighlight(0) }) { Text("黄") }
-                        TextButton(onClick = { saveHighlight(1) }) { Text("绿") }
-                        TextButton(onClick = { saveHighlight(2) }) { Text("粉") }
-                        TextButton(onClick = { saveHighlight(3) }) { Text("蓝") }
+                        TextButton(onClick = { saveHighlight(0) }) { Text(t("Yellow")) }
+                        TextButton(onClick = { saveHighlight(1) }) { Text(t("Green")) }
+                        TextButton(onClick = { saveHighlight(2) }) { Text(t("Pink")) }
+                        TextButton(onClick = { saveHighlight(3) }) { Text(t("Blue")) }
                     }
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text("笔记") }
-                        TextButton(onClick = { lookupDictionary() }) { Text("字典") }
-                        TextButton(onClick = { startTranslation() }) { Text("翻译") }
-                        TextButton(onClick = { showSelectionMenu = false }) { Text("关闭") }
+                        TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text(t("Note")) }
+                        TextButton(onClick = { lookupDictionary() }) { Text(t("Dictionary")) }
+                        TextButton(onClick = { startTranslation() }) { Text(t("Translate")) }
+                        TextButton(onClick = { showSelectionMenu = false }) { Text(t("Close")) }
                     }
                 }
             }
@@ -1061,7 +1068,7 @@ fun NativeEpubScreen(
     if (showDictDialog) {
         AlertDialog(
             onDismissRequest = { showDictDialog = false },
-            title = { Text("字典") },
+            title = { Text(t("Dictionary")) },
             text = {
                 Text(
                     dictResultText,
@@ -1069,7 +1076,7 @@ fun NativeEpubScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showDictDialog = false }) { Text("关闭") }
+                TextButton(onClick = { showDictDialog = false }) { Text(t("Close")) }
             },
         )
     }
@@ -1101,43 +1108,50 @@ fun NativeEpubScreen(
         }
     }
 
-    // ── 目录对话框 ─────────────────────────────────────────────────────────────
+    // ── 目录（底部表，和 PDF outline 同一套交互，避免 AlertDialog+TextButton 像超链接）
     if (showToc) {
-        AlertDialog(
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
             onDismissRequest = { showToc = false },
-            title = { Text("目录") },
-            text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                ) {
-                    items((session?.chapterCount ?: 0)) { i ->
-                        TextButton(onClick = {
-                            session?.let { s -> currentPage = s.pageOfChapter(i) }
-                            showToc = false
-                        }) {
-                            // 标签优先取书自带目录（EpubToc：NAV/NCX 真章节名）；
-                            // 没有 TOC 的降级 spine 文件名；两者皆空时兜底序号。
-                            Text(
-                                (session?.chapterLabel(i) ?: "").ifEmpty { "第 ${i + 1} 章" },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
+            sheetState = sheetState,
+        ) {
+            Text(
+                text = t("Content"),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.8f),
+            ) {
+                items(session?.chapterCount ?: 0) { i ->
+                    val label = (session?.chapterLabel(i) ?: "").ifEmpty { "${i + 1}" }
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                session?.let { s -> currentPage = s.pageOfChapter(i) }
+                                showToc = false
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showToc = false }) { Text("关闭") }
-            },
-        )
+            }
+        }
     }
 
     // ── 笔记输入对话框 ─────────────────────────────────────────────────────────
     if (showNoteDialog) {
         AlertDialog(
             onDismissRequest = { showNoteDialog = false },
-            title = { Text("添加笔记") },
+            title = { Text(t("Note")) },
             text = {
                 Column {
                     Text(selectedLine?.text.orEmpty().take(80), style = MaterialTheme.typography.bodySmall)
@@ -1146,15 +1160,15 @@ fun NativeEpubScreen(
                         value = noteText,
                         onValueChange = { noteText = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("笔记内容") },
+                        label = { Text(t("Note")) },
                     )
                 }
             },
             confirmButton = {
-                TextButton(onClick = { saveNote() }) { Text("保存") }
+                TextButton(onClick = { saveNote() }) { Text(t("Save")) }
             },
             dismissButton = {
-                TextButton(onClick = { showNoteDialog = false }) { Text("取消") }
+                TextButton(onClick = { showNoteDialog = false }) { Text(t("Cancel")) }
             },
         )
     }
@@ -1230,25 +1244,25 @@ fun NativeEpubScreen(
     if (showSearch) {
         AlertDialog(
             onDismissRequest = { showSearch = false },
-            title = { Text("全文搜索") },
+            title = { Text(t("Search in book")) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("输入关键词") },
+                        label = { Text(t("Search")) },
                         singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
                     if (searchResults.isEmpty()) {
                         Text(
-                            "输入关键词后点「搜索」按钮",
+                            t("Search in book"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        Text("${searchResults.size} 条结果", style = MaterialTheme.typography.labelSmall)
+                        Text("${searchResults.size}", style = MaterialTheme.typography.labelSmall)
                         Spacer(Modifier.height(4.dp))
                         LazyColumn(
                             modifier = Modifier
@@ -1278,7 +1292,7 @@ fun NativeEpubScreen(
                                         )
                                     }
                                     Text(
-                                        "第 ${hit.spineIndex + 1} 页",
+                                        "${hit.spineIndex + 1}",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -1289,10 +1303,10 @@ fun NativeEpubScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { doSearch() }) { Text("搜索") }
+                TextButton(onClick = { doSearch() }) { Text(t("Search")) }
             },
             dismissButton = {
-                TextButton(onClick = { showSearch = false }) { Text("关闭") }
+                TextButton(onClick = { showSearch = false }) { Text(t("Close")) }
             },
         )
     }

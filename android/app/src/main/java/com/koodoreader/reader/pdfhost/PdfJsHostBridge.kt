@@ -148,7 +148,7 @@ class PdfJsHostBridge(
      * value (`/assets/pdfengine/index.html`) matched no asset in the APK.
      */
     fun bootstrap() {
-        webView.webViewClient = object : android.webkit.WebViewClient() {
+        val client = object : android.webkit.WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // HTML parse only — ES modules have not installed __koodoPdf yet.
                 readyLatch.onPageFinished()
@@ -174,7 +174,17 @@ class PdfJsHostBridge(
                 }
             }
         }
-        webView.post { webView.loadUrl("$baseUrl/$BOOTSTRAP_PATH") }
+        // PdfReaderController.open() runs on Dispatchers.IO. WebView rejects
+        // setWebViewClient / loadUrl off its creating thread (Android 16
+        // logs WebViewMethodCalledOnWrongThreadViolation and the engine
+        // never signals ready — the reader toasts a bootstrap failure).
+        val posted = webView.post {
+            webView.webViewClient = client
+            webView.loadUrl("$baseUrl/$BOOTSTRAP_PATH")
+        }
+        if (!posted) {
+            throw RuntimeException("PDF engine bootstrap failed: WebView already destroyed")
+        }
         if (!readyLatch.await(BOOTSTRAP_TIMEOUT_MS)) {
             val reason = readyLatch.failure ?: "timed out waiting for ready event"
             throw RuntimeException("PDF engine bootstrap failed ($baseUrl/$BOOTSTRAP_PATH): $reason")

@@ -91,7 +91,7 @@ object EpubToc {
             val href = m.groupValues[2].ifEmpty { m.groupValues[3] }
             val label = entities(m.groupValues[4].replace(Regex("<[^>]+>"), " ").trim())
             if (href.isNotEmpty() && label.isNotEmpty()) {
-                entries.add(Entry(label, EpubBook.resolvePath(navPath, href)))
+                entries.add(Entry(label, resolveTocHref(navPath, href)))
             }
         }
         return entries
@@ -101,18 +101,34 @@ object EpubToc {
 
     private fun ncxEntriesOf(ncx: String, navPath: String): List<Entry> {
         val entries = ArrayList<Entry>()
-        for (m in Regex("""<navPoint\b[^>]*>.*?</navPoint>""", RegexOption.DOT_MATCHES_ALL).findAll(ncx)) {
-            val block = m.value
-            val label = Regex("""<text>\s*([^<]+?)\s*</text>""").find(block)
-                ?.groupValues?.get(1)
-                ?.let { entities(it.trim()) }
-            val src = Regex("""<content\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)')""").find(block)
-                ?.let { it.groupValues[2].ifEmpty { it.groupValues[3] } }
-            if (label != null && src != null) {
-                entries.add(Entry(label, EpubBook.resolvePath(navPath, src)))
+        // Match each navPoint's own label+src prefix — not the whole subtree.
+        // A non-greedy `.*?</navPoint>` swallows the first nested child of
+        // every parent (Calibre parts wrap chapters this way).
+        val re = Regex(
+            """<navPoint\b[^>]*>\s*<navLabel>\s*<text>\s*([^<]+?)\s*</text>\s*</navLabel>\s*<content\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)')""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
+        for (m in re.findAll(ncx)) {
+            val label = entities(m.groupValues[1].trim())
+            val src = m.groupValues[3].ifEmpty { m.groupValues[4] }
+            if (label.isNotEmpty() && src.isNotEmpty()) {
+                entries.add(Entry(label, resolveTocHref(navPath, src)))
             }
         }
         return entries
+    }
+
+    /**
+     * TOC href → same key space as [EpubSpine.SpineItem.href].
+     *
+     * Calibre / mobiunpack NCX and many EPUB3 NAVs put a fragment on src
+     * (`Text/part0000.xhtml#chapter`). Spine items never carry that fragment,
+     * so keeping it makes [chapterLabels] miss and the reader falls back to
+     * zip filenames.
+     */
+    private fun resolveTocHref(navPath: String, href: String): String {
+        val stripped = href.substringBefore('#').substringBefore('?').trim()
+        return EpubBook.resolvePath(navPath, stripped)
     }
 
     // ---- shared helpers (same style as EpubSpine) --------------------------
