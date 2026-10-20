@@ -48,6 +48,10 @@ android {
             nativeLauncher: nativeShell ? ".shell.NativeShellActivity" : ".MainActivity",
         ]
         buildConfigField "boolean", "NATIVE_SHELL", nativeShell.toString()
+        // Reflow reader: default foliate-js WebView; `-Preader=canvas` rolls
+        // back to ReaderSessionFactory Canvas pagination.
+        def readerEngine = (project.findProperty("reader") ?: "foliate").toString().trim()
+        buildConfigField "String", "READER_ENGINE", "\"${readerEngine}\""
 
         // Restrict the APK to a single ABI when building per-ABI splits
         // (driven by `-PabiFilters=<abi>` from scripts/build-android.js).

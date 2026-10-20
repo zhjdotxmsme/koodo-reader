@@ -25,6 +25,8 @@ data class ReaderFeatureState(
     val fontKey: String = "",
     /** PDF / comic double-page spread. */
     val doublePage: Boolean = false,
+    /** Foliate paginated vs scrolled layout (true = continuous scroll). */
+    val scrolled: Boolean = true,
 )
 
 object ReaderFeatureCodec {
@@ -42,6 +44,7 @@ object ReaderFeatureCodec {
     const val KEY_COLUMNS = "columnsPerPage"
     const val KEY_FONT = "fontKey"
     const val KEY_DOUBLE_PAGE = "doublePage"
+    const val KEY_SCROLLED = "scrolled"
 
     const val FONT_SIZE_DEFAULT = 17f
     const val FONT_SCALE_MIN = 0.7f
@@ -68,6 +71,7 @@ object ReaderFeatureCodec {
         columnsPerPage = intOf(map[KEY_COLUMNS], 1),
         fontKey = map[KEY_FONT].orEmpty(),
         doublePage = boolOf(map[KEY_DOUBLE_PAGE]),
+        scrolled = if (map[KEY_SCROLLED] == null) true else boolOf(map[KEY_SCROLLED]),
     )
 
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
@@ -84,6 +88,7 @@ object ReaderFeatureCodec {
         KEY_COLUMNS to clampedColumns(state).toString(),
         KEY_FONT to state.fontKey,
         KEY_DOUBLE_PAGE to state.doublePage.toString(),
+        KEY_SCROLLED to state.scrolled.toString(),
     )
 
     fun fontSizePx(state: ReaderFeatureState): Float =

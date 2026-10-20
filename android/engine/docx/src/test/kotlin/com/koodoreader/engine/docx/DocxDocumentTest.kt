@@ -68,6 +68,14 @@ class DocxDocumentTest {
     }
 
     @Test
+    fun `htmlFromFile keeps heading and paragraph markup`() {
+        val html = DocxDocument.htmlFromFile(makeDocx("h.docx"))
+        assertTrue(html.contains("<h"), html)
+        assertTrue(html.contains("文档标题"), html)
+        assertTrue(html.contains("<p>"), html)
+    }
+
+    @Test
     fun `core properties supply the title`() {
         val result = DocxDocument.fromFile(makeDocx("b.docx"))
         assertEquals("我的文档 & 副标题", result.title)

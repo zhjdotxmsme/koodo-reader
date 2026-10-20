@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计：Android 重排版引擎对齐 Readest document.ts / style.ts</title>
+<style>
+  :root { --bg:#10141a; --card:#18202b; --line:#263242; --tx:#dce6f2; --dim:#8fa1b8;
+          --acc:#4da3ff; --ok:#3fb950; --warn:#d4a72c; --bad:#f47067; --code-bg:#0c1016;
+          --purple:#c792ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 16px; background:var(--bg); color:var(--tx);
+         font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; line-height:1.35; }
+  h2 { font-size:18px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:15px; margin:22px 0 8px; color:#b9cbe2; }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:18px; line-height:1.8; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:12px 0; }
+  code, pre { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13px; }
+  code { background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; line-height:1.5; }
+  pre code { border:none; background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); font-weight:600; }
+  .tag { display:inline-block; font-size:12px; border-radius:999px; padding:1px 10px; margin-right:6px; white-space:nowrap; }
+  .ok { background:#123d1f; color:var(--ok); } .warn { background:#3d3212; color:var(--warn); }
+  .acc { background:#122c47; color:var(--acc); } .new { background:#2d123d; color:var(--purple); }
+  .bad { background:#40191a; color:var(--bad); }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+  .note { border-left:3px solid var(--acc); padding-left:12px; color:#c3d4e8; }
+  .danger { border-left:3px solid var(--bad); padding-left:12px; color:#f0c9c8; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Android 重排版引擎对齐 Readest<br>
+<span style="font-size:17px;color:var(--dim);font-weight:400">第一期：document.ts + style.ts 进 WebView</span></h1>
+
+<div class="meta">
+  日期 2026-10-20 · 项目 <code>koodo-reader</code> 原生 Android 轨（<code>-Ptarget=native</code>）<br>
+  状态：<span class="tag ok">会话内已确认架构 / 数据流 / 不做项</span>待你过目本规格后写实施计划<br>
+  承接：<code>.openteams/specs/2026-10-20-foliate-reflow-reader-design.html</code>（薄层 <code>engine.mjs</code> 已落地）<br>
+  参照：<a href="https://github.com/readest/readest">readest/readest</a>
+  <code>apps/readest-app/src/libs/document.ts</code>、
+  <code>src/utils/style.ts</code>、
+  <a href="https://github.com/readest/foliate-js">readest/foliate-js</a>（MIT）
+</div>
+
+<h2>0. 范围</h2>
+
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--ok)">第一期做</h3>
+    <ul>
+      <li>把当前 <code>readest/foliate-js</code> 升到跟 Readest 主仓同一提交，替换 <code>assets/foliate/</code> 里那份旧 vendor</li>
+      <li>用 esbuild 打一份无 React 的 <code>readest-engine.mjs</code>：重排版 <code>DocumentLoader</code> + <code>getStyles</code> + 脚注接线</li>
+      <li><code>FoliateHostBridge.setViewSettings</code> 取代薄 <code>setAppearance</code></li>
+      <li>EPUB / MOBI / AZW / AZW3 / FB2 / FBZ / TXT / MD / HTML 族 / DOCX：滚动默认、可切分页、双栏、正式主题、脚注底栏</li>
+      <li>Compose 顶栏 / 目录 / 换肤 / 选区菜单留下，只多「分页/滚动」开关</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--dim)">第一期不做</h3>
+    <ul>
+      <li>PDF 并进 foliate（继续 <code>NativePdfScreen</code> + pdf.js）</li>
+      <li>CBZ / CBT / CB7 / CBR（继续 ComicViewer / 兜底岛）</li>
+      <li>TTS、仿生阅读、竖排 / 注音、对话高亮、eink、自定义背景纹理</li>
+      <li>去掉 <code>-Preader=canvas</code> 回滚</li>
+      <li>桌面 Electron <code>kookit</code>、云同步、插件、把 FoliateViewer React 整页塞进 WebView</li>
+    </ul>
+  </div>
+</div>
+
+<p class="note">这是「完全迁移 Readest 阅读引擎」的<strong>第一子项目</strong>。后续独立 spec：PDF/漫画归一、能力层（TTS/仿生/竖排）。一次 spec 装不下整条链。</p>
+
+<h2>1. 已确认决策</h2>
+<table>
+  <tr><th style="width:44px">#</th><th style="width:160px">决策点</th><th>取值</th></tr>
+  <tr><td>D1</td><td>迁哪一层</td><td><b>引擎本体</b>：foliate-js + Readest 的 document/style（及本期内脚注）。外壳仍是 Compose</td></tr>
+  <tr><td>D2</td><td>第一期切片</td><td><b>重排版对齐</b>，不是格式归一，也不是一口气做完整引擎</td></tr>
+  <tr><td>D3</td><td>接法</td><td><b>打包 Readest TS 进 WebView</b>，不手写第二套 appearanceCss，不嵌 FoliateViewer</td></tr>
+  <tr><td>D4</td><td>布局默认</td><td>Android 上 <code>scrolled = true</code>（对齐 Readest 手机）；外观表提供分页/滚动开关，写入 <code>ReaderFeatureState</code></td></tr>
+  <tr><td>D5</td><td>脚注</td><td>foliate <code>footnote</code> / 内链事件 → <code>onEvent</code> → Compose <code>ModalBottomSheet</code>，不在 iframe 里弹 Readest 浮层</td></tr>
+  <tr><td>D6</td><td>主题</td><td>继续三个 <code>ThemeKind</code> 预设（默认 / 护眼 / 夜间），编成 ViewSettings 颜色 + <code>overrideColor = true</code>，交给 <code>getStyles</code></td></tr>
+  <tr><td>D7</td><td>字号</td><td><code>style.ts</code> 在 android 上会乘 1.25。宿主写入 <code>defaultFontSize = fontSizePx / 1.25</code>，使 iframe 实字号等于现有 <code>ReaderFeatureCodec.fontSizePx</code></td></tr>
+  <tr><td>D8</td><td>回滚</td><td>保留 <code>-Preader=canvas</code> 与 Canvas 会话，第一期不删</td></tr>
+  <tr><td>D9</td><td>许可</td><td>foliate-js MIT，原样 vendor 并更新 <code>VENDOR.txt</code>。从 Readest 打进来的 <code>document.ts</code> / <code>style.ts</code> 是 AGPL-3.0，打包产物头部保留 Readest 版权与 AGPL 提示；Koodo 本身已是 AGPL 轨，不引入更严协议</td></tr>
+  <tr><td>D10</td><td>平台桩</td><td>打包时把 <code>getOSPlatform()</code> 固定为 <code>'android'</code>，去掉 Tauri / Next / Zustand / 云。PDF 分支在打包入口不引用，避免把 pdf.js 再打进这份包</td></tr>
+</table>
+
+<h2>2. 架构</h2>
+
+<div class="card">
+<pre><code>NativeEpubScreen (Compose chrome)
+        │  ThemeKind + ReaderFeatureState
+        ▼
+FoliateHostBridge
+        │  setViewSettings(json) / open / toc / goTo / search
+        │  onEvent: relocate | selection | footnote
+        ▼
+WebView  ← LocalAssetServer  /foliate/*
+        │
+        ├─ index.html
+        ├─ foliate-js view.js / paginator.js / epub.js / mobi.js / fb2.js / footnotes.js
+        └─ readest-engine.mjs   ← esbuild: DocumentLoader(reflow) + getStyles + stubs
+                │
+                ├─ view.open(bookDoc)
+                ├─ renderer.setStyles(getStyles(viewSettings, themeCode))
+                ├─ renderer.setAttribute('flow', scrolled ? 'scrolled' : 'paginated')
+                └─ renderer.setAttribute('max-column-count', n)</code></pre>
+</div>
+
+<p>现有 <code>engine.mjs</code> 的 <code>open / toc / goTo / search / selectedRange / addHighlight</code> 合同保留；<code>setAppearance</code> 变成对 <code>setViewSettings</code> 的兼容委托（只填 bg/fg/fontSize），正式路径不再手写 <code>html, body</code> CSS。TXT 改走 Readest 的「内存 EPUB」而不是自写 <code>splitTxtChapters</code> 包一层 HTML；MD / HTML / DOCX 仍先由 Kotlin 转 HTML 再当 HTML 书打开（Readest 的 <code>document.ts</code> 不解析 DOCX）。</p>
+
+<h2>3. ViewSettings 映射</h2>
+
+<p>不搬运 Readest 上百个字段。第一期宿主只写下面这张表，其余用 Readest 默认值（esbuild 入口提供一份 <code>DEFAULT_VIEW_SETTINGS</code>）。</p>
+
+<table>
+  <tr><th>宿主来源</th><th>ViewSettings 字段</th><th>规则</th></tr>
+  <tr><td><code>ReaderFeatureState.fontScale</code></td><td><code>defaultFontSize</code></td><td><code>fontSizePx / 1.25</code>（D7）</td></tr>
+  <tr><td><code>lineHeightRatio</code></td><td><code>lineHeight</code></td><td>原样，clamp 1…2</td></tr>
+  <tr><td><code>marginHorizontalPx</code></td><td>四边 <code>margin*Px</code></td><td>同一值；负值按 0（paginator padding 不能负）</td></tr>
+  <tr><td><code>columnsPerPage</code></td><td><code>maxColumnCount</code></td><td><code>coerceIn(1, 2)</code>；≥2 即双栏</td></tr>
+  <tr><td>新字段 <code>scrolled</code>（默认 true）</td><td><code>scrolled</code></td><td>外观表开关；改完立刻 <code>setAttribute('flow')</code></td></tr>
+  <tr><td><code>ThemeKind</code> 预设</td><td>themeCode bg/fg + <code>overrideColor=true</code></td><td>夜间 <code>isDarkMode=true</code>；护眼/默认 false。不走 Readest 主题名字符串</td></tr>
+  <tr><td><code>fontKey</code></td><td><code>defaultFont</code></td><td><code>sans-serif</code> / <code>serif</code> / <code>monospace</code> 原样；其它 key 第一期忽略，用 serif 链</td></tr>
+</table>
+
+<p class="note"><code>getStyles</code> 仍是 Readest 那份 1900 行函数，但 eink / 对话高亮 / 用户样式表 / 自定义背景在 DEFAULT 里关掉（<code>isEink=false</code>、<code>dialogueHighlight=false</code>、<code>userStylesheet=''</code>、<code>backgroundTextureId=''</code>），所以这些代码路径第一期不会被打进实际 CSS。</p>
+
+<h2>4. 打开与事件</h2>
+
+<ol>
+  <li><code>assets.publish(file)</code> 得到 loopback URL（与现网相同）。</li>
+  <li>JS <code>open(url, format)</code>：EPUB/MOBI/FB2/TXT 走打包后的 DocumentLoader；MD/HTML/DOCX 仍走现有 HTML 书路径。</li>
+  <li>打开成功后立刻 <code>setViewSettings</code>，再 <code>goTo(resumeCfi)</code>。</li>
+  <li><code>relocate</code> → 进度 CFI（不变）。<code>selection</code> → 现有高亮/词典菜单（不变）。</li>
+  <li>章节里的 footnote / noteref 点击：<code>preventDefault</code> 后 <code>onEvent('footnote', { excerpt, href })</code>，Compose 底栏展示正文；无 excerpt 则 <code>goTo(href)</code>。</li>
+</ol>
+
+<h2>5. 错误处理</h2>
+
+<ul>
+  <li>bootstrap 20s / open 60s 超时保留。失败文案走现有 <code>openError</code>，不把 JS 堆栈抛到 UI。</li>
+  <li><code>setViewSettings</code> 抛错只打 <code>AppLog.e</code>，不关书、不回滚主题选择。</li>
+  <li>DocumentLoader 遇到不支持的格式（PDF 误入）返回明确错误 <code>unsupported format in reflow engine</code>，由 <code>FoliateFormats</code> 路由挡住，不该发生。</li>
+  <li>esbuild 产物缺失或 404：bootstrap 失败，走现有「engine unavailable」。</li>
+</ul>
+
+<h2>6. 测试</h2>
+
+<table>
+  <tr><th>层</th><th>钉什么</th></tr>
+  <tr><td><code>scripts/test-foliate-host.js</code></td><td>夜间 ViewSettings → CSS 含 <code>color-scheme: dark</code> 与 transparent 覆盖；<code>scrolled=false</code> 时 engine 记录 flow=paginated；TXT 打开后 toc 仍是中文章名</td></tr>
+  <tr><td>Kotlin <code>ReadestViewSettingsTest</code></td><td>ThemeKind.NIGHT → isDarkMode；fontScale 1.0 → defaultFontSize 13.6（17/1.25）；columnsPerPage 2 → maxColumnCount 2；margin −8 → 0</td></tr>
+  <tr><td>真机 PKT110</td><td>同一本「何以中国」EPUB：默认滚动可滑；切分页能翻页；双栏在宽屏/横屏生效；夜间/护眼铺满正文；点目录里带注的链接弹出底栏而不是跳走</td></tr>
+</table>
+
+<h2>7. 文件落点（实施时再拆任务）</h2>
+
+<table>
+  <tr><th>路径</th><th>角色</th></tr>
+  <tr><td><code>scripts/bundle-readest-engine.mjs</code></td><td>esbuild 入口：打 <code>assets/foliate/readest-engine.mjs</code>，external 掉 pdf / tauri</td></tr>
+  <tr><td><code>android/app/src/main/assets/foliate/</code></td><td>升级 vendor + 新产物；<code>VENDOR.txt</code> 写提交与许可</td></tr>
+  <tr><td><code>android/.../epubhost/ReadestViewSettings.kt</code></td><td>纯 JVM：ThemeKind + ReaderFeatureState → JSON</td></tr>
+  <tr><td><code>FoliateHostBridge.kt</code></td><td><code>setViewSettings</code>；保留 <code>setAppearance</code> 委托</td></tr>
+  <tr><td><code>ReaderFeatureState</code></td><td>新增 <code>scrolled: Boolean = true</code></td></tr>
+  <tr><td><code>ReaderAppearanceSheet</code></td><td>分页/滚动切换</td></tr>
+  <tr><td><code>NativeEpubScreen</code></td><td>脚注 sheet；打开后改调 setViewSettings</td></tr>
+</table>
+
+<p class="danger">不要在 WebView 里跑 Next/React/Zustand。不要把 Readest 的云、登录、IAP 打进包。不要改桌面 <code>src/</code>。</p>
+
+</div>
+</body>
+</html>

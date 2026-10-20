@@ -12,6 +12,7 @@ import android.webkit.WebView
 import com.koodoreader.engine.pdf.CfiPdfMapper
 import com.koodoreader.engine.pdf.PdfHostBridge
 import com.koodoreader.engine.pdf.PdfLayerAnnotation
+import com.koodoreader.reader.epubhost.FoliateJsResult
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -221,7 +222,7 @@ class PdfJsHostBridge(
             throw RuntimeException("PDF engine JS call '$method' timed out")
         }
         this.pending.remove(callId)
-        if (pending.error != null) throw RuntimeException("PDF engine: ${pending.error}")
+        pending.error?.let { throw RuntimeException("PDF engine: $it") }
         return pending.payload
     }
 
@@ -241,7 +242,7 @@ class PdfJsHostBridge(
         @JavascriptInterface
         fun onResult(callId: String, payload: String, error: String?) {
             val slot = pending[callId] ?: return
-            slot.error = error
+            slot.error = FoliateJsResult.errorOrNull(error)
             slot.payload = payload
             slot.latch.countDown()
         }

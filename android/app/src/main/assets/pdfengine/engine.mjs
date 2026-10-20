@@ -288,7 +288,7 @@ export async function dispatch(engine, callId, method, args, host) {
     try {
         if (METHODS.indexOf(method) < 0) throw new Error('unknown method: ' + method);
         const result = await engine[method].apply(engine, args || []);
-        host.onResult(callId, encodePayload(result), '');
+        host.onResult(callId, encodePayload(result), null);
     } catch (err) {
         host.onResult(callId, '', String((err && err.message) || err));
     }

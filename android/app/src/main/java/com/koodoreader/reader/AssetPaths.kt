@@ -6,9 +6,10 @@ package com.koodoreader.reader
  * Extracted from the server so `:app`'s JVM unit tests can pin them without an
  * `AssetManager`/`Context` (the server itself is Android-only).
  *
- * Why the multi-root part exists: the APK ships two independent asset trees —
- * `assets/webapp` (the React island) and `assets/pdfengine` (the pdf.js host for
- * the native PDF reader, P3). A server rooted at `webapp` used to 404 every
+ * Why the multi-root part exists: the APK ships three independent asset trees —
+ * `assets/webapp` (the React island), `assets/pdfengine` (the pdf.js host for
+ * the native PDF reader, P3), and `assets/foliate` (the visible foliate-js
+ * host for reflowable books). A server rooted at `webapp` used to 404 every
  * `/pdfengine/...` request, so the native reader could never load its engine.
  */
 object AssetPaths {
@@ -16,7 +17,7 @@ object AssetPaths {
     const val INDEX_FILE = "index.html"
 
     /** Asset roots served, in order. First match wins. */
-    val DEFAULT_ROOTS: List<String> = listOf("webapp", "pdfengine")
+    val DEFAULT_ROOTS: List<String> = listOf("webapp", "pdfengine", "foliate")
 
     /**
      * Strip the query string, normalise separators and drop traversal segments.

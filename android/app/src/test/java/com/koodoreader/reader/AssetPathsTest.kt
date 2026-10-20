@@ -32,7 +32,7 @@ class AssetPathsTest {
 
     @Test
     fun `default roots cover the react island and the pdf engine`() {
-        assertEquals(listOf("webapp", "pdfengine"), AssetPaths.DEFAULT_ROOTS)
+        assertEquals(listOf("webapp", "pdfengine", "foliate"), AssetPaths.DEFAULT_ROOTS)
     }
 
     @Test
@@ -96,5 +96,33 @@ class AssetPathsTest {
         assertFalse(AssetPaths.isClientRoute("pdfengine/index.html"))
         assertFalse(AssetPaths.isClientRoute("pdfengine/pdf.mjs"))
         assertFalse(AssetPaths.isClientRoute("assets/icon.png"))
+        assertFalse(AssetPaths.isClientRoute("foliate/index.html"))
+        assertFalse(AssetPaths.isClientRoute("foliate/engine.mjs"))
+    }
+
+    @Test
+    fun `the foliate engine request resolves inside the foliate root`() {
+        val path = AssetPaths.normalize("/foliate/index.html")
+        assertEquals("foliate/index.html", path)
+        val candidates = AssetPaths.candidates(path, AssetPaths.DEFAULT_ROOTS)
+        assertTrue(
+            "bootstrap must hit assets/foliate/index.html",
+            candidates.contains("foliate/index.html"),
+        )
+        assertTrue(
+            "must not double-prefix the foliate root",
+            !candidates.contains("foliate/foliate/index.html"),
+        )
+        for (asset in listOf("engine.mjs", "view.js", "epub.js", "mobi.js")) {
+            val hits = AssetPaths.candidates(AssetPaths.normalize("foliate/$asset"))
+            assertTrue(
+                "$asset must be reachable at assets/foliate/$asset",
+                hits.contains("foliate/$asset"),
+            )
+            assertTrue(
+                "$asset must not resolve under a doubled root",
+                !hits.contains("foliate/foliate/$asset"),
+            )
+        }
     }
 }

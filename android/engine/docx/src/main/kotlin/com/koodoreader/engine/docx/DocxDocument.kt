@@ -41,6 +41,22 @@ object DocxDocument {
         }
     }
 
+    /**
+     * Same zip walk as [fromFile], but keep the HTML so a WebView host can
+     * open DOCX as a single HTML document (foliate-js does not parse OOXML).
+     */
+    fun htmlFromFile(file: File): String {
+        ZipArchives.open(file).use { archive ->
+            val docEntry = archive.entry("word/document.xml")
+                ?: archive.entry("word/document.xml".lowercase())
+                ?: throw IllegalArgumentException(
+                    "DOCX without word/document.xml: ${file.name}",
+                )
+            val xml = archive.readBytes(docEntry.name).toString(Charsets.UTF_8)
+            return toHtml(xml)
+        }
+    }
+
     /** 已解码的 document.xml → 结果（测试与导入期转换共用）。 */
     fun fromXml(documentXml: String, spineIndex: Int = 1): Result =
         Result(blocks = HtmlDocument.blocks(toHtml(documentXml), spineIndex), title = null)

@@ -1,0 +1,1 @@
+export function createFontCSS() { return ''; }

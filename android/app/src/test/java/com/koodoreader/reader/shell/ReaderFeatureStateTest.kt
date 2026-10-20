@@ -28,6 +28,7 @@ class ReaderFeatureStateTest {
         assertEquals(1, s.columnsPerPage)
         assertEquals("", s.fontKey)
         assertFalse(s.doublePage)
+        assertTrue(s.scrolled)
     }
 
     @Test
@@ -68,6 +69,7 @@ class ReaderFeatureStateTest {
             columnsPerPage = 2,
             fontKey = "bundled:inter",
             doublePage = true,
+            scrolled = false,
         )
         val restored = ReaderFeatureCodec.fromMap(ReaderFeatureCodec.toMap(original))
         assertEquals(original.fontScale, restored.fontScale, 0.001f)
@@ -83,6 +85,16 @@ class ReaderFeatureStateTest {
         assertEquals(2, restored.columnsPerPage)
         assertEquals("bundled:inter", restored.fontKey)
         assertTrue(restored.doublePage)
+        assertFalse(restored.scrolled)
+    }
+
+    @Test
+    fun `prefs load whitelist includes every codec toMap key`() {
+        val codecKeys = ReaderFeatureCodec.toMap(ReaderFeatureState()).keys
+        assertTrue(codecKeys.contains(ReaderFeatureCodec.KEY_SCROLLED))
+        assertTrue(codecKeys.contains(ReaderFeatureCodec.KEY_COLUMNS))
+        val missing = codecKeys.filterNot { ReaderFeaturePrefs.KEYS.contains(it) }
+        assertTrue("prefs KEYS missing $missing", missing.isEmpty())
     }
 
     @Test

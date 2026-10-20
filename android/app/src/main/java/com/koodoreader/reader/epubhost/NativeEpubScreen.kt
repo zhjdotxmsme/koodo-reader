@@ -57,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +70,7 @@ import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.core.designsystem.CssColor
 import com.koodoreader.core.ui.theme.ThemeSpecBridge
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -111,9 +113,12 @@ import com.koodoreader.feature.tts.TtsPlaybackState
 import com.koodoreader.reader.shell.AiModelPrefs
 import com.koodoreader.reader.shell.FontManager
 import com.koodoreader.reader.shell.LibraryViewModel
+import com.koodoreader.engine.docx.DocxDocument
 import com.koodoreader.reader.AppLog
+import com.koodoreader.reader.BuildConfig
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.ReaderAssetHost
 import com.koodoreader.reader.shell.ReaderChromeAction
 import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderHrefJump
@@ -129,11 +134,14 @@ import com.koodoreader.reader.translate.AppHttpTransport
 import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.shell.t
 import com.koodoreader.reader.translate.rememberTranslationPopupController
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -161,6 +169,7 @@ fun NativeEpubScreen(
      * Shown by the popup when no API key is configured; null → hide the link.
      */
     onOpenTranslateSettings: (() -> Unit)? = null,
+    assets: ReaderAssetHost = ReaderAssetHost.NONE,
 ) {
     val context = LocalContext.current
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
@@ -198,6 +207,66 @@ fun NativeEpubScreen(
         onDispose { featurePrefs.unregister(listener) }
     }
     val format = book?.format?.lowercase()
+    val useFoliate = ReaderEnginePolicy.useFoliate(format, BuildConfig.READER_ENGINE)
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    var foliateCfi by remember { mutableStateOf("") }
+    var foliateFraction by remember { mutableStateOf(0.0) }
+    var foliateLabel by remember { mutableStateOf("") }
+    var foliateToc by remember { mutableStateOf<List<FoliateHostBridge.TocItem>>(emptyList()) }
+    var foliateReady by remember { mutableStateOf(false) }
+    var foliateSearchHits by remember { mutableStateOf<List<FoliateHostBridge.SearchHit>>(emptyList()) }
+    var selectionExcerpt by remember { mutableStateOf("") }
+    var selectionCfi by remember { mutableStateOf("") }
+    var showSelectionMenu by remember { mutableStateOf(false) }
+    var footnoteText by remember { mutableStateOf<String?>(null) }
+    var pendingFootnoteHref by remember { mutableStateOf<String?>(null) }
+    val foliateBridge = remember(useFoliate, assets.baseUrl, file) {
+        if (!useFoliate || file == null || !assets.available) null
+        else FoliateHostBridge(
+            context = context,
+            baseUrl = assets.baseUrl,
+            eventSink = object : FoliateHostBridge.EventSink {
+                override fun onEvent(name: String, payload: JSONObject) {
+                    when (name) {
+                        "relocate" -> {
+                            val cfi = payload.optString("cfi", "")
+                            val frac = payload.optDouble("fraction", 0.0)
+                            val label = payload.optString("label", "")
+                            mainHandler.post {
+                                foliateCfi = cfi
+                                foliateFraction = frac
+                                if (label.isNotBlank()) foliateLabel = label
+                            }
+                        }
+                        "selection" -> {
+                            val excerpt = payload.optString("excerpt", "")
+                            val cfi = payload.optString("cfi", "")
+                            if (!FoliateSelectionMenu.visible(excerpt)) return
+                            mainHandler.post {
+                                selectionExcerpt = excerpt
+                                selectionCfi = cfi
+                                showSelectionMenu = true
+                            }
+                        }
+                        "footnote" -> {
+                            val excerpt = payload.optString("excerpt", "")
+                            val href = payload.optString("href", "")
+                            mainHandler.post {
+                                when (val decision = FoliateFootnote.decide(excerpt, href)) {
+                                    is FoliateFootnote.Decision.Show -> footnoteText = decision.text
+                                    is FoliateFootnote.Decision.Navigate -> {
+                                        footnoteText = null
+                                        pendingFootnoteHref = decision.href
+                                    }
+                                    FoliateFootnote.Decision.Ignore -> Unit
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        )
+    }
     // 会话按 (文件, 格式, 视口, 字号) 重建：尺寸/字号变化时重新分页。
     //
     // P9-anr (round-2 真机根因): 分页 open 不能跑在主 UI 线程。原实现在
@@ -215,6 +284,7 @@ fun NativeEpubScreen(
     var opening by remember { mutableStateOf(true) }
     var openError by remember { mutableStateOf<String?>(null) }
     var moreMenu by remember { mutableStateOf(false) }
+    var showAppearance by remember { mutableStateOf(false) }
     // openKey 变化（翻页不触发；旋转/字号/换文件触发）→ 重新分页。
     val openKey = Triple(
         file,
@@ -230,6 +300,7 @@ fun NativeEpubScreen(
         ),
     )
     LaunchedEffect(openKey) {
+        if (useFoliate) return@LaunchedEffect
         val (f, vp, rest) = openKey
         val fmt = rest[0] as String?
         if (f == null || vp.width == 0 || vp.height == 0 || fmt == null) {
@@ -278,6 +349,63 @@ fun NativeEpubScreen(
         opening = false
     }
 
+    LaunchedEffect(foliateBridge, file, format, initialCfi, useFoliate) {
+        if (!useFoliate) return@LaunchedEffect
+        if (foliateBridge == null || file == null || format == null) {
+            if (file != null && !assets.available) {
+                openError = "engine unavailable"
+            }
+            opening = false
+            return@LaunchedEffect
+        }
+        opening = true
+        openError = null
+        foliateReady = false
+        val opened = withContext(Dispatchers.IO) {
+            runCatching {
+                val published = if (format == "docx") {
+                    val html = DocxDocument.htmlFromFile(file)
+                    val tmp = File(context.cacheDir, "$bookKey.html")
+                    tmp.writeText(html)
+                    assets.publish(tmp) ?: error("publish failed")
+                } else {
+                    assets.publish(file) ?: error("publish failed")
+                }
+                foliateBridge.bootstrap()
+                foliateBridge.open(published, format)
+                val items = foliateBridge.toc()
+                val resume = initialCfi?.takeIf { it.isNotBlank() }
+                    ?: progressPrefs.cfiOf(bookKey)
+                if (!resume.isNullOrBlank()) foliateBridge.goTo(resume)
+                items
+            }
+        }
+        opened.exceptionOrNull()?.let { err ->
+            AppLog.e("NativeEpub", "foliate open failed: ${file.name}", err)
+            openError = err.message ?: err.javaClass.simpleName
+            foliateToc = emptyList()
+            foliateReady = false
+        }
+        opened.getOrNull()?.let {
+            foliateToc = it
+            foliateReady = true
+        }
+        opening = false
+    }
+    DisposableEffect(foliateBridge, file) {
+        onDispose {
+            foliateBridge?.close()
+            file?.let { assets.release(it) }
+        }
+    }
+    LaunchedEffect(foliateCfi, foliateFraction, useFoliate, book?.key) {
+        if (!useFoliate) return@LaunchedEffect
+        val key = book?.key ?: return@LaunchedEffect
+        if (foliateCfi.isNotBlank()) {
+            progressPrefs.save(key, foliateCfi, foliateFraction)
+        }
+    }
+
     var currentPage by remember { mutableIntStateOf(0) }
     var showChrome by remember { mutableStateOf(true) }
     // 打开恢复：优先用 initialCfi（笔记跳转），否则按上次位置 CFI 落页（无进度 → 第 0 页）。
@@ -312,8 +440,31 @@ fun NativeEpubScreen(
     // readerScope 由 Composition 持有，离开 Composition (Activity finish 或导航离开)
     // 时自动取消 —— 避免 Activity 泄漏与配置变更 (旋转/字号) 时协程错过取消时机。
     val readerScope = rememberCoroutineScope()
+    LaunchedEffect(pendingFootnoteHref) {
+        val href = pendingFootnoteHref ?: return@LaunchedEffect
+        if (href.isBlank()) return@LaunchedEffect
+        withContext(Dispatchers.IO) { runCatching { foliateBridge?.goTo(href) } }
+        pendingFootnoteHref = null
+    }
 
     fun addBookmark() {
+        if (useFoliate) {
+            val cfi = foliateCfi.ifBlank { return }
+            val entity = BookmarkEntity(
+                key = System.currentTimeMillis().toString(),
+                bookKey = bookKey,
+                cfi = cfi,
+                percentage = foliateFraction.toFloat().toString(),
+                chapter = foliateToc.firstOrNull()?.label.orEmpty(),
+            )
+            readerScope.launch {
+                db.bookmarkDao().upsert(entity)
+                bookmarkFlash = true
+                delay(1500)
+                bookmarkFlash = false
+            }
+            return
+        }
         val cfi = session?.cfiForPage(currentPage) ?: return
         val s = session ?: return
         if (s.pageCount <= 0) return
@@ -380,6 +531,14 @@ fun NativeEpubScreen(
     fun doSearch() {
         val q = searchQuery.trim()
         if (q.isEmpty()) return
+        if (useFoliate) {
+            readerScope.launch {
+                foliateSearchHits = withContext(Dispatchers.IO) {
+                    runCatching { foliateBridge?.search(q).orEmpty() }.getOrDefault(emptyList())
+                }
+            }
+            return
+        }
         searchIndex
             ?.search(SearchQuery(bookKey, q))
             ?.take(30)
@@ -392,9 +551,15 @@ fun NativeEpubScreen(
         showSearch = false
     }
 
+    fun jumpToFoliateHit(hit: FoliateHostBridge.SearchHit) {
+        val target = hit.cfi.ifBlank { hit.href }
+        if (target.isBlank()) return
+        readerScope.launch(Dispatchers.IO) { runCatching { foliateBridge?.goTo(target) } }
+        showSearch = false
+    }
+
     // ── 双击选词 + 高亮/笔记 ────────────────────────────────────────────────
     var selectedLine: LayoutLine? by remember { mutableStateOf(null) }
-    var showSelectionMenu by remember { mutableStateOf(false) }
     var imagePreview by remember { mutableStateOf<LayoutLine?>(null) }
     var footnoteBody by remember { mutableStateOf<String?>(null) }
     var showAi by remember { mutableStateOf(false) }
@@ -493,51 +658,85 @@ fun NativeEpubScreen(
     fun isAlreadyHighlighted(line: LayoutLine): Boolean =
         line.blockIndex in highlightBlockColors
 
-    fun saveHighlight(colorIdx: Int = 0) {
-        val line = selectedLine ?: return
-        val s = session ?: return
-        val chapterIdx = (0 until s.chapterCount)
-            .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
-        val cfi = CfiAddressing.toCfi(LayoutPosition(
+    fun currentSelectionCfi(): String {
+        if (selectionCfi.isNotBlank()) return selectionCfi
+        val line = selectedLine ?: return if (useFoliate) foliateCfi else ""
+        return CfiAddressing.toCfi(LayoutPosition(
             line.position.spineIndex,
             line.position.elementIndex,
             line.start,
         ))
+    }
+
+    fun currentSelectionText(): String =
+        selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
+
+    fun highlightCss(color: Long): String = when (color) {
+        0x9988FF88L -> "#88ff88"
+        0x99FFAAFFL -> "#ffaaff"
+        0x99AACCFFL -> "#aaccff"
+        else -> "#ffe066"
+    }
+
+    fun saveHighlight(colorIdx: Int = 0) {
+        val excerpt = currentSelectionText().trim()
+        if (excerpt.isEmpty()) return
         val colors = listOf(0x99FFFFL, 0x9988FF88L, 0x99FFAAFFL, 0x99AACCFFL)
         val color = if (colorIdx < colors.size) colors[colorIdx] else 0x99FFFFL
+        val cfi = currentSelectionCfi()
+        val s = session
+        val chapterIdx = if (s != null) {
+            (0 until s.chapterCount).lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        } else 0
         val entity = NoteEntity(
             key = System.currentTimeMillis().toString(),
             bookKey = bookKey,
-            chapter = s.chapterLabel(chapterIdx),
+            chapter = s?.chapterLabel(chapterIdx) ?: foliateLabel,
             chapterIndex = chapterIdx.toLong(),
-            text = line.text,
+            text = excerpt,
             cfi = cfi,
             notes = "",  // empty = plain highlight
-            percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
+            percentage = if (useFoliate) {
+                foliateFraction.toString()
+            } else {
+                val pages = s?.pageCount ?: 1
+                ((currentPage + 1).toFloat() / (pages + 0.1f)).toString()
+            },
             color = color,
         )
-        readerScope.launch { db.noteDao().upsert(entity) }
+        readerScope.launch {
+            db.noteDao().upsert(entity)
+            if (useFoliate && cfi.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    runCatching { foliateBridge?.addHighlight(cfi, highlightCss(color)) }
+                }
+            }
+        }
         showSelectionMenu = false
     }
 
     fun deleteHighlight() {
-        val line = selectedLine ?: return
-        val cfi = CfiAddressing.toCfi(LayoutPosition(
-            line.position.spineIndex,
-            line.position.elementIndex,
-            line.start,
-        ))
+        val cfi = currentSelectionCfi()
+        if (cfi.isBlank()) {
+            showSelectionMenu = false
+            return
+        }
         readerScope.launch {
             val notes = db.noteDao().observeForBook(bookKey).first()
             val target = notes.firstOrNull { it.cfi == cfi }
             target?.let { db.noteDao().deleteByKey(it.key) }
+            if (useFoliate) {
+                withContext(Dispatchers.IO) {
+                    runCatching { foliateBridge?.removeHighlight(cfi) }
+                }
+            }
             showSelectionMenu = false
         }
     }
 
+    val dictionaryLabel = t("Dictionary")
     fun lookupDictionary() {
-        val line = selectedLine ?: return
-        val word = line.text.trim().takeIf { it.isNotEmpty() } ?: return
+        val word = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
         readerScope.launch {
             val result = withContext(Dispatchers.IO) { dictRepo.lookup(word) }
             val htmlSafe = result.html
@@ -545,7 +744,7 @@ fun NativeEpubScreen(
                 "【${result.entry}】\n" +
                     htmlSafe.replace(Regex("<[^>]+>"), "").replace(Regex("&[a-z]+;"), "·").trim()
             } else {
-                "${t("Dictionary")}: $word"
+                "$dictionaryLabel: $word"
             }
             showDictDialog = true
             showSelectionMenu = false
@@ -553,39 +752,38 @@ fun NativeEpubScreen(
     }
 
     fun startTranslation() {
-        val line = selectedLine ?: return
-        val text = line.text.trim().takeIf { it.isNotEmpty() } ?: return
-        val cfi = CfiAddressing.toCfi(LayoutPosition(
-            line.position.spineIndex,
-            line.position.elementIndex,
-            line.start,
-        ))
+        val text = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
+        val cfi = currentSelectionCfi()
         translateController.show(text, bookKey = bookKey, cfi = cfi)
         showSelectionMenu = false
         readerScope.launch { translateController.translate() }
     }
 
     fun saveNote() {
-        val line = selectedLine ?: return
-        val s = session ?: return
-        // P9-anr (round-3): 用 chapterOf 避免 O(n) 扫描。
-        val chapterIdx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
-                         else (0 until s.chapterCount)
-                             .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
-        val cfi = CfiAddressing.toCfi(LayoutPosition(
-            line.position.spineIndex,
-            line.position.elementIndex,
-            line.start,
-        ))
+        val excerpt = currentSelectionText().trim()
+        if (excerpt.isEmpty()) return
+        val s = session
+        val chapterIdx = when {
+            s is PagedDocumentSession -> s.chapterOf(currentPage)
+            s != null -> (0 until s.chapterCount)
+                .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+            else -> 0
+        }
+        val cfi = currentSelectionCfi()
         val entity = NoteEntity(
             key = System.currentTimeMillis().toString(),
             bookKey = bookKey,
-            chapter = s.chapterLabel(chapterIdx),
+            chapter = s?.chapterLabel(chapterIdx) ?: foliateLabel,
             chapterIndex = chapterIdx.toLong(),
-            text = line.text,
+            text = excerpt,
             cfi = cfi,
             notes = noteText,
-            percentage = ((currentPage + 1).toFloat() / (s.pageCount + 0.1f)).toString(),
+            percentage = if (useFoliate) {
+                foliateFraction.toString()
+            } else {
+                val pages = s?.pageCount ?: 1
+                ((currentPage + 1).toFloat() / (pages + 0.1f)).toString()
+            },
         )
         readerScope.launch { db.noteDao().upsert(entity) }
         showNoteDialog = false
@@ -657,6 +855,12 @@ fun NativeEpubScreen(
             ?: return
         if (line.imageSrc != null) return  // 不选图片行
         selectedLine = line
+        selectionExcerpt = line.text
+        selectionCfi = CfiAddressing.toCfi(LayoutPosition(
+            line.position.spineIndex,
+            line.position.elementIndex,
+            line.start,
+        ))
         showSelectionMenu = true
     }
 
@@ -686,6 +890,31 @@ fun NativeEpubScreen(
     val readerPreset = remember(readerThemeKind) { readerThemeKind.builtInPreset() }
     val bgColor = ThemeSpecBridge.background(readerPreset)
     val fgColor = ThemeSpecBridge.foreground(readerPreset)
+    val viewSettings = remember(
+        readerThemeKind, features.fontScale, features.fontKey,
+        features.lineHeightRatio, features.marginHorizontalPx,
+        features.columnsPerPage, features.scrolled,
+    ) {
+        ReadestViewSettings.from(readerThemeKind, features)
+    }
+    LaunchedEffect(useFoliate, foliateReady, viewSettings) {
+        if (!useFoliate || !foliateReady) return@LaunchedEffect
+        val host = foliateBridge ?: return@LaunchedEffect
+        val bgArgb = CssColor.parse(viewSettings.bg).toInt()
+        withContext(Dispatchers.IO) {
+            runCatching { host.setViewSettings(viewSettings, bgArgb) }
+        }
+    }
+    LaunchedEffect(useFoliate, foliateReady, bookNotes) {
+        if (!useFoliate || !foliateReady) return@LaunchedEffect
+        val host = foliateBridge ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            bookNotes.forEach { note ->
+                val cfi = note.cfi?.takeIf { it.isNotBlank() } ?: return@forEach
+                runCatching { host.addHighlight(cfi, highlightCss(note.color ?: 0x99FFFFL)) }
+            }
+        }
+    }
     val chapterInfo = remember(session, currentPage) {
         session?.let { s ->
             // P9-anr (round-3): 原实现 O(chapters×log pages)（每次 currentPage
@@ -698,8 +927,11 @@ fun NativeEpubScreen(
         } ?: ""
     }
 
+    MaterialTheme(colorScheme = ThemeSpecBridge.readerScheme(readerPreset)) {
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
+        containerColor = bgColor,
+        contentColor = fgColor,
         topBar = {
             if (showChrome) {
                 TopAppBar(
@@ -751,6 +983,15 @@ fun NativeEpubScreen(
                                 expanded = moreMenu,
                                 onDismissRequest = { moreMenu = false },
                             ) {
+                                if (FoliateAppearance.showInReaderSheet(useFoliate)) {
+                                    DropdownMenuItem(
+                                        text = { Text(t("Appearance")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            showAppearance = true
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("A−  ${(fontScale * 100).toInt()}%") },
                                     onClick = { setFontScale(fontScale - 0.1f) },
@@ -773,42 +1014,44 @@ fun NativeEpubScreen(
                                         if (showTtsControl) stopTts() else startTts()
                                     },
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(bionic = !features.bionic))
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable reading ruler")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(ruler = !features.ruler))
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable paragraph mode")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable speed reading")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(speedReading = !features.speedReading))
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Two-column layout")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
-                                        commitFeatures(features.copy(columnsPerPage = next))
-                                    },
-                                )
+                                if (!useFoliate) {
+                                    DropdownMenuItem(
+                                        text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            commitFeatures(features.copy(bionic = !features.bionic))
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(t("Enable reading ruler")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            commitFeatures(features.copy(ruler = !features.ruler))
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(t("Enable paragraph mode")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(t("Enable speed reading")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            commitFeatures(features.copy(speedReading = !features.speedReading))
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(t("Two-column layout")) },
+                                        onClick = {
+                                            moreMenu = false
+                                            val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
+                                            commitFeatures(features.copy(columnsPerPage = next))
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text(t("Ask AI")) },
                                     onClick = {
@@ -823,7 +1066,7 @@ fun NativeEpubScreen(
             }
         },
         bottomBar = {
-            if (showChrome && pageCount > 0) {
+            if (showChrome && (pageCount > 0 || (useFoliate && foliateReady))) {
                 Surface(tonalElevation = 2.dp) {
                     Row(
                         modifier = Modifier
@@ -831,8 +1074,15 @@ fun NativeEpubScreen(
                             .clickable { showToc = true }
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                     ) {
+                        val bar = if (useFoliate) {
+                            val pct = (foliateFraction * 100).toInt().coerceIn(0, 100)
+                            val label = foliateToc.firstOrNull { it.href.isNotBlank() }?.label.orEmpty()
+                            listOf(label, "$pct%").filter { it.isNotBlank() }.joinToString(" · ")
+                        } else {
+                            "$chapterInfo · p ${currentPage + 1}/$pageCount"
+                        }
                         Text(
-                            "$chapterInfo · p ${currentPage + 1}/$pageCount",
+                            bar,
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -854,6 +1104,45 @@ fun NativeEpubScreen(
                 .onSizeChanged { viewport = it },
         ) {
             when {
+                useFoliate && book == null -> Unit
+                useFoliate && file == null -> Text(
+                    "Book file unavailable on device.",
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                )
+                useFoliate && !assets.available -> Text(
+                    "The local reflow engine is unavailable for this book.\n" +
+                        "(book key: $bookKey)\n\n" +
+                        "The loopback asset server must be running.",
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                )
+                useFoliate && openError != null -> Text(
+                    "Could not open this book.\n(${openError})\nImport it again or use the web viewer.",
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                )
+                FoliateReaderLayout.attachWebView(
+                    useFoliate = useFoliate,
+                    hasFile = file != null,
+                    assetsAvailable = assets.available,
+                ) -> Box(Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { foliateBridge?.view ?: android.view.View(it) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (FoliateReaderLayout.showLoadingOverlay(foliateReady, openError)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(Modifier.height(16.dp))
+                                Text(t("Loading"), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                }
                 session == null && viewport == IntSize.Zero -> Unit // 首帧：等尺寸
                 session == null && opening && file != null -> Box(
                     modifier = Modifier.fillMaxSize(),
@@ -992,9 +1281,13 @@ fun NativeEpubScreen(
 
     // ── 选中行菜单（叠在阅读页底部，不能作为 Scaffold 的兄弟节点
     // 被 NavHost 顶到屏幕外） ───────────────────────────────────────────────
-    if (showSelectionMenu && selectedLine != null) {
-        val line = selectedLine!!
-        val highlighted = isAlreadyHighlighted(line)
+    if (showSelectionMenu && FoliateSelectionMenu.visible(currentSelectionText())) {
+        val excerpt = currentSelectionText()
+        val highlighted = selectedLine?.let { isAlreadyHighlighted(it) }
+            ?: FoliateSelectionMenu.highlighted(
+                currentSelectionCfi(),
+                bookNotes.mapNotNull { it.cfi },
+            )
 
         Surface(
             modifier = Modifier
@@ -1008,7 +1301,7 @@ fun NativeEpubScreen(
                     // 已高亮：显示删除 + 字典
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "${t("Highlight")} 「${line.text.take(24)}」",
+                            "${t("Highlight")} 「${excerpt.take(24)}」",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
@@ -1022,7 +1315,7 @@ fun NativeEpubScreen(
                     // 未高亮：高亮(4色) + 笔记 + 字典
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "「${line.text.take(16)}」",
+                            "「${excerpt.take(16)}」",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
@@ -1108,6 +1401,29 @@ fun NativeEpubScreen(
         }
     }
 
+    if (FoliateFootnote.showSheet(footnoteText)) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { footnoteText = null },
+            sheetState = sheetState,
+        ) {
+            Text(
+                text = t("Notes"),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Text(
+                text = footnoteText.orEmpty(),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+            TextButton(onClick = { footnoteText = null }) { Text(t("Close")) }
+        }
+    }
+
     // ── 目录（底部表，和 PDF outline 同一套交互，避免 AlertDialog+TextButton 像超链接）
     if (showToc) {
         val sheetState = rememberModalBottomSheetState()
@@ -1125,23 +1441,52 @@ fun NativeEpubScreen(
                     .fillMaxWidth()
                     .fillMaxHeight(0.8f),
             ) {
-                items(session?.chapterCount ?: 0) { i ->
-                    val label = (session?.chapterLabel(i) ?: "").ifEmpty { "${i + 1}" }
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                session?.let { s -> currentPage = s.pageOfChapter(i) }
-                                showToc = false
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
+                if (useFoliate) {
+                    items(foliateToc) { item ->
+                        val label = item.label.ifEmpty { item.href }.ifEmpty { "·" }
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val target = item.href.ifBlank { item.cfi }
+                                    readerScope.launch(Dispatchers.IO) {
+                                        runCatching { foliateBridge?.goTo(target) }
+                                    }
+                                    showToc = false
+                                }
+                                .padding(
+                                    start = (16 + item.depth * 12).dp,
+                                    end = 16.dp,
+                                    top = 12.dp,
+                                    bottom = 12.dp,
+                                ),
+                        )
+                    }
+                } else {
+                    items(session?.chapterCount ?: 0) { i ->
+                        val label = (session?.chapterLabel(i) ?: "").ifEmpty { "${i + 1}" }
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    session?.let { s -> currentPage = s.pageOfChapter(i) }
+                                    showToc = false
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
                 }
             }
         }
@@ -1255,7 +1600,28 @@ fun NativeEpubScreen(
                         singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
-                    if (searchResults.isEmpty()) {
+                    if (useFoliate && foliateSearchHits.isNotEmpty()) {
+                        Text("${foliateSearchHits.size}", style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.height(4.dp))
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp),
+                        ) {
+                            items(foliateSearchHits) { hit ->
+                                Text(
+                                    hit.excerpt.ifBlank { hit.href },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { jumpToFoliateHit(hit) }
+                                        .padding(vertical = 6.dp),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    } else if (searchResults.isEmpty()) {
                         Text(
                             t("Search in book"),
                             style = MaterialTheme.typography.bodySmall,
@@ -1309,6 +1675,23 @@ fun NativeEpubScreen(
                 TextButton(onClick = { showSearch = false }) { Text(t("Close")) }
             },
         )
+    }
+
+    if (showAppearance) {
+        ReaderAppearanceSheet(
+            selected = readerThemeKind,
+            fontScale = fontScale,
+            lineHeight = ReaderFeatureCodec.clampedLineHeight(features),
+            marginPx = ReaderFeatureCodec.clampedMargin(features),
+            scrolled = features.scrolled,
+            onTheme = { appearancePrefs.readerThemeKind = it },
+            onFontScale = { setFontScale(it) },
+            onLineHeight = { commitFeatures(features.copy(lineHeightRatio = it)) },
+            onMargin = { commitFeatures(features.copy(marginHorizontalPx = it)) },
+            onScrolled = { commitFeatures(features.copy(scrolled = it)) },
+            onDismiss = { showAppearance = false },
+        )
+    }
     }
 }
 

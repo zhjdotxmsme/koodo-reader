@@ -29,8 +29,8 @@ import java.util.concurrent.RejectedExecutionException
  * Features:
  *  - binds to 127.0.0.1 only (never exposed to the network), ephemeral port;
  *  - static assets from `assets/<root>` (see [AssetPaths.DEFAULT_ROOTS]: the
- *    React island under `webapp` plus the pdf.js host under `pdfengine`) with
- *    correct MIME types;
+ *    React island under `webapp`, the pdf.js host under `pdfengine`, and the
+ *    foliate-js host under `foliate`) with correct MIME types;
  *  - single-range `Range: bytes=a-b` support (206) so media/PDF fetches work;
  *  - SPA fallback to `index.html` for extension-less paths;
  *  - virtual paths mapped to real files ([exposeFile]) — used to hand the web
@@ -42,11 +42,11 @@ class LocalAssetServer(
     private val assetRoot: String = "webapp",
     private val threadCount: Int = 4,
     /**
-     * Additional asset roots tried after [assetRoot]. Defaults to
-     * `pdfengine` so a server started for the React island also serves the
-     * native PDF reader's pdf.js host (see [AssetPaths]).
+     * Additional asset roots tried after [assetRoot]. Defaults to every
+     * [AssetPaths.DEFAULT_ROOTS] entry except [assetRoot], so a server started
+     * for the React island also serves pdf.js and foliate-js.
      */
-    extraRoots: List<String> = listOf("pdfengine")
+    extraRoots: List<String> = AssetPaths.DEFAULT_ROOTS.filter { it != assetRoot }
 ) {
 
     /** Roots served from `assets/`, in order. */

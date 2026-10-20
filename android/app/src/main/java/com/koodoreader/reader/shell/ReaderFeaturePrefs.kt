@@ -68,17 +68,8 @@ class ReaderFeaturePrefs(context: Context) {
     companion object {
         const val PREFS_NAME = "reader"
 
-        private val KEYS = listOf(
-            ReaderFeatureCodec.KEY_FONT_SCALE,
-            ReaderFeatureCodec.KEY_LINE_HEIGHT,
-            ReaderFeatureCodec.KEY_MARGIN,
-            ReaderFeatureCodec.KEY_BIONIC,
-            ReaderFeatureCodec.KEY_RULER,
-            ReaderFeatureCodec.KEY_RULER_LINES,
-            ReaderFeatureCodec.KEY_PARAGRAPH,
-            ReaderFeatureCodec.KEY_SPEED,
-            ReaderFeatureCodec.KEY_SPEED_WPM,
-            ReaderFeatureCodec.KEY_TEXT_RULES,
-        )
+        /** Must include every key [ReaderFeatureCodec.toMap] writes, or load() drops it. */
+        internal val KEYS: Set<String> =
+            ReaderFeatureCodec.toMap(ReaderFeatureState()).keys
     }
 }

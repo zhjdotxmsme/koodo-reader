@@ -155,6 +155,7 @@ fun ShellNavHost(
                     bookKey = key,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
+                    assets = assets,
                     onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
                 "CBZ", "CBT", "CB7" -> ComicBookRoute(
@@ -205,6 +206,7 @@ fun ShellNavHost(
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
                     initialCfi = cfi,
+                    assets = assets,
                     onOpenTranslateSettings = { navController.navigate(ShellNav.TRANSLATE) },
                 )
                 "CBZ", "CBT", "CB7" -> ComicBookRoute(

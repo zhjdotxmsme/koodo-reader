@@ -1,0 +1,7 @@
+readest/foliate-js 6d74298546a59a5d64e531ccee1ba0809d967bf4
+https://github.com/readest/foliate-js
+MIT
+readest style.ts (AGPL-3.0) bundled for Android reflow
+source: https://github.com/readest/readest
+foliate-js MIT: see LICENSE in this folder
+TXT: keep engine splitTxtChapters; TxtToEpubConverter not bundled (5 extra modules)

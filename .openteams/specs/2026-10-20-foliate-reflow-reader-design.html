@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计：Android 重排版书改走 Readest / foliate-js</title>
+<style>
+  :root { --bg:#10141a; --card:#18202b; --line:#263242; --tx:#dce6f2; --dim:#8fa1b8;
+          --acc:#4da3ff; --ok:#3fb950; --warn:#d4a72c; --bad:#f47067; --code-bg:#0c1016;
+          --purple:#c792ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 16px; background:var(--bg); color:var(--tx);
+         font:15px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; line-height:1.35; }
+  h2 { font-size:18px; margin:36px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size:15px; margin:22px 0 8px; color:#b9cbe2; }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:18px; line-height:1.8; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:12px 0; }
+  code, pre { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13px; }
+  code { background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  pre { background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; line-height:1.5; }
+  pre code { border:none; background:none; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--code-bg); font-weight:600; }
+  .tag { display:inline-block; font-size:12px; border-radius:999px; padding:1px 10px; margin-right:6px; white-space:nowrap; }
+  .ok { background:#123d1f; color:var(--ok); } .warn { background:#3d3212; color:var(--warn); }
+  .acc { background:#122c47; color:var(--acc); } .new { background:#2d123d; color:var(--purple); }
+  .bad { background:#40191a; color:var(--bad); }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+  .note { border-left:3px solid var(--acc); padding-left:12px; color:#c3d4e8; }
+  .danger { border-left:3px solid var(--bad); padding-left:12px; color:#f0c9c8; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Android 重排版书改走 Readest / foliate-js</h1>
+
+<div class="meta">
+  日期 2026-10-20 · 项目 <code>koodo-reader</code> 原生 Android 轨（<code>-Ptarget=native</code>）<br>
+  状态：<span class="tag ok">用户已确认方向</span>待你过目本规格后写实施计划<br>
+  参照：<a href="https://github.com/readest/readest">readest/readest</a> 的
+  <code>apps/readest-app/src/libs/document.ts</code> +
+  <a href="https://github.com/readest/foliate-js">readest/foliate-js</a>（MIT）<br>
+  承接：<code>.openteams/specs/2026-09-26-android-ui-ux-readest-alignment-design.html</code> 里拆出的「子项目 ④ 文件格式适配」
+</div>
+
+<h2>0. 范围</h2>
+
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--ok)">第一期做</h3>
+    <ul>
+      <li>EPUB / MOBI / AZW / AZW3 / FB2（含 FBZ）/ TXT / MD / HTML 族 / DOCX：用 foliate-js 在<strong>可见 WebView</strong>里渲染</li>
+      <li>保留 CSS 版式、真目录、KF8 HUFF/CDIC</li>
+      <li>Compose 顶栏、底部目录、搜索、进度 CFI、TTS 入口、选词高亮/笔记</li>
+      <li>TXT 按 Readest：先转成内存 EPUB 再交给 foliate</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;color:var(--dim)">第一期不做</h3>
+    <ul>
+      <li>PDF：继续 <code>NativePdfScreen</code> + pdf.js（刚修过主线程 bootstrap）</li>
+      <li>CBZ / CBT / CB7：继续 <code>ComicViewerActivity</code></li>
+      <li>CBR：继续兜底岛（UnRAR / 16KB .so）</li>
+      <li>云同步、桌面插件、OPDS</li>
+      <li>Canvas 增强（仿生阅读 / 阅读尺 / 段落模式 / 速读）：入口先藏，不接到 foliate CSS</li>
+    </ul>
+  </div>
+</div>
+
+<p class="note">导入白名单 <code>BookRules.BOOK_EXTENSIONS</code> 不变。本规格改的是<strong>打开后怎么画</strong>，不是「能导入哪些扩展名」。</p>
+
+<h2>1. 为什么要换引擎</h2>
+
+<div class="card">
+  <p style="margin-top:0">当前原生 EPUB 把 XHTML 经 <code>HtmlFlattener</code> 拉成文本块，再用 Canvas 分页。后果：</p>
+  <ul>
+    <li>书自带 CSS 全部丢掉，版式不像书</li>
+    <li>目录依赖自写 NAV/NCX 解析（v1.0.9 才修好 fragment / 嵌套 navPoint）</li>
+    <li>MOBI 的 HUFF/CDIC 在 Kotlin 解析器里是硬缺口，Calibre 转出来的 AZW3 常打不开</li>
+  </ul>
+  <p>Readest 对同一批格式走 foliate-js：EPUB 当 HTML 文档画（CSS 还在），MOBI/KF8 用它自带的 HUFF 解压，FB2/CBZ/PDF 各有 <code>make*</code>。Android 原生轨已经有 loopback <code>LocalAssetServer</code> + pdf.js WebView 的成功先例，重排版书复用这条宿主模型，渲染面从「隐藏 WebView 出位图」改成「可见 foliate-view」。</p>
+</div>
+
+<h2>2. 格式路由</h2>
+
+<table>
+  <thead>
+    <tr><th>扩展名</th><th>第一期落点</th><th>打开方式（对齐 Readest document.ts）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>epub</td><td>Foliate WebView</td><td>zip loader → <code>new EPUB(loader).init()</code></td></tr>
+    <tr><td>mobi / azw / azw3</td><td>Foliate WebView</td><td><code>isMOBI</code> → <code>new MOBI({ unzlib }).open(file)</code></td></tr>
+    <tr><td>fb2</td><td>Foliate WebView</td><td><code>makeFB2(blob)</code></td></tr>
+    <tr><td>zip 内 .fb2（fbz）</td><td>Foliate WebView</td><td>zip 里找 <code>.fb2</code> 再 <code>makeFB2</code></td></tr>
+    <tr><td>txt</td><td>Foliate WebView</td><td>JS 转 EPUB（Readest <code>TxtToEpubConverter</code> 同算法）再当 EPUB 打开</td></tr>
+    <tr><td>md</td><td>Foliate WebView</td><td>marked 成 HTML，包成单文档 book</td></tr>
+    <tr><td>html / htm / xhtml / xml / mhtml</td><td>Foliate WebView</td><td>当 HTML 文档打开（mhtml 先拆出主资源）</td></tr>
+    <tr><td>docx</td><td>Foliate WebView</td><td>Kotlin 现有 DOCX→HTML 产出临时 HTML，再当 HTML 文档打开。foliate 本身不认 docx</td></tr>
+    <tr><td>pdf</td><td>不变</td><td><code>NativePdfScreen</code></td></tr>
+    <tr><td>cbz / cbt / cb7</td><td>不变</td><td><code>ComicViewerActivity</code></td></tr>
+    <tr><td>cbr</td><td>不变</td><td>兜底岛</td></tr>
+  </tbody>
+</table>
+
+<p class="danger"><code>ReaderSessionFactory</code> 第一期不再为上表 Foliate 行创建 <code>PagedDocumentSession</code>。Canvas 会话类保留，供测试与万一回滚，阅读屏主路径不调用它们。</p>
+
+<h2>3. 架构</h2>
+
+<pre><code>NativeEpubScreen (Compose chrome)
+        │
+        ▼
+ FoliateHostBridge          可见 WebView，主线程 mutate（与 v1.0.9 PDF 同纪律）
+        │  loopback HTTP
+        ▼
+ LocalAssetServer           roots = webapp + pdfengine + foliate
+        │
+        ├── /foliate/index.html + foliate-js + fflate + marked
+        └── /__books__/&lt;key&gt;.epub   已 expose 的书文件
+</code></pre>
+
+<div class="card">
+  <h3 style="margin-top:0">3.1 资源落地</h3>
+  <ul>
+    <li>Vendor <strong>readest/foliate-js</strong>（MIT）到 <code>android/app/src/main/assets/foliate/</code>，固定 commit，LICENSE 一并放入。</li>
+    <li>Vendor <code>fflate</code>（KF8 zlib 字体 / MOBI unzlib）与 TXT 转换、MD 所需的 <code>marked</code> 到同一目录。</li>
+    <li><code>AssetPaths.DEFAULT_ROOTS</code> 增加 <code>foliate</code>。请求 <code>/foliate/index.html</code> 不得再拼成 <code>foliate/foliate/index.html</code>（pdfengine 已踩过的坑，现有单测要加一条对称用例）。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">3.2 FoliateHostBridge</h3>
+  <p>镜像 <code>PdfJsHostBridge</code> 的线程与 ready 契约，但 WebView <strong>铺满内容区</strong>（不是 1×1 位图）。</p>
+  <ul>
+    <li><code>bootstrap()</code>：<code>webView.post { setWebViewClient; loadUrl }</code>，等 <code>host.onEvent('ready')</code>，禁止在 IO 线程碰 WebView。</li>
+    <li><code>open(url, format)</code>：JS 按 §2 分派 foliate loader；失败把 message 回 Kotlin，屏幕 Toast / 错误态。</li>
+    <li><code>goTo(cfi | href | index)</code>、<code>toc()</code>、<code>search(query)</code>、<code>setAppearance({bg,fg,fontSize,fontFamily})</code>。</li>
+    <li><code>relocate</code> 事件 → 当前 CFI + 分数，写入已有 <code>ReaderProgressPrefs</code>。</li>
+    <li>选区：<code>selectedRange()</code> 返回 CFI + 摘录；高亮/笔记写入现有 <code>NoteDao</code>，打开时 <code>addAnnotation</code> 回灌。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">3.3 NativeEpubScreen</h3>
+  <p>判断格式：Foliate 行 → <code>AndroidView(foliate.view)</code> + 现成 Compose 顶栏/目录底表/搜索框/TTS；Canvas / <code>PagedDocumentSession</code> 不再作为这些格式的主路径。</p>
+  <p>目录 UI 沿用 v1.0.9 的 <code>ModalBottomSheet</code>，数据源从 <code>session.chapterLabel</code> 换成 <code>bridge.toc()</code>（foliate 的 nav / ncx / mobi toc）。</p>
+  <p>外观：<code>ShellAppearancePrefs</code> / 阅读设置的字号、行距、边距、主题色，经 <code>setAppearance</code> 注入 foliate（CSS 变量 / <code>renderer.setStyles</code>），不再靠 Canvas Paint。</p>
+</div>
+
+<h2>4. 数据流</h2>
+
+<ol>
+  <li>书库点书 → 已有 <code>ShellNav.reader(bookKey)</code> → <code>NativeEpubScreen</code>。</li>
+  <li>屏幕 <code>ReaderFiles.resolveBookFile</code> → <code>assets.publish(file)</code> 得到 loopback URL。</li>
+  <li>主线程创建 <code>FoliateHostBridge</code>，IO 上只做「等 latch / 等 JS Promise」，所有 WebView API 经 <code>post</code>。</li>
+  <li><code>open(url, format)</code> 成功 → 拉 toc、恢复 CFI（<code>ReaderProgressPrefs.cfiOf</code>）、回灌笔记 CFI。</li>
+  <li>用户翻页 / 滚动 → <code>relocate</code> → 存 CFI。点目录项 → <code>goTo(href)</code>。</li>
+  <li>离开屏幕 → <code>bridge.close()</code> + <code>assets.release(file)</code>。</li>
+</ol>
+
+<h2>5. 错误处理</h2>
+
+<table>
+  <thead><tr><th>失败点</th><th>表现</th></tr></thead>
+  <tbody>
+    <tr><td>AssetServer 没起来</td><td>与 PDF 相同的「引擎不可用」说明页，不空白</td></tr>
+    <tr><td>bootstrap 超时 / 错线程</td><td>明确错误文案（沿用 PDF 的 ready latch，默认 10s）</td></tr>
+    <tr><td>foliate open 抛错（坏 zip、DRM、空文件）</td><td>Toast + 可返回书库；MOBI HUFF 不再是 Kotlin 的「不支持」硬错误</td></tr>
+    <tr><td>TXT 转换失败</td><td>降级：当单文件 HTML（&lt;pre&gt; 包原文）打开，仍能读</td></tr>
+    <tr><td>DOCX 转 HTML 失败</td><td>显示现有 <code>openError</code>，不静默吞掉</td></tr>
+  </tbody>
+</table>
+
+<h2>6. 测试</h2>
+
+<ul>
+  <li><strong>JVM</strong>：<code>AssetPaths</code> 增加 foliate 根。<code>NativeEpubScreen</code> 对 Foliate 行不再调用 <code>ReaderSessionFactory.open</code>；工厂 Canvas 实现保留给 <code>-Preader=canvas</code> 回滚与既有分页单测。</li>
+  <li><strong>JS</strong>：<code>scripts/test-foliate-host.js</code> 对齐 <code>test-pdfengine.js</code>：最小 EPUB / 带 fragment 的 NCX EPUB / 无 HUFF 的 MOBI fixture 能 <code>open</code> + 非空 toc + <code>goTo</code>。</li>
+  <li><strong>真机</strong>：PKT110 上现有那本《前2000年的中原图景》目录显示中文标题且正文有 CSS；再导一本 HUFF AZW3，确认不再报 Kotlin unsupported。</li>
+</ul>
+
+<h2>7. 许可与体积</h2>
+
+<ul>
+  <li>foliate-js MIT、fflate MIT、marked MIT，放入 APK assets 合法；应用本体仍是 AGPL。</li>
+  <li>不引入 Readest 的 Next/Tauri 层，不复制它的云同步代码。</li>
+  <li>体积：foliate-js 本体很小；不把 pdf.js 再拷一份进 foliate（PDF 继续用现成 <code>pdfengine</code>）。</li>
+</ul>
+
+<h2>8. 回滚</h2>
+
+<p>用 Gradle 开关 <code>-Preader=canvas</code>（默认 <code>foliate</code>）切回 <code>ReaderSessionFactory</code> Canvas 路径。开关只影响重排版书；PDF / 漫画 / CBR 不受影响。第一期合入后若真机 HUFF 或 WebView 回归，可按 tag 回退而不拆 PDF 修复。</p>
+
+</div>
+</body>
+</html>
