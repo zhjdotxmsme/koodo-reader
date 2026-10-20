@@ -29,11 +29,13 @@ class I18nState private constructor(
     companion object {
         const val SYSTEM = "system"
         /** Picker choices (subset bundled by ADR-004). */
-        val CHOICES = listOf(SYSTEM, "en", "zh-CN")
+        val CHOICES = listOf(
+            SYSTEM, "en", "zh-CN", "zh-TW", "ja", "ko", "es", "fr", "de", "ru", "pt", "it",
+        )
 
         fun create(context: Context): I18nState {
             val catalogs = HashMap<String, Map<String, String>>()
-            for (code in listOf("en", "zh-CN")) {
+            for (code in CHOICES.filter { it != SYSTEM }) {
                 runCatching {
                     context.assets.open("locales/$code.json").use { input ->
                         catalogs[code] = FlatJson.parse(input.readBytes().decodeToString())

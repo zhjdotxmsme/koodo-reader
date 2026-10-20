@@ -8,22 +8,40 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.koodoreader.engine.image.ViewerSnapshot
+import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.I18nState
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.ReaderProgressMath
+import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.shell.RememberReadingSession
 import com.koodoreader.reader.shell.ShellAppearancePrefs
 import com.koodoreader.reader.shell.darkThemeOf
+import com.koodoreader.reader.shell.t
 import com.koodoreader.engine.image.ArchiveExtractors
 import com.koodoreader.engine.image.ComicPage
 import com.koodoreader.engine.image.ComicViewerModel
@@ -76,6 +94,7 @@ class ComicViewerActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun ComicViewerScreen(file: File, onClose: () -> Unit) {
         val model = remember(file) {
@@ -96,7 +115,28 @@ class ComicViewerActivity : ComponentActivity() {
             }
             return
         }
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        val progressPrefs = remember { ReaderProgressPrefs(this) }
+        val progressKey = file.nameWithoutExtension
+        RememberReadingSession(progressKey)
+        val savedPage = remember(file) {
+            progressPrefs.cfiOf(progressKey)
+                ?.removePrefix("comic:")
+                ?.toIntOrNull()
+                ?: 0
+        }
+        var chrome by remember { mutableStateOf(true) }
+        var snap by remember { mutableStateOf<ViewerSnapshot?>(null) }
+        LaunchedEffect(snap?.spread?.start, model.pageCount) {
+            val page = model.currentIndex
+            if (model.pageCount > 0) {
+                progressPrefs.save(
+                    progressKey,
+                    "comic:$page",
+                    ReaderProgressMath.fraction(page, model.pageCount),
+                )
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize()) {
             ComicViewerHost(
                 model = model,
                 decoder = ComicPageDecoder { page, targetWidth ->
@@ -104,9 +144,31 @@ class ComicViewerActivity : ComponentActivity() {
                 },
                 ioScope = ioScope,
                 modifier = Modifier.fillMaxSize(),
-                onUiToggle = { }, // 工具栏属于后续卡；当前无 chrome 可切换
+                onUiToggle = { chrome = !chrome },
                 onExitRequested = onClose,
+                onSnapshot = { snap = it },
+                initialIndex = savedPage,
             )
+            if (chrome) {
+                TopAppBar(
+                    title = {
+                        val page = (model.currentIndex + 1).coerceAtLeast(1)
+                        Text("${file.nameWithoutExtension} · $page / ${model.pageCount}")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) {
+                            Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+                LinearProgressIndicator(
+                    progress = snap?.progress ?: 0f,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter),
+                )
+            }
         }
     }
 

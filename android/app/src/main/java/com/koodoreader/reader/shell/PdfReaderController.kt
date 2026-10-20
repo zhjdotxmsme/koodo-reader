@@ -39,6 +39,7 @@ data class PdfReaderUiState(
     val pageCount: Int = 0,
     val zoom: Float = 1f,
     val pageImage: ImageBitmap? = null,
+    val companionImage: ImageBitmap? = null,
     val outline: List<OutlineResolver.Row> = emptyList(),
     val outlineLoading: Boolean = false,
     val outlineLoaded: Boolean = false,
@@ -92,6 +93,9 @@ class PdfReaderController(
 
     /** Width in px the page is rendered against, from the layout. */
     private var viewportPx = 0
+
+    /** Two-page spread: also rasterise page+1 into [PdfReaderUiState.companionImage]. */
+    var spread: Boolean = false
 
     private var renderJob: Job? = null
 
@@ -153,9 +157,9 @@ class PdfReaderController(
         requestRender()
     }
 
-    fun nextPage() = goTo(state.page + 1)
+    fun nextPage() = goTo(state.page + if (spread) 2 else 1)
 
-    fun previousPage() = goTo(state.page - 1)
+    fun previousPage() = goTo(state.page - if (spread) 2 else 1)
 
     fun zoomIn() = setZoom(state.zoom * ZOOM_STEP)
 
@@ -179,14 +183,21 @@ class PdfReaderController(
         state = state.copy(rendering = true)
         renderJob?.cancel()
         renderJob = scope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                runCatching { decode(bridge.renderPage(page, target)) }.getOrNull()
+            val (bitmap, companion) = withContext(Dispatchers.IO) {
+                val left = runCatching { decode(bridge.renderPage(page, target)) }.getOrNull()
+                val right = if (spread && page < state.pageCount) {
+                    runCatching { decode(bridge.renderPage(page + 1, target)) }.getOrNull()
+                } else {
+                    null
+                }
+                left to right
             }
             // A newer page/zoom superseded this render while it was in flight.
             if (page != state.page || target != renderedWidth) return@launch
             state = state.copy(
                 rendering = false,
                 pageImage = bitmap ?: state.pageImage,
+                companionImage = companion,
                 error = if (bitmap == null) "render failed (page $page)" else state.error,
             )
         }

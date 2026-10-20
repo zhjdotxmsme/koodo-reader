@@ -1,6 +1,9 @@
 package com.koodoreader.reader.epubhost
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -42,9 +45,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -77,11 +82,15 @@ import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
 import com.koodoreader.reader.shell.ReaderFeatureState
 import com.koodoreader.reader.shell.ReaderTextPipeline
+import com.koodoreader.engine.link.LinkAction
+import com.koodoreader.engine.link.LinkRouter
 import com.koodoreader.engine.toc.ChapterText
 import com.koodoreader.engine.toc.SearchHit
 import com.koodoreader.engine.toc.SearchIndex
 import com.koodoreader.engine.toc.SearchQuery
 import com.koodoreader.feature.dictionary.DictRepository
+import com.koodoreader.feature.translate.AiAssistant
+import com.koodoreader.feature.translate.AiOutcome
 import com.koodoreader.feature.translate.TranslationPopup
 import com.koodoreader.feature.translate.TranslationPopupLabels
 import com.koodoreader.feature.tts.ForegroundTtsService
@@ -94,16 +103,24 @@ import com.koodoreader.feature.tts.TtsMediaCommand
 import com.koodoreader.feature.tts.TtsConfig
 import com.koodoreader.feature.tts.TtsPlaybackSnapshot
 import com.koodoreader.feature.tts.TtsPlaybackState
+import com.koodoreader.reader.shell.AiModelPrefs
+import com.koodoreader.reader.shell.FontManager
 import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.AppLog
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderChromeAction
 import com.koodoreader.reader.shell.ReaderFiles
+import com.koodoreader.reader.shell.ReaderHrefJump
 import com.koodoreader.reader.shell.ReaderPageGesture
 import com.koodoreader.reader.shell.ReaderPageGestures
+import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.shell.ReaderTapKind
+import com.koodoreader.reader.shell.ReaderTapTarget
+import com.koodoreader.reader.shell.RememberReadingSession
 import com.koodoreader.reader.shell.ShellAppearancePrefs
+import com.koodoreader.reader.translate.AppHttpTransport
 import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.shell.t
 import com.koodoreader.reader.translate.rememberTranslationPopupController
@@ -144,6 +161,7 @@ fun NativeEpubScreen(
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
     // 阅读进度（bookKey → 位置 CFI）：非 Room 键值存储，schema.lock 五表保持干净。
     val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
+    RememberReadingSession(bookKey)
     val file = remember(book?.key, book?.path, book?.format) {
         val b = book ?: return@remember null
         ReaderFiles.resolveBookFile(
@@ -202,6 +220,8 @@ fun NativeEpubScreen(
             features.lineHeightRatio,
             features.marginHorizontalPx,
             features.textRulesJson,
+            features.columnsPerPage,
+            features.fontKey,
         ),
     )
     LaunchedEffect(openKey) {
@@ -225,8 +245,12 @@ fun NativeEpubScreen(
                     file = f,
                     viewportWidthPx = vp.width.toFloat(),
                     viewportHeightPx = vp.height.toFloat(),
-                    measurer = AndroidTextMeasurer(density),
+                    measurer = AndroidTextMeasurer(
+                        density,
+                        FontManager.typefaceFor(context, features.fontKey.ifBlank { null }),
+                    ),
                     options = PaginatorOptions(
+                        columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
                         fontSizePx = ReaderFeatureCodec.fontSizePx(features),
                         lineHeightMultiple = ReaderFeatureCodec.clampedLineHeight(features),
                         marginHorizontalPx = margin,
@@ -264,7 +288,11 @@ fun NativeEpubScreen(
     LaunchedEffect(session, currentPage) {
         val key = book?.key ?: return@LaunchedEffect
         val s = session ?: return@LaunchedEffect
-        if (s.pageCount > 0) s.cfiForPage(currentPage)?.let { progressPrefs.save(key, it) }
+        if (s.pageCount > 0) {
+            s.cfiForPage(currentPage)?.let { cfi ->
+                progressPrefs.save(key, cfi, ReaderProgressMath.fraction(currentPage, s.pageCount))
+            }
+        }
     }
 
     val pageCount = session?.pageCount ?: 0
@@ -362,6 +390,12 @@ fun NativeEpubScreen(
     // ── 双击选词 + 高亮/笔记 ────────────────────────────────────────────────
     var selectedLine: LayoutLine? by remember { mutableStateOf(null) }
     var showSelectionMenu by remember { mutableStateOf(false) }
+    var imagePreview by remember { mutableStateOf<LayoutLine?>(null) }
+    var footnoteBody by remember { mutableStateOf<String?>(null) }
+    var showAi by remember { mutableStateOf(false) }
+    var aiQuestion by remember { mutableStateOf("") }
+    var aiAnswer by remember { mutableStateOf("") }
+    var aiBusy by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var noteText by remember { mutableStateOf("") }
     // 字典
@@ -553,6 +587,61 @@ fun NativeEpubScreen(
         noteText = ""
     }
 
+    fun openUri(uri: String) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+        }
+    }
+
+    fun handleLink(href: String) {
+        when (val action = LinkRouter.DEFAULT.route(href)) {
+            is LinkAction.OpenBrowser -> openUri(action.uri)
+            is LinkAction.OpenBrowserIntent -> openUri(action.uri)
+            is LinkAction.InternalJump -> {
+                val s = session ?: return
+                currentPage = s.resumePage(action.sourceHref)
+            }
+            is LinkAction.Footnote -> footnoteBody = action.text
+            LinkAction.None -> {
+                val s = session ?: return
+                val hrefs = (0 until s.chapterCount).map { s.chapterHref(it) }
+                val idx = ReaderHrefJump.chapterIndex(href, hrefs)
+                if (idx != null) currentPage = s.pageOfChapter(idx) else openUri(href)
+            }
+        }
+    }
+
+    fun lookupFootnote(number: Int): String {
+        val s = session ?: return "[$number]"
+        val idx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
+        else (0 until s.chapterCount).lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val text = s.chapterText(idx)
+        val match = Regex("\\[$number\\]\\s*([^\\[]{8,800})").find(text)
+        return match?.groupValues?.getOrNull(1)?.trim() ?: "[$number]"
+    }
+
+    fun runAi(summarize: Boolean) {
+        val s = session ?: return
+        val idx = if (s is PagedDocumentSession) s.chapterOf(currentPage)
+        else (0 until s.chapterCount).lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
+        val excerpt = s.chapterText(idx).take(6_000)
+        val assistant = AiAssistant(AiModelPrefs(context).load(), AppHttpTransport())
+        readerScope.launch {
+            aiBusy = true
+            val out = if (summarize) {
+                assistant.summarize(excerpt)
+            } else {
+                assistant.ask(aiQuestion, excerpt)
+            }
+            aiAnswer = when (out) {
+                is AiOutcome.Success -> out.text
+                AiOutcome.NotConfigured -> "Configure an AI service"
+                is AiOutcome.Failure -> out.detail
+            }
+            aiBusy = false
+        }
+    }
+
     fun selectAt(offset: androidx.compose.ui.geometry.Offset) {
         val s = session ?: return
         val layout = s.layoutResult() ?: return
@@ -703,6 +792,21 @@ fun NativeEpubScreen(
                                         commitFeatures(features.copy(speedReading = !features.speedReading))
                                     },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text(t("Two-column layout")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
+                                        commitFeatures(features.copy(columnsPerPage = next))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Ask AI")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        showAi = true
+                                    },
+                                )
                             }
                         }
                     },
@@ -773,7 +877,7 @@ fun NativeEpubScreen(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(pageCount, currentPage, features.paragraphMode) {
+                            .pointerInput(pageCount, currentPage, features.paragraphMode, session) {
                                 detectTapGestures(
                                     onLongPress = { offset ->
                                         if (ReaderPageGestures.onLongPress() == ReaderPageGesture.SELECT) {
@@ -790,6 +894,32 @@ fun NativeEpubScreen(
                                         showSelectionMenu = false
                                         return@detectTapGestures
                                     }
+                                    val hit = session?.pageLines(currentPage)?.firstOrNull {
+                                        it.containsY(offset.y) && offset.x in it.x..it.rightPx
+                                    }
+                                    if (hit != null) {
+                                        when (
+                                            val kind = ReaderTapTarget.classify(
+                                                hit.imageSrc,
+                                                hit.text,
+                                                hit.linkHref,
+                                            )
+                                        ) {
+                                            is ReaderTapKind.Image -> {
+                                                imagePreview = hit
+                                                return@detectTapGestures
+                                            }
+                                            is ReaderTapKind.Link -> {
+                                                handleLink(kind.href)
+                                                return@detectTapGestures
+                                            }
+                                            is ReaderTapKind.Footnote -> {
+                                                footnoteBody = lookupFootnote(kind.number)
+                                                return@detectTapGestures
+                                            }
+                                            ReaderTapKind.None -> Unit
+                                        }
+                                    }
                                     when (ReaderPageGestures.onTap(offset.x, size.width.toFloat())) {
                                         ReaderPageGesture.PREV_PAGE ->
                                             if (currentPage > 0) currentPage--
@@ -805,6 +935,7 @@ fun NativeEpubScreen(
                         drawRect(color = bgColor)
                         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                         paint.color = fgColor.toArgb()
+                        paint.typeface = FontManager.typefaceFor(context, features.fontKey.ifBlank { null })
                         for (line in lines) {
                             drawLayoutLine(
                                 line,
@@ -1024,6 +1155,73 @@ fun NativeEpubScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showNoteDialog = false }) { Text("取消") }
+            },
+        )
+    }
+
+    imagePreview?.let { preview ->
+        val bmp = pageImages["${preview.position.spineIndex}:${preview.imageSrc}"]
+        AlertDialog(
+            onDismissRequest = { imagePreview = null },
+            title = { Text(t("Image")) },
+            text = {
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = preview.text,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Text(preview.imageSrc.orEmpty())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { imagePreview = null }) { Text(t("Close")) }
+            },
+        )
+    }
+    footnoteBody?.let { body ->
+        AlertDialog(
+            onDismissRequest = { footnoteBody = null },
+            title = { Text(t("Notes")) },
+            text = { Text(body) },
+            confirmButton = {
+                TextButton(onClick = { footnoteBody = null }) { Text(t("Close")) }
+            },
+        )
+    }
+    if (showAi) {
+        AlertDialog(
+            onDismissRequest = { showAi = false },
+            title = { Text(t("Ask AI")) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = aiQuestion,
+                        onValueChange = { aiQuestion = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(t("Ask a question")) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (aiBusy) CircularProgressIndicator()
+                    if (aiAnswer.isNotBlank()) {
+                        Text(
+                            if (aiAnswer == "Configure an AI service") t("Configure an AI service") else aiAnswer,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { runAi(summarize = false) }, enabled = !aiBusy) {
+                    Text(t("Ask AI"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { runAi(summarize = true) }, enabled = !aiBusy) {
+                    Text(t("Summarize this chapter"))
+                }
             },
         )
     }

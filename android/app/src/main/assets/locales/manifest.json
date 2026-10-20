@@ -1,17 +1,62 @@
 {
   "locales": [
     "en",
-    "zh-CN"
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "es",
+    "fr",
+    "de",
+    "ru",
+    "pt",
+    "it"
   ],
   "source": {
     "en": {
-      "keys": 1432,
-      "sha256": "8199e1b54963e19e4002e0d9581ac6eca6935021f78836f12f1e232b3e0f84de"
+      "keys": 1441,
+      "sha256": "b7bf15c8b5522d37e98a602ff0d219fcd516f672592fa981c2d209c1359fdc0f"
     },
     "zh-CN": {
-      "keys": 1441,
-      "sha256": "9beb1c68eb1d36df611ead71d071c5d306318725dcf42cff94914cf35f87f0a8"
+      "keys": 1449,
+      "sha256": "a03c4fd251534fef93f5dff170ce7e70489e396ff9630aa9c9518b0ba9f1a593"
+    },
+    "zh-TW": {
+      "keys": 1328,
+      "sha256": "0ed9f6780a436c0579f374d0c5de108f93102618d2354e3a3ce4ac27c6d8faa3"
+    },
+    "ja": {
+      "keys": 1334,
+      "sha256": "77c979f5fa65cab378a698a18fa2e80db531cc0e196c332be45507bc386d0996"
+    },
+    "ko": {
+      "keys": 1323,
+      "sha256": "d8a879d98e570662da4575eb88f2414769da682c1cb1c9ee20024ebb4fbcc777"
+    },
+    "es": {
+      "keys": 1323,
+      "sha256": "8c4980f44372b4dc50bced71b8d17ca05762e0b6f6faa49a12d7efe6d5732b02"
+    },
+    "fr": {
+      "keys": 1322,
+      "sha256": "16a4ec8edd072af01037b39a2d9a9dfa94189ff2768e63e6785ce3395da4ac61"
+    },
+    "de": {
+      "keys": 1323,
+      "sha256": "3981846d3905b769248edca69a3b10ebd75bfa83fef97e18a68e5ecdc739707f"
+    },
+    "ru": {
+      "keys": 1324,
+      "sha256": "58ba1cdc108fc5707089de251cf4fbed66ff0ab0b10d8f35cece8218f2b3c87c"
+    },
+    "pt": {
+      "keys": 1330,
+      "sha256": "8ffc66c674620b3088bcd0bfd6de0f970d599979a6b589cc24f49b3310c1fddc"
+    },
+    "it": {
+      "keys": 1324,
+      "sha256": "acc77a3cf523593579ffdab1547e86ff8bb1ae71a0423a5c4654f4286bd42c73"
     }
   },
-  "syncedAt": "2026-10-09T14:48:34.872Z"
+  "syncedAt": "2026-10-20T05:00:25.974Z"
 }

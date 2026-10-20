@@ -106,6 +106,9 @@ fun NativePdfScreen(
     val density = LocalDensity.current
     val book by viewModel.book(bookKey).collectAsState(initial = null)
     val scope = rememberCoroutineScope()
+    val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
+    val featurePrefs = remember(context) { ReaderFeaturePrefs(context) }
+    var features by remember { mutableStateOf(featurePrefs.load()) }
 
     // Books live in filesDir/books/<key>.<ext> (ReaderFiles.resolveBookFile);
     // Room's recorded path is authoritative when present.
@@ -139,6 +142,7 @@ fun NativePdfScreen(
         PdfUnavailableScreen(title = book?.name.orEmpty(), bookKey = bookKey, onBack = onBack)
         return
     }
+    RememberReadingSession(bookKey)
 
     val controller = remember(bridge, pdfFile, pdfUrl) {
         PdfReaderController(
@@ -169,7 +173,30 @@ fun NativePdfScreen(
         )
     }
 
-    LaunchedEffect(controller) { controller.open() }
+    LaunchedEffect(controller) {
+        controller.spread = features.doublePage
+        controller.open()
+    }
+    var progressRestored by remember { mutableStateOf(false) }
+    LaunchedEffect(state.pageCount) {
+        if (progressRestored || state.pageCount <= 0) return@LaunchedEffect
+        progressRestored = true
+        progressPrefs.cfiOf(bookKey)
+            ?.let(ReaderProgressMath::pageFromPdfCfi)
+            ?.let { controller.goTo(it) }
+    }
+    LaunchedEffect(state.page, state.pageCount, progressRestored) {
+        if (!progressRestored || state.pageCount <= 0) return@LaunchedEffect
+        progressPrefs.save(
+            bookKey,
+            ReaderProgressMath.pdfCfi(state.page),
+            ReaderProgressMath.fraction(state.page - 1, state.pageCount),
+        )
+    }
+    LaunchedEffect(features.doublePage) {
+        controller.spread = features.doublePage
+        controller.requestRender(force = true)
+    }
     DisposableEffect(controller) {
         onDispose {
             controller.close()
@@ -264,6 +291,15 @@ fun NativePdfScreen(
                                     controller.exportCurrentPage { file -> shareSnapshot(context, file) }
                                 },
                             )
+                            DropdownMenuItem(
+                                text = { Text(t("Double-page view")) },
+                                onClick = {
+                                    moreMenu = false
+                                    val next = features.copy(doublePage = !features.doublePage)
+                                    features = next
+                                    featurePrefs.save(next)
+                                },
+                            )
                         }
                     }
                 },
@@ -318,10 +354,10 @@ fun NativePdfScreen(
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                     state.pageImage?.let { image ->
-                        // Zoom is applied to the drawn width: the raster itself is
-                        // requested at `viewport × zoom`, so the image is sharp.
+                        val spread = features.doublePage && state.companionImage != null
                         val drawnWidth = with(density) {
-                            (containerSize.width * state.zoom).coerceAtLeast(1f).toDp()
+                            val base = if (spread) containerSize.width / 2f else containerSize.width.toFloat()
+                            (base * state.zoom).coerceAtLeast(1f).toDp()
                         }
                         Box(
                             modifier = Modifier
@@ -329,13 +365,30 @@ fun NativePdfScreen(
                                 .verticalScroll(rememberScrollState())
                                 .horizontalScroll(rememberScrollState()),
                         ) {
-                            Image(
-                                bitmap = image,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .width(drawnWidth)
-                                    .align(Alignment.TopCenter),
-                            )
+                            if (spread) {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Image(
+                                        bitmap = image,
+                                        contentDescription = null,
+                                        modifier = Modifier.width(drawnWidth),
+                                    )
+                                    state.companionImage?.let { right ->
+                                        Image(
+                                            bitmap = right,
+                                            contentDescription = null,
+                                            modifier = Modifier.width(drawnWidth),
+                                        )
+                                    }
+                                }
+                            } else {
+                                Image(
+                                    bitmap = image,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .width(drawnWidth)
+                                        .align(Alignment.TopCenter),
+                                )
+                            }
                         }
                     }
                     PagerBar(

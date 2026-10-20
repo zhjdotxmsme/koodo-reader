@@ -19,6 +19,12 @@ data class ReaderFeatureState(
     val speedReading: Boolean = false,
     val speedWpm: Int = 300,
     val textRulesJson: String = "",
+    /** CSS column-count for a page (1 = phone default, 2 = desktop wide). */
+    val columnsPerPage: Int = 1,
+    /** FontManager / FontCatalog key; blank = system default. */
+    val fontKey: String = "",
+    /** PDF / comic double-page spread. */
+    val doublePage: Boolean = false,
 )
 
 object ReaderFeatureCodec {
@@ -33,6 +39,9 @@ object ReaderFeatureCodec {
     const val KEY_SPEED = "speedReading"
     const val KEY_SPEED_WPM = "speedWpm"
     const val KEY_TEXT_RULES = "textRulesJson"
+    const val KEY_COLUMNS = "columnsPerPage"
+    const val KEY_FONT = "fontKey"
+    const val KEY_DOUBLE_PAGE = "doublePage"
 
     const val FONT_SIZE_DEFAULT = 17f
     const val FONT_SCALE_MIN = 0.7f
@@ -56,6 +65,9 @@ object ReaderFeatureCodec {
         speedReading = boolOf(map[KEY_SPEED]),
         speedWpm = intOf(map[KEY_SPEED_WPM], SPEED_WPM_DEFAULT),
         textRulesJson = map[KEY_TEXT_RULES].orEmpty(),
+        columnsPerPage = intOf(map[KEY_COLUMNS], 1),
+        fontKey = map[KEY_FONT].orEmpty(),
+        doublePage = boolOf(map[KEY_DOUBLE_PAGE]),
     )
 
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
@@ -69,6 +81,9 @@ object ReaderFeatureCodec {
         KEY_SPEED to state.speedReading.toString(),
         KEY_SPEED_WPM to state.speedWpm.toString(),
         KEY_TEXT_RULES to state.textRulesJson,
+        KEY_COLUMNS to clampedColumns(state).toString(),
+        KEY_FONT to state.fontKey,
+        KEY_DOUBLE_PAGE to state.doublePage.toString(),
     )
 
     fun fontSizePx(state: ReaderFeatureState): Float =
@@ -82,6 +97,9 @@ object ReaderFeatureCodec {
 
     fun clampedWpm(state: ReaderFeatureState): Int =
         state.speedWpm.coerceIn(SPEED_WPM_MIN, SPEED_WPM_MAX)
+
+    fun clampedColumns(state: ReaderFeatureState): Int =
+        state.columnsPerPage.coerceIn(1, 8)
 
     private fun floatOf(raw: String?, default: Float): Float =
         raw?.toFloatOrNull() ?: default

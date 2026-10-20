@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.SpaceTokens
 
@@ -87,6 +88,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val i18n = LocalI18n.current
+    val context = LocalContext.current
     fun t(key: String) = i18n.localization.t(key)
 
     Column(
@@ -115,6 +117,7 @@ fun SettingsScreen(
                 val idx = I18nState.CHOICES.indexOf(language)
                 val next = I18nState.CHOICES[(idx + 1) % I18nState.CHOICES.size]
                 i18n.setLanguage(next)
+                LibraryPrefs(context).language = next
                 // Keep 简繁 AUTO mode in step with the reader language.
                 com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(next)
             },

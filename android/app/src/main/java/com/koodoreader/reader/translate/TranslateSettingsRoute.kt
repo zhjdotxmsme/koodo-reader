@@ -45,6 +45,8 @@ import com.koodoreader.feature.translate.ProviderCredentials
 import com.koodoreader.feature.translate.ProviderSelector
 import com.koodoreader.feature.translate.TranslationProvider
 import com.koodoreader.feature.translate.TranslationSourceId
+import com.koodoreader.feature.translate.AiModelConfig
+import com.koodoreader.reader.shell.AiModelPrefs
 import com.koodoreader.reader.shell.t
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -168,6 +170,10 @@ fun TranslateSettingsRoute(onBack: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            AiAssistantCard()
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -270,4 +276,60 @@ private fun ProviderField(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+private fun AiAssistantCard() {
+    val context = LocalContext.current
+    val prefs = remember { AiModelPrefs(context) }
+    val stored = remember { prefs.load() }
+    var endpoint by remember { mutableStateOf(stored.endpoint) }
+    var modelId by remember { mutableStateOf(stored.modelId) }
+    var apiKey by remember { mutableStateOf("") }
+    var savedFlash by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    Text(t("AI assistant"), style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = endpoint,
+        onValueChange = { endpoint = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(t("AI endpoint")) },
+        singleLine = true,
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = modelId,
+        onValueChange = { modelId = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(t("AI model")) },
+        singleLine = true,
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = apiKey,
+        onValueChange = { apiKey = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(t("API key")) },
+        visualTransformation = PasswordVisualTransformation(),
+        singleLine = true,
+        placeholder = { Text(if (stored.apiKey.isNotBlank()) "***" else "") },
+    )
+    Spacer(Modifier.height(8.dp))
+    Button(
+        onClick = {
+            prefs.save(
+                AiModelConfig(
+                    endpoint = endpoint,
+                    apiKey = apiKey.ifBlank { stored.apiKey },
+                    modelId = modelId,
+                ),
+            )
+            scope.launch {
+                savedFlash = true
+                delay(1500)
+                savedFlash = false
+            }
+        },
+    ) { Text(if (savedFlash) t("Saved") else t("Save")) }
 }

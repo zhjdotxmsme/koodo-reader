@@ -93,6 +93,8 @@ data class LayoutLine(
      * alt text or be empty. Renderers should draw the image here.
      */
     val imageSrc: String? = null,
+    /** First `<a href>` of the source block; null when the line is not a link. */
+    val linkHref: String? = null,
 ) {
     /** The length in characters. */
     val length: Int get() = end - start

@@ -33,7 +33,9 @@ const VERBOSE = process.argv.includes('--verbose');
 const CHECK = process.argv.includes('--check');
 
 // Bundled subset — keep aligned with ADR-004.
-const ANDROID_LOCALES = ['en', 'zh-CN'];
+const ANDROID_LOCALES = [
+  'en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'pt', 'it',
+];
 
 function fail(msg) {
   console.error(`[sync-locales-android] ${msg}`);

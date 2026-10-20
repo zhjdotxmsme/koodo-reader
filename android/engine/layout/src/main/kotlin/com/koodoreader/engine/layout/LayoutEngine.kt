@@ -44,6 +44,7 @@ private data class ShapedLine(
     val forced: Boolean,
     /** Carried from [TextBlock.imageSrc]; null for text-only lines. */
     val imageSrc: String? = null,
+    val linkHref: String? = null,
 )
 
 /**
@@ -169,6 +170,7 @@ class LayoutEngine(
                         wordGaps = sl.wordGaps,
                         forced = sl.forced,
                         imageSrc = sl.imageSrc,
+                        linkHref = sl.linkHref,
                     ),
                 )
                 yy += sl.heightPx
@@ -374,6 +376,7 @@ class LayoutEngine(
                     wordGaps = 0,
                     forced = false,
                     imageSrc = block.imageSrc,
+                    linkHref = block.linkHref,
                 ),
             )
         }
@@ -418,6 +421,7 @@ class LayoutEngine(
                         baselinePx = baseline,
                         wordGaps = text.substring(start, trimmedEnd).count { isCollapsibleWhitespace(it) },
                         forced = forced,
+                        linkHref = block.linkHref,
                     ),
                 )
                 start = trimmedEnd

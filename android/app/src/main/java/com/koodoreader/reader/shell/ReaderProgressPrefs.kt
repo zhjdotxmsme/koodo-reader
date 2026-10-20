@@ -28,10 +28,38 @@ class ReaderProgressPrefs(context: Context) {
         sp.edit().putString(key(bookKey), cfi).apply()
     }
 
+    fun save(bookKey: String, cfi: String, fraction: Double) {
+        if (bookKey.isBlank() || cfi.isBlank()) return
+        sp.edit()
+            .putString(key(bookKey), cfi)
+            .putString(fracKey(bookKey), fraction.coerceIn(0.0, 1.0).toString())
+            .apply()
+    }
+
+    fun fractionOf(bookKey: String): Double =
+        sp.getString(fracKey(bookKey), null)?.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 0.0
+
+    /** bookKey → 0..1, for the /stats `progressByBook` fold. */
+    fun allFractions(): Map<String, Double> {
+        val out = LinkedHashMap<String, Double>()
+        sp.all.forEach { (k, v) ->
+            if (!k.startsWith(FRAC_PREFIX)) return@forEach
+            val frac = (v as? String)?.toDoubleOrNull() ?: return@forEach
+            out[k.removePrefix(FRAC_PREFIX)] = frac.coerceIn(0.0, 1.0)
+        }
+        return out
+    }
+
     /** 清除某本书的进度（删除书籍/清除数据时）。 */
     fun clear(bookKey: String) {
-        sp.edit().remove(key(bookKey)).apply()
+        sp.edit().remove(key(bookKey)).remove(fracKey(bookKey)).apply()
     }
 
     private fun key(bookKey: String): String = "cfi:$bookKey"
+
+    private fun fracKey(bookKey: String): String = FRAC_PREFIX + bookKey
+
+    private companion object {
+        const val FRAC_PREFIX = "frac:"
+    }
 }

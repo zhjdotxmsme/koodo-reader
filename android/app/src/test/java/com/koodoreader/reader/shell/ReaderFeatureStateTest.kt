@@ -25,6 +25,9 @@ class ReaderFeatureStateTest {
         assertFalse(s.speedReading)
         assertEquals(300, s.speedWpm)
         assertTrue(s.textRulesJson.isEmpty())
+        assertEquals(1, s.columnsPerPage)
+        assertEquals("", s.fontKey)
+        assertFalse(s.doublePage)
     }
 
     @Test
@@ -62,6 +65,9 @@ class ReaderFeatureStateTest {
             speedReading = true,
             speedWpm = 450,
             textRulesJson = """[{"id":"1","pattern":"foo","replacement":"bar"}]""",
+            columnsPerPage = 2,
+            fontKey = "bundled:inter",
+            doublePage = true,
         )
         val restored = ReaderFeatureCodec.fromMap(ReaderFeatureCodec.toMap(original))
         assertEquals(original.fontScale, restored.fontScale, 0.001f)
@@ -74,5 +80,15 @@ class ReaderFeatureStateTest {
         assertTrue(restored.speedReading)
         assertEquals(450, restored.speedWpm)
         assertTrue(restored.textRulesJson.contains("foo"))
+        assertEquals(2, restored.columnsPerPage)
+        assertEquals("bundled:inter", restored.fontKey)
+        assertTrue(restored.doublePage)
+    }
+
+    @Test
+    fun `columns per page clamp to the paginator range`() {
+        assertEquals(1, ReaderFeatureCodec.clampedColumns(ReaderFeatureState(columnsPerPage = 0)))
+        assertEquals(2, ReaderFeatureCodec.clampedColumns(ReaderFeatureState(columnsPerPage = 2)))
+        assertEquals(8, ReaderFeatureCodec.clampedColumns(ReaderFeatureState(columnsPerPage = 99)))
     }
 }

@@ -143,6 +143,19 @@ object LibraryLogic {
     fun visibleKeys(books: List<SortableBook>, trashed: Set<String>): List<SortableBook> =
         books.filter { it.key !in trashed }
 
+    /** Title / author / format contains [query] (blank query = keep all). */
+    fun matchesQuery(book: SortableBook, query: String): Boolean {
+        val q = query.trim()
+        if (q.isEmpty()) return true
+        val needle = q.lowercase()
+        return listOfNotNull(book.name, book.author, book.format).any {
+            it.lowercase().contains(needle)
+        }
+    }
+
+    fun filterByQuery(books: List<SortableBook>, query: String): List<SortableBook> =
+        books.filter { matchesQuery(it, query) }
+
     // ------------------------------------------------------------ internal
 
     private fun List<SortableBook>.asSortingBase(): List<SortableBook> =

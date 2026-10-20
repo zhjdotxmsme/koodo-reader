@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import com.koodoreader.engine.image.ComicPage
 import com.koodoreader.engine.image.ComicViewerModel
+import com.koodoreader.engine.image.ViewerSnapshot
 import com.koodoreader.engine.image.ContentSize
 import com.koodoreader.engine.image.Viewport
 import com.koodoreader.engine.image.ZoomPan
@@ -74,8 +75,11 @@ fun ComicViewerHost(
     modifier: Modifier = Modifier,
     onUiToggle: () -> Unit = {},
     onExitRequested: () -> Unit = {},
+    onSnapshot: (ViewerSnapshot) -> Unit = {},
+    initialIndex: Int = 0,
 ) {
-    var snapshot by remember { mutableStateOf(model.open(0)) }
+    var snapshot by remember { mutableStateOf(model.open(initialIndex)) }
+    LaunchedEffect(snapshot) { onSnapshot(snapshot) }
     var zoom by remember { mutableStateOf(ZoomPanState.FIT) }
     var viewport by remember { mutableStateOf(Viewport(0f, 0f)) }
 

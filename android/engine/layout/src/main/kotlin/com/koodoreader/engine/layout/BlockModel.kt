@@ -78,6 +78,11 @@ data class TextBlock(
      * (may be empty). When null, this is a plain text block.
      */
     val imageSrc: String? = null,
+    /**
+     * First `<a href>` inside this block (relative or absolute). Null when
+     * the block has no link. Renderers use it for tap-to-follow.
+     */
+    val linkHref: String? = null,
 ) {
     init {
         require(elementIndex >= 0) { "elementIndex must be >= 0 (was $elementIndex)" }
@@ -120,9 +125,10 @@ data class TextBlock(
             elementId: String? = null,
             style: ParagraphStyle = ParagraphStyle.DEFAULT,
             imageSrc: String? = null,
+            linkHref: String? = null,
         ): TextBlock {
             val (collapsed, offsets) = collapse(text)
-            return TextBlock(collapsed, style, elementIndex, elementId, offsets, imageSrc)
+            return TextBlock(collapsed, style, elementIndex, elementId, offsets, imageSrc, linkHref)
         }
 
         /**

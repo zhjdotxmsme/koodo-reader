@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +58,14 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
         ReaderTextPipeline.setRulesJson(next.textRulesJson)
     }
 
+    val fontPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val item = FontManager.importFont(context, uri) ?: return@rememberLauncherForActivityResult
+        commit(state.copy(fontKey = item.id))
+    }
+
     val rules = remember(state.textRulesJson) {
         if (state.textRulesJson.isBlank()) emptyList()
         else TextRuleJson.importRules(state.textRulesJson).rules
@@ -92,6 +102,35 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 onValueChange = { commit(state.copy(fontScale = it)) },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
                 steps = 27,
+            )
+
+            Text(t("Font"), style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { commit(state.copy(fontKey = "")) }) {
+                Text(t("Built-in font") + if (state.fontKey.isBlank()) " ✓" else "")
+            }
+            FontCatalog.bundled.forEach { font ->
+                TextButton(onClick = { commit(state.copy(fontKey = font.key)) }) {
+                    Text(font.label + if (state.fontKey == font.key) " ✓" else "")
+                }
+            }
+            FontManager.installedCustom(context).forEach { item ->
+                TextButton(onClick = { commit(state.copy(fontKey = item.id)) }) {
+                    Text(item.label + if (state.fontKey == item.id) " ✓" else "")
+                }
+            }
+            TextButton(onClick = { fontPicker.launch(arrayOf("font/ttf", "font/otf", "*/*")) }) {
+                Text(t("Import local font"))
+            }
+
+            FeatureSwitch(
+                title = t("Two-column layout"),
+                checked = ReaderFeatureCodec.clampedColumns(state) >= 2,
+                onChecked = { on -> commit(state.copy(columnsPerPage = if (on) 2 else 1)) },
+            )
+            FeatureSwitch(
+                title = t("Double-page view"),
+                checked = state.doublePage,
+                onChecked = { commit(state.copy(doublePage = it)) },
             )
 
             Text(

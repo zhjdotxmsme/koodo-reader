@@ -68,6 +68,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
         var lastIndex = 0
         var lastId: String? = null
         var lastStyle = ParagraphStyle.DEFAULT
+        var currentLinkHref: String? = null
 
         fun flush() {
             val pending = open ?: return
@@ -80,6 +81,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
                     elementIndex = pending.elementIndex,
                     elementId = pending.elementId,
                     style = pending.style,
+                    linkHref = pending.linkHref,
                 ),
             )
         }
@@ -108,12 +110,18 @@ class DefaultHtmlFlattener : HtmlFlattener {
                     val pending = open
                     if (pending != null) {
                         pending.raw.append(HtmlTokenizer.decodeEntities(token.raw))
+                        if (pending.linkHref == null && currentLinkHref != null) {
+                            pending.linkHref = currentLinkHref
+                        }
                     } else if (token.raw.isNotBlank()) {
                         // Orphan text (before any block / after a stray
                         // close): degrade to a linear block with the last
                         // block element's identity.
                         startBlock(lastIndex, lastId, lastStyle)
                         open?.raw?.append(HtmlTokenizer.decodeEntities(token.raw))
+                        if (open?.linkHref == null && currentLinkHref != null) {
+                            open?.linkHref = currentLinkHref
+                        }
                     }
                 }
 
@@ -165,6 +173,10 @@ class DefaultHtmlFlattener : HtmlFlattener {
                         lastId = id
                         lastStyle = style
                     }
+                    if (name == "a") {
+                        val href = token.attrs["href"]?.trim().orEmpty()
+                        if (href.isNotEmpty()) currentLinkHref = href
+                    }
                     // Inline / container elements: keep scanning; their text
                     // lands in the current (or next) block.
                     if (token.selfClosing) depth-- // <div/> — no scope held
@@ -176,6 +188,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
                         if (name == skipping) skipping = null
                         continue
                     }
+                    if (name == "a") currentLinkHref = null
                     if (name in BLOCK_ELEMENTS || name in CONTAINER_ELEMENTS) {
                         flush()
                     }
@@ -198,6 +211,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
         val style: ParagraphStyle,
     ) {
         val raw = StringBuilder()
+        var linkHref: String? = null
     }
 
     companion object {

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.koodoreader.core.common.ShelfLogic
 import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookEntity
@@ -55,6 +56,9 @@ data class ShelfUiState(
     val trashed: Set<String> = emptySet(),
     val manualOrder: List<String> = emptyList(),
     val favoritesOnly: Boolean = false,
+    val searchQuery: String = "",
+    val shelves: Map<String, List<String>> = emptyMap(),
+    val activeShelf: String? = null,
 )
 
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
@@ -78,6 +82,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             favorites = prefs.favorites(),
             trashed = prefs.trashed(),
             manualOrder = prefs.manualOrder(),
+            shelves = prefs.shelves(),
         ),
     )
     val shelf: StateFlow<ShelfUiState> = _shelf
@@ -90,7 +95,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val visible = LibraryLogic.visibleKeys(sortable, s.trashed)
             var keys = LibraryLogic.sortedKeys(visible, s.sort, s.manualOrder)
             if (s.favoritesOnly) keys = keys.filter { it in s.favorites }
-            keys.mapNotNull { byKey[it] }
+            val shelfKeys = s.activeShelf?.let { s.shelves[it]?.toSet() }
+            if (shelfKeys != null) keys = keys.filter { it in shelfKeys }
+            val entities = keys.mapNotNull { byKey[it] }
+            val matched = LibraryLogic.filterByQuery(
+                entities.map { SortableBook(it.key, it.name, it.author, it.format) },
+                s.searchQuery,
+            ).map { it.key }.toSet()
+            entities.filter { it.key in matched }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 回收站视图：trashed 集合内的书（按加入时间倒序近似 = key 倒序）。 */
@@ -115,6 +127,30 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun setViewGrid(grid: Boolean) = updateShelf { it.copy(viewGrid = grid) }
 
     fun setFavoritesOnly(only: Boolean) = updateShelf { it.copy(favoritesOnly = only) }
+
+    fun setSearchQuery(query: String) = updateShelf { it.copy(searchQuery = query) }
+
+    fun setActiveShelf(title: String?) = updateShelf { it.copy(activeShelf = title) }
+
+    fun createShelf(title: String) {
+        val c = ShelfLogic.create(_shelf.value.shelves, title)
+        prefs.setShelves(c.shelves)
+        updateShelf { it.copy(shelves = c.shelves, activeShelf = title.trim().ifEmpty { it.activeShelf }) }
+    }
+
+    fun deleteActiveShelf() {
+        val title = _shelf.value.activeShelf ?: return
+        val c = ShelfLogic.delete(_shelf.value.shelves, title)
+        prefs.setShelves(c.shelves)
+        updateShelf { it.copy(shelves = c.shelves, activeShelf = null) }
+    }
+
+    fun addToShelf(title: String, bookKey: String) {
+        val created = ShelfLogic.create(_shelf.value.shelves, title)
+        val c = ShelfLogic.addBooks(created.shelves, title, listOf(bookKey))
+        prefs.setShelves(c.shelves)
+        updateShelf { it.copy(shelves = c.shelves) }
+    }
 
     /** 收藏/取消收藏；收藏同时把书从回收站恢复（桌面 parity）。 */
     fun toggleFavorite(key: String) = updateShelf {

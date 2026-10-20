@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,15 +19,20 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -69,6 +75,9 @@ fun LibraryScreen(
     val coverVersion = (importState as? ImportState.Finished)?.hashCode() ?: 0
     var menuOpen by remember { mutableStateOf(false) }
     var importMenuOpen by remember { mutableStateOf(false) }
+    var newShelfOpen by remember { mutableStateOf(false) }
+    var newShelfTitle by remember { mutableStateOf("") }
+    var shelfPickKey by remember { mutableStateOf<String?>(null) }
 
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
@@ -160,6 +169,16 @@ fun LibraryScreen(
                                 text = { Text(if (shelf.favoritesOnly) t("Show all books") else t("Show favorites")) },
                                 onClick = { viewModel.setFavoritesOnly(!shelf.favoritesOnly); menuOpen = false },
                             )
+                            DropdownMenuItem(
+                                text = { Text(t("New shelf")) },
+                                onClick = { menuOpen = false; newShelfOpen = true },
+                            )
+                            if (shelf.activeShelf != null) {
+                                DropdownMenuItem(
+                                    text = { Text(t("Delete")) },
+                                    onClick = { viewModel.deleteActiveShelf(); menuOpen = false },
+                                )
+                            }
                         }
                     }
                 },
@@ -167,6 +186,35 @@ fun LibraryScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            OutlinedTextField(
+                value = shelf.searchQuery,
+                onValueChange = viewModel::setSearchQuery,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                singleLine = true,
+                label = { Text(t("Search")) },
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = shelf.activeShelf == null,
+                    onClick = { viewModel.setActiveShelf(null) },
+                    label = { Text(t("All books")) },
+                )
+                shelf.shelves.keys.forEach { title ->
+                    FilterChip(
+                        selected = shelf.activeShelf == title,
+                        onClick = { viewModel.setActiveShelf(title) },
+                        label = { Text(title) },
+                    )
+                }
+            }
             val running = importState as? ImportState.Running
             if (running != null && running.total > 0) {
                 LinearProgressIndicator(
@@ -193,6 +241,7 @@ fun LibraryScreen(
                             isFavorite = book.key in shelf.favorites,
                             onToggleFavorite = { viewModel.toggleFavorite(book.key) },
                             onMoveToTrash = { viewModel.moveToTrash(book.key) },
+                            onAddToShelf = { shelfPickKey = book.key },
                             onClick = { onOpenBook(book.key) },
                             modifier = Modifier.pointerInput(book.key) {
                                 detectDragGesturesAfterLongPress(
@@ -238,6 +287,65 @@ fun LibraryScreen(
             }
         }
     }
+    if (newShelfOpen) {
+        AlertDialog(
+            onDismissRequest = { newShelfOpen = false },
+            title = { Text(t("New shelf")) },
+            text = {
+                OutlinedTextField(
+                    value = newShelfTitle,
+                    onValueChange = { newShelfTitle = it },
+                    singleLine = true,
+                    label = { Text(t("Shelf")) },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val title = newShelfTitle.trim()
+                        if (title.isNotEmpty()) viewModel.createShelf(title)
+                        newShelfTitle = ""
+                        newShelfOpen = false
+                    },
+                ) { Text(t("Confirm")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { newShelfOpen = false }) { Text(t("Cancel")) }
+            },
+        )
+    }
+    val pickKey = shelfPickKey
+    if (pickKey != null) {
+        AlertDialog(
+            onDismissRequest = { shelfPickKey = null },
+            title = { Text(t("Add to shelf")) },
+            text = {
+                Column {
+                    if (shelf.shelves.isEmpty()) {
+                        Text(t("New shelf"))
+                    }
+                    shelf.shelves.keys.forEach { title ->
+                        TextButton(
+                            onClick = {
+                                viewModel.addToShelf(title, pickKey)
+                                shelfPickKey = null
+                            },
+                        ) { Text(title) }
+                    }
+                    TextButton(
+                        onClick = {
+                            shelfPickKey = null
+                            newShelfOpen = true
+                        },
+                    ) { Text(t("New shelf")) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { shelfPickKey = null }) { Text(t("Cancel")) }
+            },
+        )
+    }
 }
 
 @Composable
@@ -261,5 +369,14 @@ internal fun languageLabel(code: String): String = when (code) {
     I18nState.SYSTEM -> "System"
     "en" -> "English"
     "zh-CN" -> "中文"
+    "zh-TW" -> "繁體中文"
+    "ja" -> "日本語"
+    "ko" -> "한국어"
+    "es" -> "Español"
+    "fr" -> "Français"
+    "de" -> "Deutsch"
+    "ru" -> "Русский"
+    "pt" -> "Português"
+    "it" -> "Italiano"
     else -> code
 }

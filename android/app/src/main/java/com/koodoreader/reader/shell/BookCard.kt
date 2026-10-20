@@ -59,6 +59,7 @@ fun BookCard(
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     onMoveToTrash: () -> Unit = {},
+    onAddToShelf: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -82,6 +83,10 @@ fun BookCard(
                 DropdownMenuItem(
                     text = { Text(t("Move to trash")) },
                     onClick = { onMoveToTrash(); menuOpen = false },
+                )
+                DropdownMenuItem(
+                    text = { Text(t("Add to shelf")) },
+                    onClick = { onAddToShelf(); menuOpen = false },
                 )
             }
         },

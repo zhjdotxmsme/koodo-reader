@@ -57,7 +57,7 @@ fun StatsRoute(
                 StatsViewModel(
                     repository = ReadingSessionWiring.repository(app),
                     booksReadProvider = { db.bookDao().count().toInt() },
-                    progressProvider = { emptyMap() },
+                    progressProvider = { ReaderProgressPrefs(app).allFractions() },
                     todayProvider = {
                         ReadingSessionWiring.localToday(System.currentTimeMillis())
                     },

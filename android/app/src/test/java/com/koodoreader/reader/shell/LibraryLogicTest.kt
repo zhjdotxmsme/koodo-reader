@@ -114,4 +114,24 @@ class LibraryLogicTest {
         val books = listOf(b("k1"), b("k2"), b("k3"))
         assertEquals(listOf("k1", "k3"), LibraryLogic.visibleKeys(books, setOf("k2")).map { it.key })
     }
+
+    // -------------------------------------------------------- search
+
+    @Test
+    fun `blank query keeps every book`() {
+        val books = listOf(b("k1", name = "Dune"), b("k2", name = "Neuromancer"))
+        assertEquals(books, LibraryLogic.filterByQuery(books, "   "))
+    }
+
+    @Test
+    fun `search matches title author and format case-insensitively`() {
+        val books = listOf(
+            b("k1", name = "The Left Hand of Darkness", author = "Le Guin", format = "epub"),
+            b("k2", name = "Dune", author = "Herbert", format = "pdf"),
+            b("k3", name = "Hyperion", author = "Simmons", format = "mobi"),
+        )
+        assertEquals(listOf("k1"), LibraryLogic.filterByQuery(books, "guin").map { it.key })
+        assertEquals(listOf("k2"), LibraryLogic.filterByQuery(books, "PDF").map { it.key })
+        assertEquals(listOf("k1", "k3"), LibraryLogic.filterByQuery(books, "s").map { it.key })
+    }
 }

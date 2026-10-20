@@ -275,5 +275,13 @@ class HtmlFlattenerTest {
         assertEquals(1, bs.size)
         assertTrue(bs[0].text.length > 90_000)
     }
+
+    @Test
+    fun `anchor href is preserved on the flattened block`() {
+        val bs = blocks("""<p>See <a href="ch2.xhtml#sec">the next chapter</a> now.</p>""")
+        assertEquals(1, bs.size)
+        assertEquals("See the next chapter now.", bs[0].text)
+        assertEquals("ch2.xhtml#sec", bs[0].linkHref)
+    }
 }
 

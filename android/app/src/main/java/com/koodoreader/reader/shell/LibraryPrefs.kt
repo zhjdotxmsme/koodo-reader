@@ -3,6 +3,7 @@ package com.koodoreader.reader.shell
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Bookshelf UI-state persistence — the native counterpart of the desktop
@@ -64,6 +65,32 @@ class LibraryPrefs(context: Context) {
         sp.edit().putString(KEY_MANUAL_ORDER, arr.toString()).apply()
     }
 
+    // ---------------------------------------------------------- shelf groups
+
+    /** Desktop `shelfList`: title → ordered book keys. */
+    fun shelves(): Map<String, List<String>> {
+        val raw = sp.getString(KEY_SHELVES, null) ?: return emptyMap()
+        return runCatching {
+            val o = JSONObject(raw)
+            val out = LinkedHashMap<String, List<String>>()
+            o.keys().forEach { title ->
+                val arr = o.optJSONArray(title) ?: return@forEach
+                out[title] = List(arr.length()) { i -> arr.getString(i) }
+            }
+            out
+        }.getOrDefault(emptyMap())
+    }
+
+    fun setShelves(shelves: Map<String, List<String>>) {
+        val o = JSONObject()
+        shelves.forEach { (title, keys) ->
+            val arr = JSONArray()
+            keys.forEach { arr.put(it) }
+            o.put(title, arr)
+        }
+        sp.edit().putString(KEY_SHELVES, o.toString()).apply()
+    }
+
     private fun stringSet(key: String): Set<String> =
         sp.getStringSet(key, emptySet()).orEmpty().toSet()
 
@@ -75,5 +102,6 @@ class LibraryPrefs(context: Context) {
         const val KEY_FAVORITES = "favoriteBooks" // desktop config key parity
         const val KEY_TRASHED = "deletedBooks" // desktop config key parity
         const val KEY_MANUAL_ORDER = "manualOrder"
+        const val KEY_SHELVES = "shelfList"
     }
 }
