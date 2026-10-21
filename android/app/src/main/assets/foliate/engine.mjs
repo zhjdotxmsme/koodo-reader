@@ -9,6 +9,8 @@
 //   open(url, format)     -> { title, sectionCount }
 //   toc()                 -> JSON string: [{ label, href, cfi, depth }]
 //   goTo(target)          -> { ok: true }
+//   next()                -> { ok: true }
+//   prev()                -> { ok: true }
 //   search(query)         -> JSON string: [{ excerpt, href, cfi }]
 //   setAppearance(opts)   -> { ok: true }
 //   setViewSettings(opts) -> { ok: true }
@@ -20,6 +22,15 @@ export function selectionPayload(sel, cfi) {
     const excerpt = String(sel).trim();
     if (!excerpt) return { excerpt: '', cfi: '' };
     return { excerpt, cfi: String(cfi || '') };
+}
+
+/** Same 1/3 split as ReaderPageGestures.onTap: edges turn pages, center toggles chrome. */
+export function chromeTapAction(x, width) {
+    if (!(width > 0)) return 'toggle';
+    const edge = width / 3;
+    if (x < edge) return 'prev';
+    if (x > width - edge) return 'next';
+    return 'toggle';
 }
 
 function rangeAtPoint(doc, x, y) {
@@ -412,6 +423,16 @@ export function createFoliateEngine(options) {
         return { ok: true };
     }
 
+    async function next() {
+        if (view && typeof view.next === 'function') await view.next();
+        return { ok: true };
+    }
+
+    async function prev() {
+        if (view && typeof view.prev === 'function') await view.prev();
+        return { ok: true };
+    }
+
     async function search(query) {
         const b = requireBook();
         const needle = String(query == null ? '' : query).trim().toLowerCase();
@@ -502,6 +523,8 @@ export function createFoliateEngine(options) {
             if (typeof view.renderer.setStyles === 'function') view.renderer.setStyles(css);
             if (typeof view.renderer.setAttribute === 'function') {
                 view.renderer.setAttribute('flow', flow);
+                // Host owns swipe / volume-key turns so foliate does not double-flip.
+                view.renderer.setAttribute('no-swipe', '');
                 view.renderer.setAttribute('max-column-count', String(maxColumnCount));
                 view.renderer.setAttribute('max-inline-size', '720px');
                 view.renderer.setAttribute('gap', '5%');
@@ -564,6 +587,8 @@ export function createFoliateEngine(options) {
         open,
         toc,
         goTo,
+        next,
+        prev,
         search,
         setAppearance,
         setViewSettings,
@@ -583,6 +608,8 @@ export const METHODS = [
     'open',
     'toc',
     'goTo',
+    'next',
+    'prev',
     'search',
     'setAppearance',
     'setViewSettings',

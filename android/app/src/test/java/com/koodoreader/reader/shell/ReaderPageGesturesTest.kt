@@ -39,4 +39,80 @@ class ReaderPageGesturesTest {
             ReaderChromeAction.OVERFLOW.contains(ReaderChromeAction.BOOKMARK),
         )
     }
+
+    @Test
+    fun `chrome is hidden when a book opens`() {
+        org.junit.Assert.assertFalse(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN)
+    }
+
+    @Test
+    fun `swipe down past threshold reveals chrome`() {
+        org.junit.Assert.assertTrue(ReaderPageGestures.revealChromeOnSwipeDown(24f))
+        org.junit.Assert.assertFalse(ReaderPageGestures.revealChromeOnSwipeDown(8f))
+        org.junit.Assert.assertFalse(ReaderPageGestures.revealChromeOnSwipeDown(-40f))
+    }
+
+    @Test
+    fun `system bars hide with the toolbar`() {
+        org.junit.Assert.assertTrue(ReaderPageGestures.hideSystemBars(chromeVisible = false))
+        org.junit.Assert.assertFalse(ReaderPageGestures.hideSystemBars(chromeVisible = true))
+    }
+
+    @Test
+    fun `center press without drag toggles chrome`() {
+        assertEquals(
+            ReaderPageGesture.TOGGLE_CHROME,
+            ReaderPageGestures.tapIfNotDrag(150f, 200f, 152f, 202f, 300f),
+        )
+    }
+
+    @Test
+    fun `vertical drag is a scroll not a chrome tap`() {
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.tapIfNotDrag(150f, 200f, 150f, 280f, 300f),
+        )
+    }
+
+    @Test
+    fun `edge press without drag still turns the page`() {
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.tapIfNotDrag(10f, 200f, 12f, 202f, 300f),
+        )
+    }
+
+    @Test
+    fun `swipe left turns to the next page`() {
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onHorizontalSwipe(dx = -80f, dy = 10f),
+        )
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onHorizontalSwipe(dx = 80f, dy = -8f),
+        )
+    }
+
+    @Test
+    fun `vertical drag is not a page-turn swipe`() {
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.onHorizontalSwipe(dx = -20f, dy = -90f),
+        )
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.onHorizontalSwipe(dx = -20f, dy = 10f),
+        )
+    }
+
+    @Test
+    fun `volume down goes forward and volume up goes back`() {
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onVolumeKey(ReaderPageGestures.VOLUME_DOWN),
+        )
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onVolumeKey(ReaderPageGestures.VOLUME_UP),
+        )
+        org.junit.Assert.assertNull(ReaderPageGestures.onVolumeKey(4))
+    }
 }

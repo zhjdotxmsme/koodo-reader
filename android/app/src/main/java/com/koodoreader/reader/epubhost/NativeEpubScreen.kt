@@ -2,15 +2,18 @@ package com.koodoreader.reader.epubhost
 
 import android.content.Intent
 import android.net.Uri
+import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -120,10 +123,13 @@ import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderAssetHost
 import com.koodoreader.reader.shell.ReaderChromeAction
+import com.koodoreader.reader.shell.ReaderChromeRevealStrip
 import com.koodoreader.reader.shell.ReaderFiles
+import com.koodoreader.reader.shell.ReaderImmersiveBars
 import com.koodoreader.reader.shell.ReaderHrefJump
 import com.koodoreader.reader.shell.ReaderPageGesture
 import com.koodoreader.reader.shell.ReaderPageGestures
+import com.koodoreader.reader.shell.ReaderPageTurn
 import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
 import com.koodoreader.reader.shell.ReaderTapKind
@@ -220,6 +226,8 @@ fun NativeEpubScreen(
     var showSelectionMenu by remember { mutableStateOf(false) }
     var footnoteText by remember { mutableStateOf<String?>(null) }
     var pendingFootnoteHref by remember { mutableStateOf<String?>(null) }
+    val showChromeState = remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
+    var showChrome by showChromeState
     val foliateBridge = remember(useFoliate, assets.baseUrl, file) {
         if (!useFoliate || file == null || !assets.available) null
         else FoliateHostBridge(
@@ -262,10 +270,58 @@ fun NativeEpubScreen(
                                 }
                             }
                         }
+                        "toggleChrome" -> mainHandler.post {
+                            showChromeState.value = !showChromeState.value
+                        }
                     }
                 }
             },
         )
+    }
+    DisposableEffect(foliateBridge) {
+        val view = foliateBridge?.view
+        if (view == null) {
+            onDispose { }
+        } else {
+            var downX = 0f
+            var downY = 0f
+            view.setOnTouchListener { v, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.x
+                        downY = event.y
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val tap = ReaderPageGestures.tapIfNotDrag(
+                            downX,
+                            downY,
+                            event.x,
+                            event.y,
+                            v.width.toFloat(),
+                        )
+                        val swipe = if (tap == null) {
+                            ReaderPageGestures.onHorizontalSwipe(
+                                event.x - downX,
+                                event.y - downY,
+                            )
+                        } else {
+                            null
+                        }
+                        when (val gesture = tap ?: swipe) {
+                            ReaderPageGesture.TOGGLE_CHROME ->
+                                v.post { showChromeState.value = !showChromeState.value }
+                            ReaderPageGesture.PREV_PAGE ->
+                                v.post { foliateBridge?.prevPage() }
+                            ReaderPageGesture.NEXT_PAGE ->
+                                v.post { foliateBridge?.nextPage() }
+                            else -> Unit
+                        }
+                    }
+                }
+                false
+            }
+            onDispose { view.setOnTouchListener(null) }
+        }
     }
     // 会话按 (文件, 格式, 视口, 字号) 重建：尺寸/字号变化时重新分页。
     //
@@ -406,8 +462,8 @@ fun NativeEpubScreen(
         }
     }
 
-    var currentPage by remember { mutableIntStateOf(0) }
-    var showChrome by remember { mutableStateOf(true) }
+    val currentPageState = remember { mutableIntStateOf(0) }
+    var currentPage by currentPageState
     // 打开恢复：优先用 initialCfi（笔记跳转），否则按上次位置 CFI 落页（无进度 → 第 0 页）。
     // P9-anr (round-2): resumePage 是**扫描全书找目标 CFI → 页**，几百页的书
     // 在主线程跑会再次 ANR — 与 session.open 同理，放 IO。
@@ -429,6 +485,24 @@ fun NativeEpubScreen(
     }
 
     val pageCount = session?.pageCount ?: 0
+    DisposableEffect(foliateBridge, useFoliate, pageCount) {
+        ReaderPageTurn.bind { gesture ->
+            when (gesture) {
+                ReaderPageGesture.PREV_PAGE -> {
+                    if (useFoliate) foliateBridge?.prevPage()
+                    else if (currentPageState.intValue > 0) currentPageState.intValue--
+                    true
+                }
+                ReaderPageGesture.NEXT_PAGE -> {
+                    if (useFoliate) foliateBridge?.nextPage()
+                    else if (currentPageState.intValue < pageCount - 1) currentPageState.intValue++
+                    true
+                }
+                else -> false
+            }
+        }
+        onDispose { ReaderPageTurn.unbind() }
+    }
     val lines = session?.pageLines(currentPage) ?: emptyList()
     val cfi = if (pageCount > 0) session?.cfiForPage(currentPage) else null
 
@@ -929,9 +1003,11 @@ fun NativeEpubScreen(
 
     MaterialTheme(colorScheme = ThemeSpecBridge.readerScheme(readerPreset)) {
     Box(modifier = Modifier.fillMaxSize()) {
+    ReaderImmersiveBars(showChrome)
     Scaffold(
         containerColor = bgColor,
         contentColor = fgColor,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (showChrome) {
                 TopAppBar(
@@ -1226,6 +1302,26 @@ fun NativeEpubScreen(
                                         ReaderPageGesture.SELECT -> Unit
                                     }
                                 }
+                            }
+                            .pointerInput(pageCount, currentPage) {
+                                var dx = 0f
+                                var dy = 0f
+                                detectDragGestures(
+                                    onDragStart = { dx = 0f; dy = 0f },
+                                    onDragEnd = {
+                                        when (ReaderPageGestures.onHorizontalSwipe(dx, dy)) {
+                                            ReaderPageGesture.PREV_PAGE ->
+                                                if (currentPage > 0) currentPage--
+                                            ReaderPageGesture.NEXT_PAGE ->
+                                                if (currentPage < pageCount - 1) currentPage++
+                                            else -> Unit
+                                        }
+                                    },
+                                    onDrag = { _, amount ->
+                                        dx += amount.x
+                                        dy += amount.y
+                                    },
+                                )
                             },
                     ) {
                         drawRect(color = bgColor)
@@ -1278,6 +1374,12 @@ fun NativeEpubScreen(
             }
         }
     }
+
+    ReaderChromeRevealStrip(
+        chromeVisible = showChrome,
+        modifier = Modifier.align(Alignment.TopCenter),
+        onReveal = { showChrome = true },
+    )
 
     // ── 选中行菜单（叠在阅读页底部，不能作为 Scaffold 的兄弟节点
     // 被 NavHost 顶到屏幕外） ───────────────────────────────────────────────

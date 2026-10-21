@@ -2,6 +2,7 @@ package com.koodoreader.reader.shell
 
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -66,6 +67,16 @@ class NativeShellActivity : ComponentActivity() {
             Log.w(TAG, "loopback asset server unavailable; native readers will report it", it)
             ReaderAssetHost.NONE
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val gesture = ReaderPageGestures.onVolumeKey(event.keyCode)
+            ?: return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (ReaderPageTurn.dispatch(gesture)) return true
+        }
+        if (event.action == KeyEvent.ACTION_UP && ReaderPageTurn.isBound()) return true
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onDestroy() {

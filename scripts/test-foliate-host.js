@@ -55,7 +55,7 @@ function collector() {
 async function main() {
     const {
         createFoliateEngine, dispatch, encodePayload, flattenToc, splitTxtChapters, mdToHtml,
-        selectionPayload, appearanceCss,
+        selectionPayload, appearanceCss, chromeTapAction,
     } =
         await import(pathToFileURL(ENGINE_MJS).href);
 
@@ -94,6 +94,11 @@ async function main() {
     const md = mdToHtml('# Title\n\nHello **world**.');
     check('mdToHtml emits an h1', md.indexOf('<h1>') >= 0 && md.indexOf('Title') >= 0, md);
     check('mdToHtml emits a paragraph', md.indexOf('<p>') >= 0 && md.indexOf('Hello') >= 0, md);
+
+    eq('chromeTapAction left is prev', chromeTapAction(10, 300), 'prev');
+    eq('chromeTapAction right is next', chromeTapAction(290, 300), 'next');
+    eq('chromeTapAction middle is toggle', chromeTapAction(150, 300), 'toggle');
+    eq('chromeTapAction zero width is toggle', chromeTapAction(0, 0), 'toggle');
 
     const sink = collector();
     const engine = createFoliateEngine({
@@ -162,6 +167,26 @@ async function main() {
 
     await engine.goTo('Text/part0000.xhtml#chapter');
     eq('goTo records last target', engine.lastTarget, 'Text/part0000.xhtml#chapter');
+
+    const turns = [];
+    const turning = createFoliateEngine({
+        log: sink.log,
+        view: {
+            next: async () => { turns.push('next'); },
+            prev: async () => { turns.push('prev'); },
+        },
+        fetchFile: async () => ({ name: 'n', text: async () => '' }),
+        openBook: async () => ({ metadata: {}, toc: [], sections: [] }),
+    });
+    await dispatch(turning, 'n1', 'next', [], host);
+    await dispatch(turning, 'p1', 'prev', [], host);
+    eq('dispatch next calls view.next', turns[0], 'next');
+    eq('dispatch prev calls view.prev', turns[1], 'prev');
+    check(
+        'dispatch next succeeds',
+        !host.results.find((r) => r.id === 'n1').error,
+        String(host.results.find((r) => r.id === 'n1').error),
+    );
 
     await engine.setAppearance({ bg: '#fff', fg: '#111', fontSize: 18 });
     eq('setAppearance records fontSize', engine.appearance.fontSize, 18);

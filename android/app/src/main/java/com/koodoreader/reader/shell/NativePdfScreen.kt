@@ -5,12 +5,14 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -130,6 +132,7 @@ fun NativePdfScreen(
     var showOcr by remember { mutableStateOf(false) }
     var showPageMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
+    var showChrome by remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // One engine WebView per book URL; the controller tears the document down on
@@ -156,6 +159,22 @@ fun NativePdfScreen(
         )
     }
     val state = controller.state
+    DisposableEffect(controller) {
+        ReaderPageTurn.bind { gesture ->
+            when (gesture) {
+                ReaderPageGesture.PREV_PAGE -> {
+                    controller.previousPage()
+                    true
+                }
+                ReaderPageGesture.NEXT_PAGE -> {
+                    controller.nextPage()
+                    true
+                }
+                else -> false
+            }
+        }
+        onDispose { ReaderPageTurn.unbind() }
+    }
 
     // OCR (P6): the scanned-page index. Script comes from the UI language because
     // `books` has no language column (documented in the completeness report §16).
@@ -214,8 +233,12 @@ fun NativePdfScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    ReaderImmersiveBars(showChrome)
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
+            if (showChrome) {
             TopAppBar(
                 title = {
                     Column {
@@ -304,6 +327,7 @@ fun NativePdfScreen(
                     }
                 },
             )
+            }
         },
     ) { padding ->
         Box(
@@ -321,11 +345,28 @@ fun NativePdfScreen(
                         when (ReaderPageGestures.onTap(offset.x, width, edgeFraction = 0.25f)) {
                             ReaderPageGesture.PREV_PAGE -> controller.previousPage()
                             ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
-                            ReaderPageGesture.TOGGLE_CHROME,
-                            ReaderPageGesture.SELECT,
-                            -> Unit
+                            ReaderPageGesture.TOGGLE_CHROME -> showChrome = !showChrome
+                            ReaderPageGesture.SELECT -> Unit
                         }
                     }
+                }
+                .pointerInput(state.pageCount) {
+                    var dx = 0f
+                    var dy = 0f
+                    detectDragGestures(
+                        onDragStart = { dx = 0f; dy = 0f },
+                        onDragEnd = {
+                            when (ReaderPageGestures.onHorizontalSwipe(dx, dy)) {
+                                ReaderPageGesture.PREV_PAGE -> controller.previousPage()
+                                ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
+                                else -> Unit
+                            }
+                        },
+                        onDrag = { _, amount ->
+                            dx += amount.x
+                            dy += amount.y
+                        },
+                    )
                 }
                 .onSizeChanged {
                     containerSize = it
@@ -391,16 +432,25 @@ fun NativePdfScreen(
                             }
                         }
                     }
-                    PagerBar(
-                        page = state.page,
-                        pageCount = state.pageCount,
-                        onPrevious = controller::previousPage,
-                        onNext = controller::nextPage,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
+                    if (showChrome) {
+                        PagerBar(
+                            page = state.page,
+                            pageCount = state.pageCount,
+                            onPrevious = controller::previousPage,
+                            onNext = controller::nextPage,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                 }
             }
         }
+    }
+
+    ReaderChromeRevealStrip(
+        chromeVisible = showChrome,
+        modifier = Modifier.align(Alignment.TopCenter),
+        onReveal = { showChrome = true },
+    )
     }
 
     if (showPageMenu) {

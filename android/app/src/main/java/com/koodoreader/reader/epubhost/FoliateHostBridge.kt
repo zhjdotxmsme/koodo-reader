@@ -146,6 +146,14 @@ class FoliateHostBridge(
         runJs(method = "goTo", args = listOf(JSONObject.quote(target)))
     }
 
+    fun nextPage() {
+        runJsFireAndForget(method = "next", args = emptyList())
+    }
+
+    fun prevPage() {
+        runJsFireAndForget(method = "prev", args = emptyList())
+    }
+
     fun search(query: String): List<SearchHit> {
         val raw = runJs(
             method = "search",
