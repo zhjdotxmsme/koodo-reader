@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -254,7 +255,10 @@ fun LibraryScreen(
                 )
             }
             if (books.isEmpty()) {
-                EmptyLibraryHint(shelf.favoritesOnly)
+                EmptyLibraryHint(
+                    favoritesOnly = shelf.favoritesOnly,
+                    onImportClick = { filesLauncher.launch(arrayOf("*/*")) },
+                )
             } else if (shelf.viewGrid) {                LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 112.dp),
@@ -389,18 +393,34 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun EmptyLibraryHint(favoritesOnly: Boolean) {
+private fun EmptyLibraryHint(favoritesOnly: Boolean, onImportClick: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = if (favoritesOnly) {
-                t("No favorite books")
-            } else {
-                t("Library is empty") + "\n" + t("Click the import button to add books")
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                painterResource(R.drawable.ic_import),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = SpaceTokens.md.dp),
+            )
+            Text(
+                text = if (favoritesOnly) {
+                    t("No favorite books")
+                } else {
+                    t("Library is empty")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (!favoritesOnly) {
+                Button(
+                    onClick = onImportClick,
+                    modifier = Modifier.padding(top = SpaceTokens.md.dp),
+                ) {
+                    Text(t("Import"))
+                }
+            }
+        }
     }
 }
 
