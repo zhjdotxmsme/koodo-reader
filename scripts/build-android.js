@@ -27,6 +27,8 @@
  *   --key-alias <v>         key alias
  *   --key-password <v>      key password
  *   --require-signing       fail (not warn) if a release build has no keystore
+ *   --keep-island           keep the fallback island in release builds
+ *                           (default: release strips it via -PstripIsland=true)
  *   --config <path>         path to android.config.json (default ./android.config.json)
  *   --verbose               extra logging
  *   -h, --help              print help
@@ -73,6 +75,7 @@ function printHelp() {
       "  --key-alias <v>         key alias",
       "  --key-password <v>      key password",
       "  --require-signing       fail if a release build has no keystore",
+      "  --keep-island           release 构建保留兜底岛（默认 --release 即剥离）",
       "  --audit                 fail if any feature asset is missing from the package",
       "  --audit-only            stage, run the packaged-feature audit, and stop (no build)",
       "  --config <path>         android.config.json path",
@@ -109,6 +112,7 @@ function parseArgs(argv) {
     keyAlias: "",
     keyPassword: "",
     requireSigning: false,
+    keepIsland: false,
     audit: false,
     auditStop: false,
     config: "android.config.json",
@@ -200,6 +204,9 @@ function parseArgs(argv) {
         break;
       case "--require-signing":
         opts.requireSigning = true;
+        break;
+      case "--keep-island":
+        opts.keepIsland = true;
         break;
       case "--audit":
         opts.audit = true;
@@ -450,6 +457,26 @@ function spawnGradle(step, androidDir) {
   }
 }
 
+/**
+ * Release builds strip the fallback island by default (P8 §1 收口，
+ * 2026-10-29 规格): saves ~7.8 MB compressed, and CBR/unknown formats get an
+ * explicit hint via BuildConfig.ISLAND_PACKAGED=false. `--keep-island` is the
+ * escape hatch; debug steps are never touched.
+ *
+ * @param {{buildType: string, args: string[]}[]} plan steps from buildBuildPlan
+ * @param {{keepIsland?: boolean}} opts parsed CLI options
+ * @returns {Array} plan with `-PstripIsland=true` appended to release steps
+ */
+function applyIslandPolicy(plan, opts) {
+  if (opts.keepIsland) return plan;
+  return plan.map((step) => {
+    if (step.buildType !== "release" || step.args.includes("-PstripIsland=true")) {
+      return step;
+    }
+    return Object.assign({}, step, { args: step.args.concat(["-PstripIsland=true"]) });
+  });
+}
+
 function runBuildPlan(config, opts) {
   const androidDir = path.resolve(REPO_ROOT, "android");
   const hasGradlew =
@@ -466,7 +493,7 @@ function runBuildPlan(config, opts) {
     );
   }
 
-  const plan = core.buildBuildPlan(config, { gradleBinary: binary, platform });
+  const plan = applyIslandPolicy(core.buildBuildPlan(config, { gradleBinary: binary, platform }), opts);
   plan.forEach((step) => {
     spawnGradle(step, androidDir);
   });
@@ -508,7 +535,7 @@ function main(argv) {
   const abis = config.abis;
   const targets = config.targets;
   const platform = process.platform === "win32" ? "win32" : process.platform;
-  const plan = core.buildBuildPlan(config, { platform });
+  const plan = applyIslandPolicy(core.buildBuildPlan(config, { platform }), opts);
   const expected = plan.map((s) => s.artifact);
   const commands = plan.map((s) => s.command);
   const buildType = plan.length ? plan[0].buildType : "release";

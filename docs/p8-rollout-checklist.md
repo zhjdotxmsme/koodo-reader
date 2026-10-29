@@ -189,9 +189,9 @@ ADR-003 把 P8 定义为"④ 退役：主变体不再加载 WebView；兜底岛�
 
 | ID | 杠杆 | 预期（压缩 MB） | 置信度 | 前置 |
 |---|---|---|---|---|
-| **L1** | `-PstripIsland=true` 剥离兜底岛资产 | **−7.78** | **实测**（被移除条目之和；成包后需复核） | P8-F1 |
+| **L1** | `-PstripIsland=true` 剥离兜底岛资产 | **−7.78** | **实测**（被移除条目之和；成包后需复核） | release 默认剥离（`--keep-island` 逃生门），2026-10-29 |
 | **L2** | 内置中文字体按需下载 / 子集化（`lxgw_wenkai_lite.ttf`） | −7.9（估） | 估算（`res/font` 合计 8.25，inter 占 0.84 raw） | 产品决策（离线可用性） |
-| **L3** | release + R8 发布形态 | 未测 | 待测（需签名出包） | keystore / CI |
+| **L3** | release + R8 发布形态 | 未测 | 待测（需签名出包） | keystore 已生成（android/keystore/koodo-release.jks，PKCS12，凭据在仓库外），CI secrets 注入待办 |
 | **L4** | flavor 拆分（native 去宿主类、webview 去 Compose） | 未测 | 待测 | P8-F3 |
 | **L5** | ABI 拆分 | **0** | 实测 | 无 |
 | **L6** | App Bundle 交付 | ~0 | 推断（无 `.so`、字体不按密度） | Play 决策 |
