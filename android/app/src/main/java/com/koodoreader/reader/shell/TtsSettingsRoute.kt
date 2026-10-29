@@ -61,9 +61,6 @@ import kotlinx.coroutines.launch
  * foreground service and the lock-screen card bind to the same engine after a
  * restart (P6 card follow-up wiring).
  *
- * The `MainScope().launch` callsites in `persist()` / `Reset` were intentionally
- * left untouched; the dedicated refactor (`t-mv0hf34m-3j1k07`) moves the whole
- * screen to `ReaderViewModel.viewModelScope`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,8 +108,8 @@ fun TtsSettingsRoute(onBack: () -> Unit) {
 
     fun persistSliders() {
         // Three-sliders only; voice / engine / locale keep their current value.
-        // Left at `MainScope` for the dedicated refactor card (see file header).
-        kotlinx.coroutines.MainScope().launch {
+        // `scope` cancels with the route (same as `selectEngine` below).
+        scope.launch {
             repository.update { current ->
                 current.copy(voiceSpeed = rate, pitch = pitch, volume = volume)
             }
@@ -120,7 +117,7 @@ fun TtsSettingsRoute(onBack: () -> Unit) {
     }
 
     fun resetAll() {
-        kotlinx.coroutines.MainScope().launch {
+        scope.launch {
             val reset = repository.reset()
             rate = reset.voiceSpeed
             pitch = reset.pitch
@@ -134,9 +131,9 @@ fun TtsSettingsRoute(onBack: () -> Unit) {
         // Desktop plugin keys are persisted unchanged so a config carried over
         // from the desktop app resolves back to the same key (catalog says so
         // explicitly) — `ForegroundTtsService` falls back to the system
-        // synthesizer instead of failing. Voice picker uses the new
-        // `rememberCoroutineScope()` rather than the existing `MainScope()` so
-        // cancellation tracks the route's recomposition.
+        // synthesizer instead of failing. Voice picker uses
+        // `rememberCoroutineScope()` so cancellation tracks the route's
+        // recomposition.
         scope.launch {
             repository.update { stored ->
                 stored.copy(
