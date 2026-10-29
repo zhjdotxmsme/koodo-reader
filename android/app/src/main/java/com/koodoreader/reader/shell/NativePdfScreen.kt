@@ -174,17 +174,27 @@ fun NativePdfScreen(
         controller.reflowFontScale = features.fontScale
         controller.requestRender(force = true)
     }
-    val reflowWeb = remember {
+    val reflowWeb = remember(features.pdfReflow) {
+        if (!features.pdfReflow) return@remember null
         WebView(context).apply {
             settings.javaScriptEnabled = false
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
         }
     }
+    DisposableEffect(reflowWeb) {
+        onDispose {
+            reflowWeb?.let { webView ->
+                webView.stopLoading()
+                (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                webView.destroy()
+            }
+        }
+    }
     LaunchedEffect(features.pdfReflow, state.reflowHtml) {
         val html = state.reflowHtml
         if (features.pdfReflow && !html.isNullOrBlank()) {
-            reflowWeb.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+            reflowWeb?.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
         }
     }
     DisposableEffect(controller) {
@@ -445,7 +455,7 @@ fun NativePdfScreen(
                     }
                     if (features.pdfReflow) {
                         AndroidView(
-                            factory = { reflowWeb },
+                            factory = { checkNotNull(reflowWeb) },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(rememberScrollState()),
