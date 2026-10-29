@@ -111,6 +111,29 @@ class DesktopConfigPrefsTest {
     }
 
     @Test
+    fun `unrecognized css enabled string warns and defaults to disabled`() {
+        val entries = DesktopConfigPrefs.desktopConfigEntries(
+            listOf(rule("1")),
+            "h1{color:red}",
+            true,
+        ).toMutableMap()
+        entries[DesktopConfigPrefs.KEY_READER_CONFIG] =
+            """{"customBookCSS":"h1{color:red}","isCustomBookCSS":"maybe"}"""
+        val config = Json.write(JsonValue.Obj(entries.mapValues { (_, value) -> JsonValue.Str(value) }))
+
+        val parsed = DesktopConfigPrefs.parseDesktopConfig(config)
+
+        assertEquals(1, parsed.rules.size)
+        assertEquals("foo", parsed.rules[0].pattern)
+        assertEquals("h1{color:red}", parsed.customBookCss)
+        assertEquals(false, parsed.customBookCssEnabled)
+        assertEquals(
+            listOf("invalid 'readerConfig.isCustomBookCSS' value 'maybe'; expected 'yes' or 'no'"),
+            parsed.warnings,
+        )
+    }
+
+    @Test
     fun `null or blank config yields empty prefs`() {
         assertTrue(DesktopConfigPrefs.parseDesktopConfig(null).rules.isEmpty())
         assertTrue(DesktopConfigPrefs.parseDesktopConfig("").rules.isEmpty())

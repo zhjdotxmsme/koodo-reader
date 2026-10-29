@@ -76,6 +76,8 @@ object DesktopConfigPrefs {
                 val enabledValue = rc.fields[KEY_CUSTOM_CSS_ENABLED] as? JsonValue.Str
                 if (enabledValue == null) {
                     warnings += "missing or invalid '$KEY_READER_CONFIG.$KEY_CUSTOM_CSS_ENABLED' string"
+                } else if (enabledValue.value != "yes" && enabledValue.value != "no") {
+                    warnings += "invalid '$KEY_READER_CONFIG.$KEY_CUSTOM_CSS_ENABLED' value '${enabledValue.value}'; expected 'yes' or 'no'"
                 }
                 enabled = enabledValue?.value == "yes"
             }.onFailure { warnings += "readerConfig parse failed: ${it.message}" }
