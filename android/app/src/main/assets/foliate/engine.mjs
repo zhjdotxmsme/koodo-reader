@@ -375,6 +375,7 @@ export function createFoliateEngine(options) {
     let flow = 'scrolled';
     let maxColumnCount = 1;
     let textRulesJson = '';
+    let lastAppliedTextRulesJson;
     let lastRendererCss = '';
     attachSelectionReporter(view, host);
 
@@ -417,6 +418,7 @@ export function createFoliateEngine(options) {
         }
         if (!book) throw new Error('open() produced no book');
         applyRulesToBook(book, textRulesJson);
+        lastAppliedTextRulesJson = textRulesJson;
         if (view && view.renderer && typeof view.renderer.setStyles === 'function') {
             view.renderer.setStyles(appearanceCss(appearance));
         }
@@ -498,8 +500,9 @@ export function createFoliateEngine(options) {
         maxColumnCount = Math.max(1, Number((opts && opts.maxColumnCount) || 1));
         if (opts && typeof opts.textRulesJson === 'string') {
             textRulesJson = opts.textRulesJson;
-            if (book) {
+            if (book && textRulesJson !== lastAppliedTextRulesJson) {
                 applyRulesToBook(book, textRulesJson);
+                lastAppliedTextRulesJson = textRulesJson;
                 if (lastTarget && view && typeof view.goTo === 'function') {
                     try {
                         await view.goTo(lastTarget);

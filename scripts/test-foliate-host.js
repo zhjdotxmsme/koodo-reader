@@ -324,6 +324,12 @@ async function main() {
         isDarkMode: false, colorScheme: 'light', defaultFont: 'serif',
     });
     eq('setViewSettings re-navigates after rule change', goTos[goTos.length - 1], '0');
+    const goToCountAfterRuleChange = goTos.length;
+    await ruleReload.setViewSettings({
+        textRulesJson: '[{"id":"1","pattern":"广告","replacement":""}]',
+        marginPx: 24,
+    });
+    eq('setViewSettings does not re-navigate for unchanged rules', goTos.length, goToCountAfterRuleChange);
 
     const rules = parseRules('[{"id":"1","pattern":"广告","replacement":""}]');
     eq('parseRules reads bare array', rules.length, 1);
