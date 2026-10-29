@@ -3,7 +3,6 @@ package com.koodoreader.core.ui.component
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -129,55 +128,60 @@ fun KoodoBookCard(
 /**
  * Compact list-view row (view mode = list).
  *
- * `favoriteContentDescription` is nullable for the same reason as above; this row
- * shows the star without a tap target, so callers that cannot supply a
- * localised string should pass null rather than an English literal.
+ * Long-press + menu slot mirror [KoodoBookCard] so grid and list expose the
+ * same per-book actions — the menu wording comes from the caller's i18n.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun KoodoBookRow(
     model: BookCardModel,
     cover: Painter?,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     favoriteContentDescription: String? = null,
+    menu: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        KoodoBookCover(
-            model = model,
-            cover = cover,
+    Box(modifier = modifier) {
+        Row(
             modifier = Modifier
-                .width(48.dp)
-                .aspectRatio(COVER_ASPECT)
-                .clip(KoodoCoverShape),
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = model.title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            KoodoBookCover(
+                model = model,
+                cover = cover,
+                modifier = Modifier
+                    .width(48.dp)
+                    .aspectRatio(COVER_ASPECT)
+                    .clip(KoodoCoverShape),
             )
-            Text(
-                text = model.subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = model.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = model.subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (model.isFavorite) {
+                Icon(
+                    imageVector = Icons.Filled.Star,
+                    contentDescription = favoriteContentDescription,
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+            }
         }
-        if (model.isFavorite) {
-            Icon(
-                imageVector = Icons.Filled.Star,
-                contentDescription = favoriteContentDescription,
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-        }
+        menu()
     }
 }
 

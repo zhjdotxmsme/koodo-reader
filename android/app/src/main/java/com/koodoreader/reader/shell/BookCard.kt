@@ -94,20 +94,43 @@ fun BookCard(
     )
 }
 
-/** Compact list-view row (view mode = list). */
+/** Compact list-view row (view mode = list) — same menu actions as the grid. */
 @Composable
 fun BookListRow(
     book: BookEntity,
     isFavorite: Boolean,
     coverVersion: Int = 0,
+    onToggleFavorite: () -> Unit = {},
+    onMoveToTrash: () -> Unit = {},
+    onAddToShelf: () -> Unit = {},
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     KoodoBookRow(
         model = book.toCardModel(isFavorite),
         cover = rememberCoverPainter(book.cover, book.key, coverVersion),
         onClick = onClick,
+        onLongClick = { menuOpen = true },
         favoriteContentDescription = t("Favorite"),
+        menu = {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = {
+                        Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite"))
+                    },
+                    onClick = { onToggleFavorite(); menuOpen = false },
+                )
+                DropdownMenuItem(
+                    text = { Text(t("Move to trash")) },
+                    onClick = { onMoveToTrash(); menuOpen = false },
+                )
+                DropdownMenuItem(
+                    text = { Text(t("Add to shelf")) },
+                    onClick = { onAddToShelf(); menuOpen = false },
+                )
+            }
+        },
         modifier = modifier,
     )
 }

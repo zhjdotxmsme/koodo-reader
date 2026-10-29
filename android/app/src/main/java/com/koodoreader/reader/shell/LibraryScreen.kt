@@ -312,6 +312,9 @@ fun LibraryScreen(
                                 book = book,
                                 isFavorite = book.key in shelf.favorites,
                                 coverVersion = coverVersion,
+                                onToggleFavorite = { viewModel.toggleFavorite(book.key) },
+                                onMoveToTrash = { viewModel.moveToTrash(book.key) },
+                                onAddToShelf = { shelfPickKey = book.key },
                                 onClick = { onOpenBook(book.key) },
                                 modifier = Modifier.padding(
                                     horizontal = SpaceTokens.md.dp,
