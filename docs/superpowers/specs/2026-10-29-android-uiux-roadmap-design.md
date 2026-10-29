@@ -21,10 +21,10 @@
 |---|---|---|---|---|
 | 1 | 列表视图无长按菜单 | `BookCard.kt:99-113` `BookListRow` 仅 onClick；网格卡（:66-93）有收藏/废纸篓/加书架三菜单 | `:core:ui` 的 `KoodoBookRow` 加 long-press + 菜单槽位（与 `KoodoBookCard` 同模式），`BookListRow` 传入与网格一致的三项操作 | 列表长按弹同款菜单，操作可用且持久化 |
 | 2 | 空态无行动 | `LibraryScreen.kt:389-402` `EmptyLibraryHint` 两行灰字 | 空态改居中构图：图标/插画 + 文案 +「导入图书」filled button（拉起 `filesLauncher`）；favoritesOnly 空态保持纯文案 | 空库一键到达文件选择器 |
-| 3 | 导入完成反馈弱 | `LibraryScreen.kt:111-124` 完成态仅顶栏 `labelSmall` 文字 | 完成时 Snackbar：「已导入 N · 重复 M · 失败 K」，error 非空时附「查看」action（弹详情 dialog 列失败文件名）；Running 时保留现有顶栏小字+进度条 | 导入结束有可见、可消失、可追查的反馈 |
+| 3 | 导入完成反馈弱 | `LibraryScreen.kt:111-124` 完成态仅顶栏 `labelSmall` 文字 | 完成时 Snackbar：「已导入 N · 重复 M · 失败 K」，失败/error 时附「查看」action（弹详情 dialog 展示失败原因文本；逐文件失败清单因 `ImportState.Finished` 不携带，列 P2）；Running 时保留现有顶栏小字+进度条 | 导入结束有可见、可消失、可追查的反馈 |
 | 4 | 搜索框无清除 | `LibraryScreen.kt:203-222` 纯 TextField | 查询非空时显示 trailing 清除 IconButton（一键清空并收起键盘）；**不做**展开收起式搜索（布局改动大、收益低） | 输入后出现 ×，点击清空 |
 
-实施注意：#1 动 `:core:ui` 共享组件，需过 `:core:ui` 现有测试（designsystem 128 绿基线不回退）。
+实施注意：#1 动 `:core:ui` 共享组件（该模块无既有测试目录），编译与回归以 `:core:designsystem` 128 绿基线 + `:app` 测试 + CI 为准。
 
 ---
 
