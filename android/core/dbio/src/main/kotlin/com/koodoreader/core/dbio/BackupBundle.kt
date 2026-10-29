@@ -225,7 +225,7 @@ object BackupBundle {
                         configJson = archive.readBytes(name).decodeToString()
                     }
                     name == "config/koodo-android.json" -> {
-                        androidPrefsJson = archive.readBytes(name).decodeToString()
+                        androidPrefsJson = archive.readBytes(name).decodeToString().takeIf { it.isNotEmpty() }
                     }
                     name.startsWith("cover/") -> {
                         val rel = name.removePrefix("cover/")
@@ -284,7 +284,7 @@ object BackupBundle {
         return BundleOpen(
             tables = resolveTables(dbFiles),
             configJson = configJsf.takeIf { it.isFile }?.readText(),
-            androidPrefsJson = androidPrefsJsf.takeIf { it.isFile }?.readText(),
+            androidPrefsJson = androidPrefsJsf.takeIf { it.isFile }?.readText()?.takeIf { it.isNotEmpty() },
             covers = covers,
             bookFiles = books,
             fontFiles = fontsDir.listFiles()

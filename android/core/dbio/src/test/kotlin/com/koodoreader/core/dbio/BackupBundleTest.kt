@@ -237,4 +237,25 @@ class BackupBundleTest {
         BackupBundle.write(plain, mapOf("books" to listOf<Row>()))
         BackupBundle.open(plain).use { assertNull(it.androidPrefsJson) }
     }
+
+    @Test
+    fun `empty android prefs zip entry opens as null`() {
+        val out = dir.resolve("empty-android-prefs.zip")
+        FileOutputStream(out).use { fos ->
+            java.util.zip.ZipOutputStream(fos).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("config/koodo-android.json"))
+                zos.closeEntry()
+            }
+        }
+        BackupBundle.open(out).use { assertNull(it.androidPrefsJson) }
+    }
+
+    @Test
+    fun `empty android prefs directory file opens as null`() {
+        val root = dir.resolve("empty-android-prefs")
+        val config = File(root, "config")
+        config.mkdirs()
+        File(config, "koodo-android.json").writeBytes(byteArrayOf())
+        BackupBundle.open(root).use { assertNull(it.androidPrefsJson) }
+    }
 }
