@@ -33,12 +33,17 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,7 +92,11 @@ fun LibraryScreen(
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showFailureDialog by remember { mutableStateOf(false) }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
@@ -254,6 +263,28 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            val finished = importState as? ImportState.Finished
+            LaunchedEffect(finished) {
+                val state = finished ?: return@LaunchedEffect
+                val message = buildString {
+                    if (state.error != null) {
+                        append(t("Import failed")).append(": ").append(state.error)
+                    } else {
+                        append(t("Import")).append(' ').append(state.imported)
+                        if (state.duplicates > 0) append(" · ").append(t("Duplicate")).append(' ').append(state.duplicates)
+                        if (state.failed > 0) append(" · ").append(t("Import failed")).append(' ').append(state.failed)
+                    }
+                }
+                val needsDetail = state.error != null || state.failed > 0
+                val result = snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = if (needsDetail) t("View details") else null,
+                    duration = SnackbarDuration.Long,
+                )
+                if (needsDetail && result == SnackbarResult.ActionPerformed) {
+                    showFailureDialog = true
+                }
+            }
             if (books.isEmpty()) {
                 EmptyLibraryHint(
                     favoritesOnly = shelf.favoritesOnly,
@@ -387,6 +418,24 @@ fun LibraryScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { shelfPickKey = null }) { Text(t("Cancel")) }
+            },
+        )
+    }
+    if (showFailureDialog) {
+        val state = importState as? ImportState.Finished
+        AlertDialog(
+            onDismissRequest = { showFailureDialog = false },
+            title = { Text(t("Import failed")) },
+            text = {
+                Text(
+                    state?.error ?: buildString {
+                        append(t("Import failed"))
+                        append(' ').append(state?.failed ?: 0)
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showFailureDialog = false }) { Text(t("Confirm")) }
             },
         )
     }
