@@ -1466,5 +1466,17 @@
   "Auto (follow reader language)": "自动（跟随阅读语言）",
   "Layout": "排版",
   "Paginated": "分页",
-  "Scrolled": "滚动"
+  "Scrolled": "滚动",
+  "Performance profile": "性能档位",
+  "Normal": "普通",
+  "Lite (low memory)": "精简（低内存）",
+  "Reader gestures": "阅读手势",
+  "Tap zone width": "点按区域宽度",
+  "Swipe to turn pages": "滑动翻页",
+  "Volume keys turn pages": "音量键翻页",
+  "Invert volume turn direction": "反转音量键翻页方向",
+  "PDF display": "PDF 显示",
+  "PDF reflow view": "PDF 重排视图",
+  "PDF raster view": "PDF 栅格视图",
+  "PDF margin crop": "PDF 页边裁剪"
 }
