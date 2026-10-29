@@ -2,6 +2,7 @@ package com.koodoreader.core.dbio
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -217,5 +218,23 @@ class BackupBundleTest {
         val zipPath = File(dir, "b.zip")
         BackupBundle.write(zipPath, emptyMap(), "{}", emptyList())
         assertTrue(BackupBundle.isZip(zipPath))
+    }
+
+    @Test
+    fun `android prefs entry round trips and desktop config is untouched`() {
+        val out = dir.resolve("with-android-prefs.zip")
+        BackupBundle.write(
+            out,
+            mapOf("books" to listOf<Row>()),
+            configJson = "{\"textRuleList\":\"[]\"}",
+            androidPrefsJson = "{\"version\":1,\"feature\":{\"fontScale\":\"1.2\"}}",
+        )
+        BackupBundle.open(out).use { bundle ->
+            assertEquals("{\"textRuleList\":\"[]\"}", bundle.configJson)
+            assertEquals("{\"version\":1,\"feature\":{\"fontScale\":\"1.2\"}}", bundle.androidPrefsJson)
+        }
+        val plain = dir.resolve("plain.zip")
+        BackupBundle.write(plain, mapOf("books" to listOf<Row>()))
+        BackupBundle.open(plain).use { assertNull(it.androidPrefsJson) }
     }
 }

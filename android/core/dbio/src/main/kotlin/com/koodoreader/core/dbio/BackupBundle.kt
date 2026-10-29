@@ -115,6 +115,7 @@ class FontRef(
 class BundleOpen internal constructor(
     val tables: List<TableSource>,
     val configJson: String?,
+    val androidPrefsJson: String? = null,
     val covers: List<CoverFile>,
     val bookFiles: List<BookFile>,
     val fontFiles: List<FontFile>,
@@ -199,6 +200,7 @@ object BackupBundle {
         try {
             val dbFiles = linkedMapOf<String, File>()
             var configJson: String? = null
+            var androidPrefsJson: String? = null
             val covers = mutableListOf<CoverFile>()
             val books = mutableListOf<BookFile>()
             val fonts = mutableListOf<FontFile>()
@@ -222,6 +224,9 @@ object BackupBundle {
                     name == "config/config.json" -> {
                         configJson = archive.readBytes(name).decodeToString()
                     }
+                    name == "config/koodo-android.json" -> {
+                        androidPrefsJson = archive.readBytes(name).decodeToString()
+                    }
                     name.startsWith("cover/") -> {
                         val rel = name.removePrefix("cover/")
                         covers.add(CoverFile(rel, entry.sizeBytes))
@@ -240,6 +245,7 @@ object BackupBundle {
             return BundleOpen(
                 tables = resolveTables(dbFiles),
                 configJson = configJson,
+                androidPrefsJson = androidPrefsJson,
                 covers = covers,
                 bookFiles = books,
                 fontFiles = fonts,
@@ -273,10 +279,12 @@ object BackupBundle {
         val books = booksDir.listFiles()
             .orEmpty().filter { it.isFile }.map { BookFile(it.name, it.length()) }
         val configJsf = File(realRoot, "config.json")
+        val androidPrefsJsf = File(realRoot, "koodo-android.json")
         val fontsDir = File(dir, "fonts")
         return BundleOpen(
             tables = resolveTables(dbFiles),
             configJson = configJsf.takeIf { it.isFile }?.readText(),
+            androidPrefsJson = androidPrefsJsf.takeIf { it.isFile }?.readText(),
             covers = covers,
             bookFiles = books,
             fontFiles = fontsDir.listFiles()
@@ -339,6 +347,7 @@ object BackupBundle {
         bookFiles: List<BookRef> = emptyList(),
         fontFiles: List<FontRef> = emptyList(),
         syncJson: String = "",
+        androidPrefsJson: String = "",
     ) {
         val work = java.nio.file.Files.createTempDirectory("dbio-write").toFile()
         try {
@@ -351,6 +360,11 @@ object BackupBundle {
                     if (syncJson.isNotEmpty()) {
                         zos.putNextEntry(ZipEntry("config/sync.json"))
                         zos.write(syncJson.toByteArray())
+                        zos.closeEntry()
+                    }
+                    if (androidPrefsJson.isNotEmpty()) {
+                        zos.putNextEntry(ZipEntry("config/koodo-android.json"))
+                        zos.write(androidPrefsJson.toByteArray())
                         zos.closeEntry()
                     }
                     for (t in DesktopDdl.TABLES) {
