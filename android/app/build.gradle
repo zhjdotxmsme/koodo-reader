@@ -53,6 +53,10 @@ android {
         def readerEngine = (project.findProperty("reader") ?: "foliate").toString().trim()
         buildConfigField "String", "READER_ENGINE", "\"${readerEngine}\""
 
+        // stripIsland 构建不打包兜底岛：CBR/未知格式的 intent 到达时
+        // MainActivity 必须显式提示，而不是投递给一个不存在的 webapp。
+        buildConfigField "boolean", "ISLAND_PACKAGED", stripIsland ? "false" : "true"
+
         // Restrict the APK to a single ABI when building per-ABI splits
         // (driven by `-PabiFilters=<abi>` from scripts/build-android.js).
         // `abiFilters` resolves to the NdkOptions property (HashSet) when written

@@ -303,7 +303,16 @@ class MainActivity : Activity() {
             IntentRoutePolicy.Route.NATIVE_PDF,
             IntentRoutePolicy.Route.NATIVE_SHELL,
             -> importToNativeShell(uri)
-            IntentRoutePolicy.Route.ISLAND -> queueBook(uri, mimeType)
+            IntentRoutePolicy.Route.ISLAND -> {
+                if (!BuildConfig.ISLAND_PACKAGED) {
+                    // stripIsland 构建：兜底岛不存在，CBR（ADR-006）与无法识别的
+                    // 载荷显式不支持，避免无声死路。
+                    AppLog.i(TAG, "island not packaged; unsupported payload: $uri")
+                    toast("CBR and unrecognized formats are not supported in this build.")
+                    return
+                }
+                queueBook(uri, mimeType)
+            }
         }
     }
 
