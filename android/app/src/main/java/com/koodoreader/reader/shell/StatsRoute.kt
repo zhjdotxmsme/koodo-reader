@@ -26,10 +26,10 @@ import com.koodoreader.feature.stats.ui.StatsViewModel
  *  - `booksRead` is the library row count from `:core:data`;
  *  - the i18n lookup is the desktop-parity [LocalI18n].
  *
- * Known gap, deliberately not faked: `progressProvider` is empty because the
- * native readers do not persist reading progress yet (P2 / gap 1). `:core:data`'s
- * `books` table has no progress column, so there is nothing truthful to pass;
- * the screen renders the same zeroes the desktop shows for a fresh database.
+ * `progressProvider` reads `ReaderProgressPrefs.allFractions()` — the per-book
+ * fractions the native readers persist on every progress write — so the
+ * "continue reading" rows track real device-side progress. Desktop has no
+ * equivalent prefs file; this remains an Android-only source by design.
  */
 @Composable
 fun StatsRoute(
