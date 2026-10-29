@@ -18,7 +18,7 @@
 |---|---|---|---|
 | **[1] 兜底岛按格式下线** | ◐ **前置未完成 → 保留最小兜底**（ADR-005）。`feature/webisland` 模块**从不存在**；兜底岛实为 `:app` 内一组资产 + 3 个类 | §1.1 盘点表；`android/feature/` 目录不存在、全仓 `webisland` 0 命中 | P8-F1（intent 路由）、P8-F3（flavor 迁移）；漫画/FB2/DOCX/HTML/MHTML、简繁转换**尚不能下线** |
 | **[2] ABI 拆分 + 动态特性，体积达标并记录** | ◐ 实测完成 + 目标已建模；**ABI 拆分收益为 0**（APK 内零 `.so`），真正的杠杆是剥离兜底岛资产（−7.78 MB 压缩） | §3.1 逐项实测；`docs/android-baseline-after.json` | 应用 `android-app-build-gradle.patch` 后出包回填 `after.measured` |
-| **[3] Crash 监控接入** | ◐ 骨架落地（`android/feature/crash`，纯 JVM、零依赖、带单测）；**不依赖真实后端**，红线为 `RedactionOnlyCallback` | §4；`android/feature/crash/src/**`（7 文件） | 后端适配器 + `Application.onCreate` 一行接线（patch 已含依赖） |
+| **[3] Crash 监控接入** | ◐ 骨架落地（`android/feature/crash`，纯 JVM、零依赖、带单测）；**不依赖真实后端**，红线为 `RedactionOnlyCallback` | §4；`android/feature/crash/src/**`（7 文件） | 后端适配器（发布方按需）；`Application.onCreate` 一行接线**已关闭**（ef1037ac，2026-10-29） |
 | **[4] Macrobenchmark 指标进 CI** | ◐ 骨架 + CI 入口脚本落地；四项指标各有一个 benchmark 类；CI job 片段待维护者合入 workflow | §5；`android/benchmarks/**`、`scripts/ci-macro-benchmark.sh` | 真机跑一次校准；`openBook` trace 段落（P8-F2） |
 | **[5] AGPL-3.0 合规自查** | ☑ 完成 | `docs/appendix-c-agpl-compliance.md` | 发布流程按 §C.6 清单执行 |
 
@@ -263,8 +263,8 @@ android/feature/crash/
 
 ### 4.3 接入步骤
 
-1. **构建接线**（patch）：`android-settings-gradle.patch` 注册 `:feature:crash`；`android-app-build-gradle.patch` 加 `implementation project(':feature:crash')`。
-2. **`Application.onCreate`**（`:app`，需改代码 → 未在本卡修改）：
+1. **构建接线**（patch）：`android-settings-gradle.patch` 注册 `:feature:crash`；`android-app-build-gradle.patch` 加 `implementation project(':feature:crash')`。（**已应用**：模块注册与 `:app` 依赖已随 1118b69f 进主分支，2026-10-29 核实，无需再打 patch）
+2. **`Application.onCreate`**（`:app`，需改代码 → 未在本卡修改；**2026-10-29 已关闭**：ef1037ac 已在 `KoodoReaderApp.onCreate` 落地 `CrashMonitoring.install()` + `breadcrumb`）：
    ```kotlin
    CrashMonitoring.install()                        // 面包屑 + 崩溃捕获，不发送
    CrashMonitoring.breadcrumb("app", "onCreate")
@@ -365,7 +365,7 @@ bash scripts/ci-macro-benchmark.sh [--serial id] [--book-title t] [--iterations 
 | 检查 | 手段 | 结果 |
 |---|---|---|
 | 3 个 patch 可应用 | `git apply --check`（对 worktree 干净基线 `9abe7904`） | 全部 exit 0 |
-| patch 与主仓未提交改动的关系 | 主仓 `android/app/build.gradle`、`android/settings.gradle` 有未提交的 P2 改动（4 条依赖 + 4 段 include），但 4 个 hunk 的上下文均不与它们重叠；对**主仓当前工作区**再跑一次 `git apply --check` | 全部 exit 0 → **无需 rebase，可直接应用** |
+| patch 与主仓未提交改动的关系 | 主仓 `android/app/build.gradle`、`android/settings.gradle` 有未提交的 P2 改动（4 条依赖 + 4 段 include），但 4 个 hunk 的上下文均不与它们重叠；对**主仓当前工作区**再跑一次 `git apply --check` | 全部 exit 0 → **无需 rebase，可直接应用**；**2026-10-29 已关闭**：4 段 include 已由 e0194368 反注释（D0/R1/P5-FB2 前置均已完成） |
 | patch 文件行尾 | 统一为 LF（生成时曾为 CRLF：git 仍能识别，但会把目标文件写成 CRLF，徒增 diff 噪音） | 4 个文件均 LF-only |
 | `android-baseline-after.json` 合法 | `JSON.parse` | 通过；`budgets`/`savingsModel` 字段齐全 |
 | CI 脚本语法 | `bash -n` | **无法执行**（沙箱拒绝 Git-Bash/WSL 启动：`CreateFileMapping … Win32 error 5` / WSL `E_ACCESSDENIED`）→ 改为：剥 heredoc 后 if/fi、case/esac、do/done 配平检查 + 全文逐行评审 |

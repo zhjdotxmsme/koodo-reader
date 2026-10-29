@@ -139,6 +139,8 @@
 
 ### 🚨 P0 — `gradle :app:assembleDebug` 跨模块构建会立刻挂
 
+> **2026-10-29 已关闭**：见 e0194368。
+
 - **现象**：当前 `settings.gradle:103,106,109,112` 4 个 `include`（`:core:archive` / `:engine:fb2` / `:engine:htmlbook` / `:engine:docx`）**被注释**；但 8 个 `build.gradle` 引用它们：`app/build.gradle:197,200,201` + `core/importer/build.gradle:27` + `core/dbio/build.gradle:30` + `engine/fb2/build.gradle:21` + `engine/docx/build.gradle:22,24`。`gradle :app:assembleDebug` / `gradle test` (root) / `gradle :app:dependencies` 会 100% 报 `Project with path ':engine:fb2' could not be found.`。
 - **代码事实**：4 个模块的 `src/main/kotlin/...kt` + `src/test/kotlin/...Test.kt` + `build.gradle` + `build/libs/*.jar` + `build/test-results/test/*.xml` **全在磁盘上**。`.worktrees/d0-textblock-flattener`、`.worktrees/r1-core-archive` 已合并。
 - **现状**：单模块 `gradle :engine:fb2:test` 这种命令能跑（不依赖 root settings include），所以"1599 测试全绿"是单模块分别跑出来的——**根 `gradle test` 应该挂**。
@@ -151,12 +153,16 @@
 
 ### P1 — `:feature:crash.CrashMonitoring.install()` 未接入 `KoodoReaderApp.onCreate`
 
+> **2026-10-29 已关闭**：见 ef1037ac。
+
 - **现象**：`KoodoReaderApp.kt` 17 行：`super.onCreate()` + `CrashLogWriter.install(this)` + `AndroidDesktopDb.install()`；**没有 `:feature:crash.CrashMonitoring.install(this)`**。`:feature:crash` 模块写了 6 个 .kt（CrashBackends / CrashEvent / CrashMonitoring / CrashReporter / Redaction）但未应用——p8-rollout-checklist §3 写明"one-line wiring in patch (not applied in main branch)"。
 - **当前**：用户崩溃会被 `app/CrashLogWriter` 抓到，写 4 渠道文件 + 剪贴板 + Toast。**不影响使用**——但 `:feature:crash` 准备接 Sentry/Firebase 时这层接口没用上，崩溃事件不会经过 redaction-only before-send hook。
 - **修法**：在 `KoodoReaderApp.onCreate` 加 `CrashMonitoring.install(this)`；redaction 默认 backend 是 no-op（已写好）；如需接 Sentry/Firebase，再追加 backend。
 - **验证**：`grep CrashMonitoring.install android/app/src/main/java/com/koodoreader/reader/KoodoReaderApp.kt` → 当前为空；改后应有 1 行。
 
 ### P2 — TTS voice picker 已写但未接入 settings 屏
+
+> **2026-10-29 已关闭**：见 185d3fc9。
 
 - **现象**：`TtsControlSheet:96` 已经有 `onVoiceClick` hook + `needsVoiceSelection` 状态 + `voiceName` 显示；但 `TtsSettingsRoute.kt` 文件头注释"音色与引擎选择依赖设备 TTS 服务，随后续功能卡加入"——host 路由没把 voice picker 接到 settings 屏。
 - **影响**：用户在阅读器里通过 sheet 改 TTS 速度/音调/音量后，回到设置屏想选语音/引擎，**找不到入口**。
@@ -165,12 +171,16 @@
 
 ### P3 — NativeEpubScreen 使用 `MainScope().launch` 多次（应改用 viewModelScope）
 
+> **2026-10-29 已关闭**：见 2ae6bbbc。
+
 - **现象**：`NativeEpubScreen` 在以下 7 处用 `MainScope().launch { ... }`：`addBookmark` / `saveHighlight` / `deleteHighlight` / `saveNote` / `startTts` / `lookupDictionary` / `translateController.translate`。这些调用在 Composition 退出后仍持有 Activity Context 引用，**可能导致 Activity 泄漏**；且在配置变更（旋转/字体变化）时无法取消。
 - **影响**：单次看不明显，但长时间使用 + 频繁进退阅读会积累 Activity 引用；某些 Android 版本上会触发 `LeakCanary` 或直接 OOM。
 - **修法**：把状态和数据操作下沉到 `ReaderViewModel`，用 `viewModelScope.launch` 替代。属于代码清理范畴，**不影响功能**。
 - **验证**：`grep -n "MainScope()" android/app/src/main/java/com/koodoreader/reader/epubhost/NativeEpubScreen.kt` 应有 7 行命中；改后应为 0。
 
 ### P4 — `TranslationPopup` UI 在但未接到 `NativeEpubScreen` 双击选词
+
+> **2026-10-29 已关闭**：见 3c2ae7e5。
 
 - **现象**：`:feature:translate/TranslationPopup.kt` + `TranslationPopupUi.kt` UI 完整；但 `NativeEpubScreen` 的双击选词菜单**没有翻译项**——只有高亮 4 色 / 笔记 / 复制 / 搜索。
 - **影响**：用户双击选词后想直接翻译，必须手动复制词条再切到翻译屏——**翻译端到端体验断裂**。
