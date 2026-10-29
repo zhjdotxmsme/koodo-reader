@@ -127,7 +127,7 @@ class SortShelfDialog extends React.Component<
                 this.setState({ sortedShelfList: newState })
               }
               animation={200}
-              delayOnTouchStart={true}
+              delayOnTouchOnly={true}
               delay={2}
               scroll={true} // Enable auto-scrolling
               scrollSensitivity={140} // Distance from edge that triggers scrolling (px)
