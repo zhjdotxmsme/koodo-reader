@@ -146,6 +146,12 @@
 
 ## 8 · 实施计划索引
 
-（由 writing-plans 产出后回填：`docs/superpowers/plans/2026-10-29-android-closeout-*.md`）
+| 文档 | 内容 | 状态 |
+|------|------|------|
+| `docs/superpowers/plans/2026-10-29-android-closeout-batch-1-2.md` | 批1 小修 + 批2 发布工程（6 任务） | ✅ 已完成（含终审修复） |
+| `docs/superpowers/plans/2026-10-29-android-uiux-p0.md` | UI/UX P0 四项 | ✅ 已完成 |
+| `docs/superpowers/plans/2026-10-29-android-closeout-batch-3-backup-prefs.md` | 批3 M4 备份一体化（4 任务） | 待执行 |
+| `docs/superpowers/plans/2026-10-29-android-closeout-batch-4a-huffcdic.md` | 批4a MOBI HUFF/CDIC（4 任务） | 待执行 |
+| `docs/superpowers/plans/2026-10-29-android-closeout-batch-4b-cloud-dict.md` | 批4b 云字典下载（3 任务） | 待执行 |
 
 *Spec self-review（2026-10-29）：无 TBD；批 2 stripIsland 的 CBR 前置已写明；桌面 config.json 字段名标注「实施时以真实导出核实」为显式验证步骤而非缺口；两条大功能互不依赖可并行；非目标与 10-21 规格一致。*
