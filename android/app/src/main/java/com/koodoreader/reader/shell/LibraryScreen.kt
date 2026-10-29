@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -50,8 +52,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -65,7 +69,7 @@ import com.koodoreader.reader.R
  * sort/view/favorites/trash (desktop manager parity, [LibraryLogic]) and
  * long-press drag reorder in grid mode.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun LibraryScreen(
     onOpenBook: (String) -> Unit,
@@ -210,6 +214,7 @@ fun LibraryScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            val keyboard = LocalSoftwareKeyboardController.current
             TextField(
                 value = shelf.searchQuery,
                 onValueChange = viewModel::setSearchQuery,
@@ -220,6 +225,21 @@ fun LibraryScreen(
                         vertical = SpaceTokens.sm.dp,
                     ),
                 singleLine = true,
+                trailingIcon = {
+                    if (shelf.searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                viewModel.setSearchQuery("")
+                                keyboard?.hide()
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = t("Clear"),
+                            )
+                        }
+                    }
+                },
                 placeholder = { Text(t("Search")) },
                 leadingIcon = {
                     Icon(
