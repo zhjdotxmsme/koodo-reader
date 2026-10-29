@@ -100,37 +100,38 @@ fun BookListRow(
     book: BookEntity,
     isFavorite: Boolean,
     coverVersion: Int = 0,
-    onToggleFavorite: () -> Unit = {},
-    onMoveToTrash: () -> Unit = {},
-    onAddToShelf: () -> Unit = {},
+    onToggleFavorite: (() -> Unit)? = null,
+    onMoveToTrash: (() -> Unit)? = null,
+    onAddToShelf: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val hasMenu = onToggleFavorite != null || onMoveToTrash != null || onAddToShelf != null
     KoodoBookRow(
         model = book.toCardModel(isFavorite),
         cover = rememberCoverPainter(book.cover, book.key, coverVersion),
         onClick = onClick,
-        onLongClick = { menuOpen = true },
+        onLongClick = if (hasMenu) ({ menuOpen = true }) else ({}),
         favoriteContentDescription = t("Favorite"),
-        menu = {
+        menu = if (hasMenu) ({
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = {
                         Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite"))
                     },
-                    onClick = { onToggleFavorite(); menuOpen = false },
+                    onClick = { onToggleFavorite?.invoke(); menuOpen = false },
                 )
                 DropdownMenuItem(
                     text = { Text(t("Move to trash")) },
-                    onClick = { onMoveToTrash(); menuOpen = false },
+                    onClick = { onMoveToTrash?.invoke(); menuOpen = false },
                 )
                 DropdownMenuItem(
                     text = { Text(t("Add to shelf")) },
-                    onClick = { onAddToShelf(); menuOpen = false },
+                    onClick = { onAddToShelf?.invoke(); menuOpen = false },
                 )
             }
-        },
+        }) else ({}),
         modifier = modifier,
     )
 }
