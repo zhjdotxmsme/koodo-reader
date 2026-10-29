@@ -40,6 +40,74 @@ class DesktopConfigPrefsTest {
         assertTrue(parsed.rules.isEmpty())
         assertEquals("", parsed.customBookCss)
         assertEquals(false, parsed.customBookCssEnabled)
+        assertEquals(
+            listOf(
+                "missing or invalid 'textRuleList' string",
+                "missing or invalid 'textRules' string",
+                "missing or invalid 'readerConfig' string",
+            ),
+            parsed.warnings,
+        )
+    }
+
+    @Test
+    fun `malformed root json warns and returns safe defaults`() {
+        val parsed = DesktopConfigPrefs.parseDesktopConfig("{")
+        assertTrue(parsed.rules.isEmpty())
+        assertEquals("", parsed.customBookCss)
+        assertEquals(false, parsed.customBookCssEnabled)
+        assertEquals(listOf("config.json is not an object"), parsed.warnings)
+    }
+
+    @Test
+    fun `wrongly typed desktop fields warn and return safe defaults`() {
+        val parsed = DesktopConfigPrefs.parseDesktopConfig(
+            """{"textRuleList":[],"textRules":{},"readerConfig":{}}""",
+        )
+        assertTrue(parsed.rules.isEmpty())
+        assertEquals("", parsed.customBookCss)
+        assertEquals(false, parsed.customBookCssEnabled)
+        assertEquals(
+            listOf(
+                "missing or invalid 'textRuleList' string",
+                "missing or invalid 'textRules' string",
+                "missing or invalid 'readerConfig' string",
+            ),
+            parsed.warnings,
+        )
+    }
+
+    @Test
+    fun `partially missing rule data warns and skips rules`() {
+        val parsed = DesktopConfigPrefs.parseDesktopConfig(
+            """{"textRuleList":"[\"1\"]","readerConfig":"{\"customBookCSS\":\"body{}\",\"isCustomBookCSS\":\"yes\"}"}""",
+        )
+        assertTrue(parsed.rules.isEmpty())
+        assertEquals("body{}", parsed.customBookCss)
+        assertTrue(parsed.customBookCssEnabled)
+        assertEquals(listOf("missing or invalid 'textRules' string"), parsed.warnings)
+    }
+
+    @Test
+    fun `invalid or missing css fields warn and use defaults`() {
+        val invalid = DesktopConfigPrefs.parseDesktopConfig(
+            """{"textRuleList":"[]","textRules":"{}","readerConfig":"{\"customBookCSS\":42,\"isCustomBookCSS\":true}"}""",
+        )
+        val missing = DesktopConfigPrefs.parseDesktopConfig(
+            """{"textRuleList":"[]","textRules":"{}","readerConfig":"{}"}""",
+        )
+        for (parsed in listOf(invalid, missing)) {
+            assertTrue(parsed.rules.isEmpty())
+            assertEquals("", parsed.customBookCss)
+            assertEquals(false, parsed.customBookCssEnabled)
+            assertEquals(
+                listOf(
+                    "missing or invalid 'readerConfig.customBookCSS' string",
+                    "missing or invalid 'readerConfig.isCustomBookCSS' string",
+                ),
+                parsed.warnings,
+            )
+        }
     }
 
     @Test

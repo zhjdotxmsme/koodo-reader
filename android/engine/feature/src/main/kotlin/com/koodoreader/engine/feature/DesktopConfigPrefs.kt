@@ -43,9 +43,11 @@ object DesktopConfigPrefs {
             ?: return DesktopPrefs(emptyList(), "", false, listOf("config.json is not an object"))
         val warnings = mutableListOf<String>()
         fun stringField(key: String): String? = (root.fields[key] as? JsonValue.Str)?.value
-        val rulesPart = buildString {
-            val ids = stringField(TextRuleJson.KEY_RULE_LIST) ?: return@buildString
-            val map = stringField(TextRuleJson.KEY_RULES) ?: return@buildString
+        val ids = stringField(TextRuleJson.KEY_RULE_LIST)
+        if (ids == null) warnings += "missing or invalid '${TextRuleJson.KEY_RULE_LIST}' string"
+        val map = stringField(TextRuleJson.KEY_RULES)
+        if (map == null) warnings += "missing or invalid '${TextRuleJson.KEY_RULES}' string"
+        val rulesPart = if (ids == null || map == null) "" else buildString {
             append("{\"").append(TextRuleJson.KEY_RULE_LIST).append("\":").append(ids)
             append(",\"").append(TextRuleJson.KEY_RULES).append("\":").append(map).append('}')
         }
@@ -61,11 +63,21 @@ object DesktopConfigPrefs {
         var css = ""
         var enabled = false
         val rcText = stringField(KEY_READER_CONFIG)
-        if (rcText != null) {
+        if (rcText == null) {
+            warnings += "missing or invalid '$KEY_READER_CONFIG' string"
+        } else {
             runCatching {
                 val rc = Json.parse(rcText) as JsonValue.Obj
-                css = (rc.fields[KEY_CUSTOM_CSS] as? JsonValue.Str)?.value.orEmpty()
-                enabled = (rc.fields[KEY_CUSTOM_CSS_ENABLED] as? JsonValue.Str)?.value == "yes"
+                val cssValue = rc.fields[KEY_CUSTOM_CSS] as? JsonValue.Str
+                if (cssValue == null) {
+                    warnings += "missing or invalid '$KEY_READER_CONFIG.$KEY_CUSTOM_CSS' string"
+                }
+                css = cssValue?.value.orEmpty()
+                val enabledValue = rc.fields[KEY_CUSTOM_CSS_ENABLED] as? JsonValue.Str
+                if (enabledValue == null) {
+                    warnings += "missing or invalid '$KEY_READER_CONFIG.$KEY_CUSTOM_CSS_ENABLED' string"
+                }
+                enabled = enabledValue?.value == "yes"
             }.onFailure { warnings += "readerConfig parse failed: ${it.message}" }
         }
         return DesktopPrefs(imported.rules, css, enabled, warnings)
