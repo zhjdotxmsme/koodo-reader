@@ -27,6 +27,16 @@ data class ReaderFeatureState(
     val doublePage: Boolean = false,
     /** Foliate paginated vs scrolled layout (true = continuous scroll). */
     val scrolled: Boolean = true,
+    /** Desktop `customBookCSS` when [customBookCssEnabled]. */
+    val customBookCss: String = "",
+    /** Desktop `isCustomBookCSS === "yes"`. */
+    val customBookCssEnabled: Boolean = false,
+    /** [ReaderPerformancePolicy.TIER_NORMAL] or [ReaderPerformancePolicy.TIER_LITE]. */
+    val perfTier: String = ReaderPerformancePolicy.TIER_NORMAL,
+    /** Uniform inset crop on PDF raster pages (output pixels, 0 = off). */
+    val pdfCropMarginPx: Float = 0f,
+    /** PDF text reflow (html from getTextContent) instead of bitmap pages. */
+    val pdfReflow: Boolean = false,
 )
 
 object ReaderFeatureCodec {
@@ -45,8 +55,15 @@ object ReaderFeatureCodec {
     const val KEY_FONT = "fontKey"
     const val KEY_DOUBLE_PAGE = "doublePage"
     const val KEY_SCROLLED = "scrolled"
+    const val KEY_CUSTOM_BOOK_CSS = "customBookCss"
+    const val KEY_CUSTOM_BOOK_CSS_ENABLED = "customBookCssEnabled"
+    const val KEY_PERF_TIER = "perfTier"
+    const val KEY_PDF_CROP = "pdfCropMarginPx"
+    const val KEY_PDF_REFLOW = "pdfReflow"
 
     const val FONT_SIZE_DEFAULT = 17f
+    const val PDF_CROP_MIN = 0f
+    const val PDF_CROP_MAX = 48f
     const val FONT_SCALE_MIN = 0.7f
     const val FONT_SCALE_MAX = 2.5f
     const val LINE_HEIGHT_MIN = 1f
@@ -72,6 +89,12 @@ object ReaderFeatureCodec {
         fontKey = map[KEY_FONT].orEmpty(),
         doublePage = boolOf(map[KEY_DOUBLE_PAGE]),
         scrolled = if (map[KEY_SCROLLED] == null) true else boolOf(map[KEY_SCROLLED]),
+        customBookCss = map[KEY_CUSTOM_BOOK_CSS].orEmpty(),
+        customBookCssEnabled = boolOf(map[KEY_CUSTOM_BOOK_CSS_ENABLED]),
+        perfTier = map[KEY_PERF_TIER]?.takeIf { it.isNotBlank() }
+            ?: ReaderPerformancePolicy.TIER_NORMAL,
+        pdfCropMarginPx = floatOf(map[KEY_PDF_CROP], 0f),
+        pdfReflow = boolOf(map[KEY_PDF_REFLOW]),
     )
 
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
@@ -89,7 +112,15 @@ object ReaderFeatureCodec {
         KEY_FONT to state.fontKey,
         KEY_DOUBLE_PAGE to state.doublePage.toString(),
         KEY_SCROLLED to state.scrolled.toString(),
+        KEY_CUSTOM_BOOK_CSS to state.customBookCss,
+        KEY_CUSTOM_BOOK_CSS_ENABLED to state.customBookCssEnabled.toString(),
+        KEY_PERF_TIER to state.perfTier,
+        KEY_PDF_CROP to clampedPdfCrop(state).toString(),
+        KEY_PDF_REFLOW to state.pdfReflow.toString(),
     )
+
+    fun userStylesheet(state: ReaderFeatureState): String =
+        if (state.customBookCssEnabled) state.customBookCss.trim() else ""
 
     fun fontSizePx(state: ReaderFeatureState): Float =
         FONT_SIZE_DEFAULT * state.fontScale.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
@@ -105,6 +136,9 @@ object ReaderFeatureCodec {
 
     fun clampedColumns(state: ReaderFeatureState): Int =
         state.columnsPerPage.coerceIn(1, 8)
+
+    fun clampedPdfCrop(state: ReaderFeatureState): Float =
+        state.pdfCropMarginPx.coerceIn(PDF_CROP_MIN, PDF_CROP_MAX)
 
     private fun floatOf(raw: String?, default: Float): Float =
         raw?.toFloatOrNull() ?: default

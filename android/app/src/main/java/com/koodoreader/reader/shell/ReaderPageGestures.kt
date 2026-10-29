@@ -67,18 +67,25 @@ object ReaderPageGestures {
         upY: Float,
         widthPx: Float,
         slopPx: Float = 24f,
+        edgeFraction: Float = 1f / 3f,
     ): ReaderPageGesture? {
         if (kotlin.math.abs(upX - downX) > slopPx || kotlin.math.abs(upY - downY) > slopPx) {
             return null
         }
-        return onTap(upX, widthPx)
+        return onTap(upX, widthPx, edgeFraction)
     }
 
     /**
      * Horizontal page-turn: finger left → next, finger right → previous.
      * Vertical motion (scroll / chrome reveal) wins when it dominates.
      */
-    fun onHorizontalSwipe(dx: Float, dy: Float, minDx: Float = 48f): ReaderPageGesture? {
+    fun onHorizontalSwipe(
+        dx: Float,
+        dy: Float,
+        minDx: Float = 48f,
+        enabled: Boolean = true,
+    ): ReaderPageGesture? {
+        if (!enabled) return null
         if (kotlin.math.abs(dx) < minDx) return null
         if (kotlin.math.abs(dx) <= kotlin.math.abs(dy)) return null
         return if (dx < 0f) ReaderPageGesture.NEXT_PAGE else ReaderPageGesture.PREV_PAGE
@@ -90,10 +97,17 @@ object ReaderPageGestures {
     /** android.view.KeyEvent.KEYCODE_VOLUME_DOWN */
     const val VOLUME_DOWN = 25
 
-    fun onVolumeKey(keyCode: Int): ReaderPageGesture? = when (keyCode) {
-        VOLUME_DOWN -> ReaderPageGesture.NEXT_PAGE
-        VOLUME_UP -> ReaderPageGesture.PREV_PAGE
-        else -> null
+    fun onVolumeKey(
+        keyCode: Int,
+        enabled: Boolean = true,
+        inverted: Boolean = false,
+    ): ReaderPageGesture? {
+        if (!enabled) return null
+        return when (keyCode) {
+            VOLUME_DOWN -> if (inverted) ReaderPageGesture.PREV_PAGE else ReaderPageGesture.NEXT_PAGE
+            VOLUME_UP -> if (inverted) ReaderPageGesture.NEXT_PAGE else ReaderPageGesture.PREV_PAGE
+            else -> null
+        }
     }
 }
 

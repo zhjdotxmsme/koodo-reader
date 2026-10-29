@@ -17,6 +17,8 @@
 //   selectedRange()       -> { cfi, excerpt } | null
 //   close()               -> void
 
+import { parseRules, applyRulesToHtml } from './text-rules.mjs';
+
 export function selectionPayload(sel, cfi) {
     if (!sel || sel.isCollapsed) return { excerpt: '', cfi: '' };
     const excerpt = String(sel).trim();
@@ -292,6 +294,29 @@ function txtToHtmlBook(text, title) {
     };
 }
 
+function wireSectionRules(section, rules) {
+    if (!section || typeof section.load !== 'function') return;
+    if (!section._originalLoad) {
+        section._originalLoad = section.load.bind(section);
+    }
+    const orig = section._originalLoad;
+    section.load = async () => {
+        const raw = await orig();
+        if (typeof raw === 'string' && rules && rules.length) {
+            return applyRulesToHtml(raw, rules);
+        }
+        return raw;
+    };
+}
+
+function applyRulesToBook(book, rulesJson) {
+    if (!book || !book.sections) return;
+    const rules = parseRules(rulesJson);
+    for (const section of book.sections) {
+        wireSectionRules(section, rules);
+    }
+}
+
 function attachCreateDocument(book) {
     if (typeof DOMParser === 'undefined') return book;
     for (const section of book.sections || []) {
@@ -349,6 +374,8 @@ export function createFoliateEngine(options) {
     };
     let flow = 'scrolled';
     let maxColumnCount = 1;
+    let textRulesJson = '';
+    let lastRendererCss = '';
     attachSelectionReporter(view, host);
 
     function requireBook() {
@@ -389,6 +416,7 @@ export function createFoliateEngine(options) {
             throw new Error('no opener for format ' + fmt);
         }
         if (!book) throw new Error('open() produced no book');
+        applyRulesToBook(book, textRulesJson);
         if (view && view.renderer && typeof view.renderer.setStyles === 'function') {
             view.renderer.setStyles(appearanceCss(appearance));
         }
@@ -468,6 +496,24 @@ export function createFoliateEngine(options) {
         appearance = Object.assign({}, appearance, opts || {});
         flow = opts && opts.scrolled === false ? 'paginated' : 'scrolled';
         maxColumnCount = Math.max(1, Number((opts && opts.maxColumnCount) || 1));
+        if (opts && typeof opts.textRulesJson === 'string') {
+            textRulesJson = opts.textRulesJson;
+            if (book) {
+                applyRulesToBook(book, textRulesJson);
+                if (lastTarget && view && typeof view.goTo === 'function') {
+                    try {
+                        await view.goTo(lastTarget);
+                    } catch (e) {
+                        log('warn', 'reload after rules: ' + e);
+                    }
+                }
+            }
+        }
+        const userSheet = String((opts && opts.userStylesheet) || '');
+        const maxInlineSizePx = Math.max(
+            320,
+            Number((opts && opts.maxInlineSizePx) || 720),
+        );
         const themeCode = {
             bg: appearance.bg,
             fg: appearance.fg,
@@ -504,7 +550,7 @@ export function createFoliateEngine(options) {
             invertImgColorInDark: false,
             backgroundTextureId: '',
             isEink: false,
-            userStylesheet: '',
+            userStylesheet: userSheet,
             zoomLevel: 100,
             scrolled: flow === 'scrolled',
             maxColumnCount,
@@ -519,6 +565,8 @@ export function createFoliateEngine(options) {
         } catch (e) {
             css = appearanceCss(appearance);
         }
+        if (userSheet) css += '\n' + userSheet;
+        lastRendererCss = css;
         if (view && view.renderer) {
             if (typeof view.renderer.setStyles === 'function') view.renderer.setStyles(css);
             if (typeof view.renderer.setAttribute === 'function') {
@@ -526,7 +574,7 @@ export function createFoliateEngine(options) {
                 // Host owns swipe / volume-key turns so foliate does not double-flip.
                 view.renderer.setAttribute('no-swipe', '');
                 view.renderer.setAttribute('max-column-count', String(maxColumnCount));
-                view.renderer.setAttribute('max-inline-size', '720px');
+                view.renderer.setAttribute('max-inline-size', maxInlineSizePx + 'px');
                 view.renderer.setAttribute('gap', '5%');
                 const margin = Math.max(0, Number(appearance.marginPx || 0)) + 'px';
                 view.renderer.setAttribute('margin-top', margin);
@@ -601,8 +649,12 @@ export function createFoliateEngine(options) {
         get appearance() { return appearance; },
         get flow() { return flow; },
         get maxColumnCount() { return maxColumnCount; },
+        get lastRendererCss() { return lastRendererCss; },
+        get textRulesJson() { return textRulesJson; },
     };
 }
+
+export { parseRules, applyRulesToHtml } from './text-rules.mjs';
 
 export const METHODS = [
     'open',

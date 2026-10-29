@@ -55,7 +55,7 @@ function collector() {
 async function main() {
     const {
         createFoliateEngine, dispatch, encodePayload, flattenToc, splitTxtChapters, mdToHtml,
-        selectionPayload, appearanceCss, chromeTapAction,
+        selectionPayload, appearanceCss, chromeTapAction, parseRules, applyRulesToHtml,
     } =
         await import(pathToFileURL(ENGINE_MJS).href);
 
@@ -222,6 +222,27 @@ async function main() {
     eq('setViewSettings sets margin-left', attrs['margin-left'], '24px');
     eq('setViewSettings sets margin-top', attrs['margin-top'], '24px');
 
+    const inlineAttrs = {};
+    const inlineEngine = createFoliateEngine({
+        view: {
+            renderer: {
+                setStyles() {},
+                setAttribute(name, value) { inlineAttrs[name] = value; },
+            },
+        },
+        log: collector().log,
+        fetchFile: async () => ({ name: 'x', text: async () => '' }),
+        openBook: async () => ({ metadata: {}, toc: [], sections: [] }),
+    });
+    await inlineEngine.setViewSettings({
+        bg: '#fff', fg: '#111',
+        defaultFontSize: 13.6, lineHeight: 1.5, marginPx: 0,
+        maxColumnCount: 1, scrolled: true, overrideColor: true,
+        isDarkMode: false, colorScheme: 'light', defaultFont: 'serif',
+        maxInlineSizePx: 560,
+    });
+    eq('setViewSettings sets max-inline-size from perf', inlineAttrs['max-inline-size'], '560px');
+
     await engine.close();
     eq('close drops the book', engine.isOpen, false);
 
@@ -277,6 +298,65 @@ async function main() {
         'invertImages adds img filter',
         invertCss.indexOf('filter: invert') >= 0,
         invertCss.slice(0, 200),
+    );
+
+    const goTos = [];
+    const ruleReload = createFoliateEngine({
+        view: {
+            goTo: async (target) => { goTos.push(target); },
+            renderer: { setStyles() {}, setAttribute() {} },
+        },
+        log: collector().log,
+        fetchFile: async () => ({ name: 'n.epub', text: async () => '' }),
+        openBook: async () => ({
+            metadata: { title: 'R' },
+            toc: [],
+            sections: [{ id: '0', href: '0', load: async () => '<p>ok</p>' }],
+        }),
+    });
+    await ruleReload.open('http://127.0.0.1:9/__books__/n.epub', 'epub');
+    await ruleReload.goTo('0');
+    await ruleReload.setViewSettings({
+        textRulesJson: '[{"id":"1","pattern":"广告","replacement":""}]',
+        bg: '#fff', fg: '#111',
+        defaultFontSize: 13.6, lineHeight: 1.5, marginPx: 0,
+        maxColumnCount: 1, scrolled: true, overrideColor: true,
+        isDarkMode: false, colorScheme: 'light', defaultFont: 'serif',
+    });
+    eq('setViewSettings re-navigates after rule change', goTos[goTos.length - 1], '0');
+
+    const rules = parseRules('[{"id":"1","pattern":"广告","replacement":""}]');
+    eq('parseRules reads bare array', rules.length, 1);
+    const cleaned = applyRulesToHtml('<p>前缀广告后缀</p>', rules);
+    check(
+        'applyRulesToHtml removes matched text',
+        cleaned.indexOf('广告') < 0 && cleaned.indexOf('前缀') >= 0,
+        cleaned,
+    );
+
+    let cssCaptured = '';
+    const cssEngine = createFoliateEngine({
+        view: {
+            renderer: {
+                setStyles(css) { cssCaptured = css; },
+                setAttribute() {},
+            },
+        },
+        log: collector().log,
+        fetchFile: async () => ({ name: 'x', text: async () => '' }),
+        openBook: async () => ({ metadata: {}, toc: [], sections: [] }),
+    });
+    await cssEngine.setViewSettings({
+        bg: '#fff', fg: '#111',
+        defaultFontSize: 13.6, lineHeight: 1.5, marginPx: 0,
+        maxColumnCount: 1, scrolled: true, overrideColor: true,
+        isDarkMode: false, colorScheme: 'light', defaultFont: 'serif',
+        userStylesheet: 'body { outline: 1px solid red; }',
+    });
+    check(
+        'setViewSettings appends userStylesheet to renderer css',
+        cssCaptured.indexOf('outline: 1px solid red') >= 0,
+        cssCaptured.slice(0, 240),
     );
 
     const { getStyles } = await import(pathToFileURL(STYLE_MJS).href);

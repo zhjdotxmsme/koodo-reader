@@ -22,6 +22,7 @@ private val UiFamily = FontFamily.Default
 
 val KoodoTypography = Typography().let { base ->
     Typography(
+        headlineSmall = base.headlineSmall.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
         titleLarge = base.titleLarge.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
         titleMedium = base.titleMedium.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
         titleSmall = base.titleSmall.copy(fontFamily = UiFamily, fontWeight = FontWeight.Medium),

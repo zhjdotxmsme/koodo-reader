@@ -10,7 +10,8 @@
 // Contract (mirrored in android/engine/pdf/.../PdfHostBridge.kt):
 //   open(url, password)      -> { fingerprint, pageCount, pdfVersion,
 //                                 pageWidthPt, pageHeightPt }
-//   renderPage(n, widthPx)   -> base64 PNG (no data-URL prefix)
+//   renderPage(n, widthPx, cropPx?) -> base64 PNG (no data-URL prefix)
+//   reflowHtml(n, widthPx, fontScale?) -> HTML document string
 //   search(query)            -> JSON string: [{ pageNumber, hits: [{ rects,
 //                                 text }] }]  (shape consumed by
 //                                 engine:pdf PdfSearchEngine.parseHits)
@@ -122,8 +123,13 @@ export function createPdfEngine(options) {
         };
     }
 
+    function pngBase64FromCanvas(canvas) {
+        const dataUrl = canvas.toDataURL('image/png');
+        return dataUrl.slice(dataUrl.indexOf(',') + 1);
+    }
+
     /** Rasterise page `pageNumber` (1-based) at `targetWidthPx` → base64 PNG. */
-    async function renderPage(pageNumber, targetWidthPx) {
+    async function renderPage(pageNumber, targetWidthPx, cropMarginPx) {
         const d = requireDoc();
         const n = Number(pageNumber);
         if (!(n >= 1 && n <= d.numPages)) {
@@ -137,9 +143,78 @@ export function createPdfEngine(options) {
         const canvas = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height));
         const ctx = canvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport }).promise;
-        const dataUrl = canvas.toDataURL('image/png');
-        // Kotlin decodes base64 directly, so strip the data-URL prefix.
-        return dataUrl.slice(dataUrl.indexOf(',') + 1);
+        const crop = Math.max(0, Math.floor(Number(cropMarginPx) || 0));
+        if (crop > 0 && canvas.width > crop * 2 && canvas.height > crop * 2) {
+            const w = canvas.width - crop * 2;
+            const h = canvas.height - crop * 2;
+            const trimmed = createCanvas(w, h);
+            const tctx = trimmed.getContext('2d');
+            if (tctx && typeof tctx.drawImage === 'function') {
+                tctx.drawImage(canvas, crop, crop, w, h, 0, 0, w, h);
+            }
+            return pngBase64FromCanvas(trimmed);
+        }
+        return pngBase64FromCanvas(canvas);
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Build a simple reflow document from pdf.js text items (one page).
+     * Grouping is by approximate baseline Y; cross-item matches are not merged.
+     */
+    async function reflowHtml(pageNumber, targetWidthPx, fontScale) {
+        const d = requireDoc();
+        const n = Number(pageNumber);
+        if (!(n >= 1 && n <= d.numPages)) {
+            throw new Error('page out of range: ' + pageNumber);
+        }
+        const width = Math.max(240, Number(targetWidthPx) || 720);
+        const scale = Math.max(0.7, Math.min(2.5, Number(fontScale) || 1));
+        const fontPx = Math.max(14, Math.min(28, (width / 42) * scale));
+        const page = await d.getPage(n);
+        const content = await page.getTextContent();
+        const items = (content && content.items) || [];
+        const lines = [];
+        let currentY = null;
+        let bucket = [];
+        const sorted = items.slice().sort((a, b) => {
+            const ya = (a.transform && a.transform[5]) || 0;
+            const yb = (b.transform && b.transform[5]) || 0;
+            if (yb !== ya) return yb - ya;
+            const xa = (a.transform && a.transform[4]) || 0;
+            const xb = (b.transform && b.transform[4]) || 0;
+            return xa - xb;
+        });
+        for (const item of sorted) {
+            const str = (item.str || '').trim();
+            if (!str) continue;
+            const y = (item.transform && item.transform[5]) || 0;
+            if (currentY === null || Math.abs(y - currentY) > 4) {
+                if (bucket.length) lines.push(bucket.join(' '));
+                bucket = [str];
+                currentY = y;
+            } else {
+                bucket.push(str);
+            }
+        }
+        if (bucket.length) lines.push(bucket.join(' '));
+        const body = lines.length
+            ? lines.map((line) => '<p>' + escapeHtml(line) + '</p>').join('\n')
+            : '<p><em>(no extractable text on this page)</em></p>';
+        return (
+            '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+            '<style>body{font-family:Georgia,serif;font-size:' + fontPx +
+            'px;line-height:1.55;margin:16px;color:#222;background:#fafafa}' +
+            'p{margin:0.65em 0}</style></head><body>' + body + '</body></html>'
+        );
     }
 
     /**
@@ -255,6 +330,7 @@ export function createPdfEngine(options) {
     return {
         open,
         renderPage,
+        reflowHtml,
         search,
         outline,
         selectedRect,
@@ -270,6 +346,7 @@ export function createPdfEngine(options) {
 export const METHODS = [
     'open',
     'renderPage',
+    'reflowHtml',
     'search',
     'outline',
     'selectedRect',

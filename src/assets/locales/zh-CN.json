@@ -1458,5 +1458,12 @@
   "Saved": "已保存",
   "Cleared": "已清除",
   "API key required": "需要 API key",
-  "Go to settings": "去设置"
+  "Go to settings": "去设置",
+  "Independent of the app theme": "独立于应用主题 · 与桌面版预设同源",
+  "Simplified / Traditional": "简繁转换",
+  "Follow reader language": "自动跟随阅读语言",
+  "Auto (follow reader language)": "自动（跟随阅读语言）",
+  "Layout": "排版",
+  "Paginated": "分页",
+  "Scrolled": "滚动"
 }

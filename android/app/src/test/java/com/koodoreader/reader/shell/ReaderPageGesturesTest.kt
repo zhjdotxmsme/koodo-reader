@@ -115,4 +115,45 @@ class ReaderPageGesturesTest {
         )
         org.junit.Assert.assertNull(ReaderPageGestures.onVolumeKey(4))
     }
+
+    @Test
+    fun `volume keys can be disabled`() {
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.onVolumeKey(ReaderPageGestures.VOLUME_DOWN, enabled = false),
+        )
+    }
+
+    @Test
+    fun `inverted volume swaps directions`() {
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onVolumeKey(
+                ReaderPageGestures.VOLUME_DOWN,
+                inverted = true,
+            ),
+        )
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onVolumeKey(
+                ReaderPageGestures.VOLUME_UP,
+                inverted = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `horizontal swipe can be disabled`() {
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.onHorizontalSwipe(-80f, 10f, enabled = false),
+        )
+    }
+
+    @Test
+    fun `wider tap edge shrinks the chrome band`() {
+        val w = 300f
+        assertEquals(
+            ReaderPageGesture.TOGGLE_CHROME,
+            ReaderPageGestures.onTap(150f, w, edgeFraction = 0.2f),
+        )
+    }
 }

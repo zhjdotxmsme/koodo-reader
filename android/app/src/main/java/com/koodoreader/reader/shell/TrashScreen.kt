@@ -46,7 +46,7 @@ fun TrashScreen(
                 title = { Text("${t("Trash")} (${trashed.size})") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
                     }
                 },
             )

@@ -91,6 +91,7 @@ import com.koodoreader.engine.layout.PaginatorOptions
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
 import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.ReaderPurifiedText
 import com.koodoreader.reader.shell.ReaderTextPipeline
 import com.koodoreader.engine.link.LinkAction
 import com.koodoreader.engine.link.LinkRouter
@@ -128,6 +129,8 @@ import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderImmersiveBars
 import com.koodoreader.reader.shell.ReaderHrefJump
 import com.koodoreader.reader.shell.ReaderPageGesture
+import com.koodoreader.reader.shell.ReaderGestureCodec
+import com.koodoreader.reader.shell.ReaderGestureRuntime
 import com.koodoreader.reader.shell.ReaderPageGestures
 import com.koodoreader.reader.shell.ReaderPageTurn
 import com.koodoreader.reader.shell.ReaderProgressMath
@@ -292,22 +295,26 @@ fun NativeEpubScreen(
                         downY = event.y
                     }
                     MotionEvent.ACTION_UP -> {
+                        val gestureCfg = ReaderGestureRuntime.config
+                        val edge = ReaderGestureCodec.clampedTapEdge(gestureCfg)
                         val tap = ReaderPageGestures.tapIfNotDrag(
                             downX,
                             downY,
                             event.x,
                             event.y,
                             v.width.toFloat(),
+                            edgeFraction = edge,
                         )
                         val swipe = if (tap == null) {
                             ReaderPageGestures.onHorizontalSwipe(
                                 event.x - downX,
                                 event.y - downY,
+                                enabled = gestureCfg.swipePageTurn,
                             )
                         } else {
                             null
                         }
-                        when (val gesture = tap ?: swipe) {
+                        when (tap ?: swipe) {
                             ReaderPageGesture.TOGGLE_CHROME ->
                                 v.post { showChromeState.value = !showChromeState.value }
                             ReaderPageGesture.PREV_PAGE ->
@@ -684,7 +691,7 @@ fun NativeEpubScreen(
         val s = session ?: return
         val chapterIdx = (0 until s.chapterCount)
             .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
-        val chapterText = s.chapterText(chapterIdx)
+        val chapterText = ReaderPurifiedText.plain(s.chapterText(chapterIdx), features.textRulesJson)
         if (chapterText.isBlank()) return
         if (connectedTtsSvc == null) {
             context.bindService(
@@ -705,7 +712,10 @@ fun NativeEpubScreen(
                             val nextIdx = (0 until s.chapterCount)
                                 .lastOrNull { c -> s.pageOfChapter(c) <= currentPage }
                                 ?: s.chapterCount - 1
-                            val nextText = s.chapterText(nextIdx)
+                            val nextText = ReaderPurifiedText.plain(
+                                s.chapterText(nextIdx),
+                                features.textRulesJson,
+                            )
                             if (nextText.isNotBlank()) {
                                 svc.loadChapter(bookKey, book?.name ?: "", s.chapterLabel(nextIdx), nextText)
                                 svc.play()
@@ -826,7 +836,8 @@ fun NativeEpubScreen(
     }
 
     fun startTranslation() {
-        val text = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
+        val raw = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
+        val text = ReaderPurifiedText.plain(raw, features.textRulesJson)
         val cfi = currentSelectionCfi()
         translateController.show(text, bookKey = bookKey, cfi = cfi)
         showSelectionMenu = false
@@ -967,7 +978,9 @@ fun NativeEpubScreen(
     val viewSettings = remember(
         readerThemeKind, features.fontScale, features.fontKey,
         features.lineHeightRatio, features.marginHorizontalPx,
-        features.columnsPerPage, features.scrolled,
+        features.columnsPerPage, features.scrolled, features.doublePage,
+        features.textRulesJson, features.customBookCss, features.customBookCssEnabled,
+        features.perfTier,
     ) {
         ReadestViewSettings.from(readerThemeKind, features)
     }
@@ -1292,7 +1305,8 @@ fun NativeEpubScreen(
                                             ReaderTapKind.None -> Unit
                                         }
                                     }
-                                    when (ReaderPageGestures.onTap(offset.x, size.width.toFloat())) {
+                                    val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
+                                    when (ReaderPageGestures.onTap(offset.x, size.width.toFloat(), edge)) {
                                         ReaderPageGesture.PREV_PAGE ->
                                             if (currentPage > 0) currentPage--
                                         ReaderPageGesture.NEXT_PAGE ->
@@ -1309,7 +1323,13 @@ fun NativeEpubScreen(
                                 detectDragGestures(
                                     onDragStart = { dx = 0f; dy = 0f },
                                     onDragEnd = {
-                                        when (ReaderPageGestures.onHorizontalSwipe(dx, dy)) {
+                                        when (
+                                            ReaderPageGestures.onHorizontalSwipe(
+                                                dx,
+                                                dy,
+                                                enabled = ReaderGestureRuntime.config.swipePageTurn,
+                                            )
+                                        ) {
                                             ReaderPageGesture.PREV_PAGE ->
                                                 if (currentPage > 0) currentPage--
                                             ReaderPageGesture.NEXT_PAGE ->

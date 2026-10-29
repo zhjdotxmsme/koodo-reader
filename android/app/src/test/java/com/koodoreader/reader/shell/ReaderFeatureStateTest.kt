@@ -29,6 +29,12 @@ class ReaderFeatureStateTest {
         assertEquals("", s.fontKey)
         assertFalse(s.doublePage)
         assertTrue(s.scrolled)
+        assertFalse(s.customBookCssEnabled)
+        assertTrue(s.customBookCss.isEmpty())
+        assertTrue(ReaderFeatureCodec.userStylesheet(s).isEmpty())
+        assertEquals(ReaderPerformancePolicy.TIER_NORMAL, s.perfTier)
+        assertEquals(0f, s.pdfCropMarginPx, 0.001f)
+        assertFalse(s.pdfReflow)
     }
 
     @Test
@@ -70,6 +76,10 @@ class ReaderFeatureStateTest {
             fontKey = "bundled:inter",
             doublePage = true,
             scrolled = false,
+            customBookCss = "body { color: red; }",
+            customBookCssEnabled = true,
+            pdfCropMarginPx = 12f,
+            pdfReflow = true,
         )
         val restored = ReaderFeatureCodec.fromMap(ReaderFeatureCodec.toMap(original))
         assertEquals(original.fontScale, restored.fontScale, 0.001f)
@@ -86,6 +96,20 @@ class ReaderFeatureStateTest {
         assertEquals("bundled:inter", restored.fontKey)
         assertTrue(restored.doublePage)
         assertFalse(restored.scrolled)
+        assertTrue(restored.customBookCssEnabled)
+        assertEquals("body { color: red; }", restored.customBookCss)
+        assertEquals("body { color: red; }", ReaderFeatureCodec.userStylesheet(restored))
+        assertEquals(12f, restored.pdfCropMarginPx, 0.001f)
+        assertTrue(restored.pdfReflow)
+    }
+
+    @Test
+    fun `custom css disabled ignores stored css`() {
+        val s = ReaderFeatureState(
+            customBookCss = "body{color:blue}",
+            customBookCssEnabled = false,
+        )
+        assertTrue(ReaderFeatureCodec.userStylesheet(s).isEmpty())
     }
 
     @Test

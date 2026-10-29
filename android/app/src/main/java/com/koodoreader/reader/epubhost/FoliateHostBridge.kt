@@ -221,6 +221,9 @@ class FoliateHostBridge(
             .put("isDarkMode", snapshot.isDarkMode)
             .put("colorScheme", snapshot.colorScheme)
             .put("defaultFont", snapshot.defaultFont)
+            .put("userStylesheet", snapshot.userStylesheet)
+            .put("textRulesJson", snapshot.textRulesJson)
+            .put("maxInlineSizePx", snapshot.maxInlineSizePx)
         runJs(method = "setViewSettings", args = listOf(payload.toString()))
     }
 

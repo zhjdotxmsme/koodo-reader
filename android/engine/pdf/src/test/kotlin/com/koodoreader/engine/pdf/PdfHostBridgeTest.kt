@@ -25,7 +25,11 @@ class PdfHostBridgeTest {
             return PdfHostBridge.OpenResult("deadbeef", 250, "1.7", 612f, 792f)
         }
 
-        override fun renderPage(pageNumber: Int, targetWidthPx: Int): ByteArray = nextRender
+        override fun renderPage(pageNumber: Int, targetWidthPx: Int, cropMarginPx: Int): ByteArray =
+            nextRender
+
+        override fun reflowHtml(pageNumber: Int, targetWidthPx: Int, fontScale: Float): String =
+            "<html><body>reflow</body></html>"
 
         override fun search(query: String): String {
             lastSearch = query

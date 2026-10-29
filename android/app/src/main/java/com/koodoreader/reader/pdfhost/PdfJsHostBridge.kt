@@ -86,14 +86,30 @@ class PdfJsHostBridge(
         )
     }
 
-    override fun renderPage(pageNumber: Int, targetWidthPx: Int): ByteArray {
+    override fun renderPage(pageNumber: Int, targetWidthPx: Int, cropMarginPx: Int): ByteArray {
         val raw = runJs(
             method = "renderPage",
-            args = listOf(pageNumber.toString(), targetWidthPx.toString()),
+            args = listOf(
+                pageNumber.toString(),
+                targetWidthPx.toString(),
+                cropMarginPx.coerceAtLeast(0).toString(),
+            ),
         )
         // renderPage returns a bare base64 PNG string; the WebView side strips
         // the data-URL prefix and the engine passes strings through unquoted.
         return android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
+    }
+
+    override fun reflowHtml(pageNumber: Int, targetWidthPx: Int, fontScale: Float): String {
+        val raw = runJs(
+            method = "reflowHtml",
+            args = listOf(
+                pageNumber.toString(),
+                targetWidthPx.toString(),
+                fontScale.coerceIn(0.7f, 2.5f).toString(),
+            ),
+        )
+        return raw
     }
 
     override fun search(query: String): String =

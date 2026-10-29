@@ -2,6 +2,8 @@ package com.koodoreader.reader.epubhost
 
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.ReaderPerformancePolicy
+import com.koodoreader.reader.shell.ReaderSpreadPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,5 +44,48 @@ class ReadestViewSettingsTest {
     fun `generic font keys pass through, others become serif`() {
         assertEquals("sans-serif", ReadestViewSettings.from(ThemeKind.DEFAULT, ReaderFeatureState(fontKey = "sans-serif")).defaultFont)
         assertEquals("serif", ReadestViewSettings.from(ThemeKind.DEFAULT, ReaderFeatureState(fontKey = "bundled:inter")).defaultFont)
+    }
+
+    @Test
+    fun `custom book css maps to userStylesheet when enabled`() {
+        val css = "p { margin: 0; }"
+        val on = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(customBookCss = css, customBookCssEnabled = true),
+        )
+        assertEquals(css, on.userStylesheet)
+        val off = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(customBookCss = css, customBookCssEnabled = false),
+        )
+        assertTrue(off.userStylesheet.isEmpty())
+    }
+
+    @Test
+    fun `lite perf tier caps columns and inline size`() {
+        val s = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(columnsPerPage = 2, perfTier = ReaderPerformancePolicy.TIER_LITE),
+        )
+        assertEquals(1, s.maxColumnCount)
+        assertEquals(560, s.maxInlineSizePx)
+    }
+
+    @Test
+    fun `text rules json passes through to snapshot`() {
+        val json = """[{"id":"1","pattern":"x","replacement":"y"}]"""
+        val s = ReadestViewSettings.from(ThemeKind.DEFAULT, ReaderFeatureState(textRulesJson = json))
+        assertEquals(json, s.textRulesJson)
+    }
+
+    @Test
+    fun `double page spread overrides scroll and columns`() {
+        val s = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(doublePage = true, scrolled = true, columnsPerPage = 1),
+        )
+        assertFalse(s.scrolled)
+        assertEquals(2, s.maxColumnCount)
+        assertEquals(2, ReaderSpreadPolicy.foliateMaxColumnCount(ReaderFeatureState(doublePage = true)))
     }
 }

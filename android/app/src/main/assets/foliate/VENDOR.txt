@@ -5,3 +5,4 @@ readest style.ts (AGPL-3.0) bundled for Android reflow
 source: https://github.com/readest/readest
 foliate-js MIT: see LICENSE in this folder
 TXT: keep engine splitTxtChapters; TxtToEpubConverter not bundled (5 extra modules)
+text-rules.mjs: Koodo Reader Android (AGPL-3.0), mirrors engine/feature TextRuleEngine.kt

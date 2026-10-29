@@ -24,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,7 +34,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.reader.R
 
 /**
@@ -83,9 +87,19 @@ fun LibraryScreen(
     var draggingKey by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Readme Reader") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                ),
+                title = {
+                    Text(
+                        t("Library"),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                },
                 actions = {
                     when (val state = importState) {
                         is ImportState.Running -> Text(
@@ -186,32 +200,49 @@ fun LibraryScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            OutlinedTextField(
+            TextField(
                 value = shelf.searchQuery,
                 onValueChange = viewModel::setSearchQuery,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(
+                        horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                        vertical = SpaceTokens.sm.dp,
+                    ),
                 singleLine = true,
-                label = { Text(t("Search")) },
+                placeholder = { Text(t("Search")) },
+                leadingIcon = {
+                    Icon(
+                        painterResource(R.drawable.ic_search),
+                        contentDescription = t("Search"),
+                    )
+                },
+                shape = ShellChrome.searchCorner,
+                colors = ShellChrome.searchFieldColors(),
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp),
+                horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp),
             ) {
                 FilterChip(
                     selected = shelf.activeShelf == null,
                     onClick = { viewModel.setActiveShelf(null) },
                     label = { Text(t("All books")) },
+                    colors = ShellChrome.shelfChipColors(),
+                    border = ShellChrome.shelfChipBorder(shelf.activeShelf == null),
+                    shape = RoundedCornerShape(20.dp),
                 )
                 shelf.shelves.keys.forEach { title ->
                     FilterChip(
                         selected = shelf.activeShelf == title,
                         onClick = { viewModel.setActiveShelf(title) },
                         label = { Text(title) },
+                        colors = ShellChrome.shelfChipColors(),
+                        border = ShellChrome.shelfChipBorder(shelf.activeShelf == title),
+                        shape = RoundedCornerShape(20.dp),
                     )
                 }
             }
@@ -228,9 +259,9 @@ fun LibraryScreen(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 112.dp),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(SpaceTokens.SCREEN_HORIZONTAL.dp),
+                    horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_VERTICAL.dp),
                 ) {
                     items(books, key = { it.key }) { book ->
                         val itemInfo = gridState.layoutInfo.visibleItemsInfo
@@ -272,16 +303,22 @@ fun LibraryScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(SpaceTokens.SCREEN_HORIZONTAL.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpaceTokens.md.dp),
                 ) {
                     items(books, key = { it.key }) { book ->
-                        BookListRow(
-                            book = book,
-                            isFavorite = book.key in shelf.favorites,
-                            coverVersion = coverVersion,
-                            onClick = { onOpenBook(book.key) },
-                        )
+                        ShellSettingsGroup {
+                            BookListRow(
+                                book = book,
+                                isFavorite = book.key in shelf.favorites,
+                                coverVersion = coverVersion,
+                                onClick = { onOpenBook(book.key) },
+                                modifier = Modifier.padding(
+                                    horizontal = SpaceTokens.md.dp,
+                                    vertical = SpaceTokens.sm.dp,
+                                ),
+                            )
+                        }
                     }
                 }
             }

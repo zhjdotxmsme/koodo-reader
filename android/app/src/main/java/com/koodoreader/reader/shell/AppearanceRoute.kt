@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.designsystem.CssColor
+import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.core.designsystem.ThemeSpec
 import com.koodoreader.core.locale.ZhConvertMode
@@ -79,61 +79,67 @@ fun AppearanceRoute(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(SpaceTokens.sm.dp))
 
-            Text(text = t("App theme"), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-
-            // The swatch on each row previews the palette that mode produces.
-            ThemeModeRow(
-                label = t("Follow OS"),
-                selected = appMode == AppThemeMode.SYSTEM,
-                background = Color(0xFF525252),
-                text = Color(0xFFE6E6E6),
-                onClick = { prefs.appThemeMode = AppThemeMode.SYSTEM },
-            )
-            ThemeModeRow(
-                label = t("Light mode"),
-                selected = appMode == AppThemeMode.LIGHT,
-                background = Color(0xFFFFFFFF),
-                text = Color(0xFF333333),
-                onClick = { prefs.appThemeMode = AppThemeMode.LIGHT },
-            )
-            ThemeModeRow(
-                label = t("Night mode"),
-                selected = appMode == AppThemeMode.DARK,
-                background = Color(0xFF141414),
-                text = Color(0xFFE6E6E6),
-                onClick = { prefs.appThemeMode = AppThemeMode.DARK },
-            )
-
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(16.dp))
-
-            Text(text = t("Reader page theme"), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
             Text(
-                text = "独立于应用主题 · 与桌面版预设同源",
-                style = MaterialTheme.typography.bodySmall,
+                text = t("App theme"),
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
-
-            READER_THEME_OPTIONS.forEach { kind ->
-                ReaderThemeRow(
-                    label = readerThemeLabel(kind),
-                    selected = readerTheme == kind,
-                    preset = kind.builtInPreset(),
-                    onClick = { prefs.readerThemeKind = kind },
+            Spacer(Modifier.height(SpaceTokens.xs.dp))
+            ShellSettingsGroup {
+                // The swatch on each row previews the palette that mode produces.
+                ThemeModeRow(
+                    label = t("Follow OS"),
+                    selected = appMode == AppThemeMode.SYSTEM,
+                    background = Color(0xFF525252),
+                    text = Color(0xFFE6E6E6),
+                    onClick = { prefs.appThemeMode = AppThemeMode.SYSTEM },
+                )
+                ThemeModeRow(
+                    label = t("Light mode"),
+                    selected = appMode == AppThemeMode.LIGHT,
+                    background = Color(0xFFFFFFFF),
+                    text = Color(0xFF333333),
+                    onClick = { prefs.appThemeMode = AppThemeMode.LIGHT },
+                )
+                ThemeModeRow(
+                    label = t("Night mode"),
+                    selected = appMode == AppThemeMode.DARK,
+                    background = Color(0xFF141414),
+                    text = Color(0xFFE6E6E6),
+                    onClick = { prefs.appThemeMode = AppThemeMode.DARK },
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SpaceTokens.lg.dp))
+
+            Text(
+                text = t("Reader page theme"),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(SpaceTokens.xs.dp))
+            Text(
+                text = t("Independent of the app theme"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(SpaceTokens.xs.dp))
+            ShellSettingsGroup {
+                READER_THEME_OPTIONS.forEach { kind ->
+                    ReaderThemeRow(
+                        label = readerThemeLabel(kind),
+                        selected = readerTheme == kind,
+                        preset = kind.builtInPreset(),
+                        onClick = { prefs.readerThemeKind = kind },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(SpaceTokens.lg.dp))
 
             // ── P6 简繁转换 (t-mv0hf31y-u2jmbe) ──────────────────────────
             // Reads/writes the process-wide ZhConvertBridge (installed from
@@ -149,21 +155,26 @@ fun AppearanceRoute(onBack: () -> Unit) {
                     initialValue = null,
                 ).value?.mode
                 ?: ZhConvertMode.AUTO
-            Text(text = "Simplified / Traditional 简繁", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
             Text(
-                text = "Auto 跟随阅读语言 · 繁 → 简 双向",
+                text = t("Simplified / Traditional"),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(SpaceTokens.xs.dp))
+            Text(
+                text = t("Follow reader language"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
-
-            ZhConvertMode.entries.forEach { mode ->
-                ModeRow(
-                    label = zhModeLabel(mode),
-                    selected = zhMode == mode,
-                    onClick = { ZhConvertBridge.setMode(mode) },
-                )
+            Spacer(Modifier.height(SpaceTokens.xs.dp))
+            ShellSettingsGroup {
+                ZhConvertMode.entries.forEach { mode ->
+                    ModeRow(
+                        label = zhModeLabel(mode),
+                        selected = zhMode == mode,
+                        onClick = { ZhConvertBridge.setMode(mode) },
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -182,7 +193,7 @@ private fun ModeRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(horizontal = SpaceTokens.lg.dp, vertical = SpaceTokens.md.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -199,18 +210,20 @@ private fun ModeRow(
     }
 }
 
+@Composable
 private fun zhModeLabel(mode: ZhConvertMode): String = when (mode) {
-    ZhConvertMode.AUTO -> "Auto (跟随阅读语言)"
-    ZhConvertMode.TRADITIONAL -> "简转繁 · 输出繁体"
-    ZhConvertMode.SIMPLIFIED -> "繁转简 · 输出简体"
+    ZhConvertMode.AUTO -> t("Auto (follow reader language)")
+    ZhConvertMode.TRADITIONAL -> t("Simplified To Traditional")
+    ZhConvertMode.SIMPLIFIED -> t("Traditional To Simplified")
 }
 
 /** Display name for a reader page preset; rendered through the catalogs. */
+@Composable
 private fun readerThemeLabel(kind: ThemeKind): String = when (kind) {
-    ThemeKind.DEFAULT -> "Default"
-    ThemeKind.PROTECT_EYE -> "Eye protection"
-    ThemeKind.NIGHT -> "Night"
-    ThemeKind.CUSTOM -> "Custom"
+    ThemeKind.DEFAULT -> t("Default")
+    ThemeKind.PROTECT_EYE -> t("Eye protection")
+    ThemeKind.NIGHT -> t("Night")
+    ThemeKind.CUSTOM -> t("Custom")
 }
 
 @Composable
@@ -225,7 +238,7 @@ private fun ThemeModeRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(horizontal = SpaceTokens.lg.dp, vertical = SpaceTokens.md.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ThemeSwatch(background = background, text = text)

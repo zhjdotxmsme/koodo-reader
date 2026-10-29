@@ -42,7 +42,13 @@ interface PdfHostBridge {
      * @param targetWidthPx the requested render width; the engine clamps
      *   to a safe range.
      */
-    fun renderPage(pageNumber: Int, targetWidthPx: Int): ByteArray
+    fun renderPage(pageNumber: Int, targetWidthPx: Int, cropMarginPx: Int = 0): ByteArray
+
+    /**
+     * Reflowable HTML for one page (text stream). Used when the host toggles
+     * reflow mode; not a substitute for annotation capture on raster pages.
+     */
+    fun reflowHtml(pageNumber: Int, targetWidthPx: Int, fontScale: Float = 1f): String
 
     /**
      * Run a forward-only text search. Returns the JSON shape consumed by

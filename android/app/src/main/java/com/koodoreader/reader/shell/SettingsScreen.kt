@@ -2,12 +2,12 @@ package com.koodoreader.reader.shell
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,7 +36,7 @@ private fun SettingRow(
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(
-                horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                horizontal = SpaceTokens.lg.dp,
                 vertical = SpaceTokens.md.dp,
             ),
     ) {
@@ -56,13 +56,24 @@ private fun SectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(
             start = SpaceTokens.SCREEN_HORIZONTAL.dp,
             end = SpaceTokens.SCREEN_HORIZONTAL.dp,
             top = SpaceTokens.lg.dp,
             bottom = SpaceTokens.xs.dp,
         ),
+    )
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    ShellSettingsGroup(
+        modifier = Modifier.padding(
+            horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
+            vertical = SpaceTokens.xs.dp,
+        ),
+        content = content,
     )
 }
 
@@ -110,86 +121,98 @@ fun SettingsScreen(
         SectionHeader(t("General"))
         // Language lives here (moved from the library overflow in W5a).
         val language by i18n.language.collectAsState()
-        SettingRow(
-            title = t("Language"),
-            summary = languageLabel(language),
-            onClick = {
-                val idx = I18nState.CHOICES.indexOf(language)
-                val next = I18nState.CHOICES[(idx + 1) % I18nState.CHOICES.size]
-                i18n.setLanguage(next)
-                LibraryPrefs(context).language = next
-                // Keep 简繁 AUTO mode in step with the reader language.
-                com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(next)
-            },
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("Language"),
+                summary = languageLabel(language),
+                onClick = {
+                    val idx = I18nState.CHOICES.indexOf(language)
+                    val next = I18nState.CHOICES[(idx + 1) % I18nState.CHOICES.size]
+                    i18n.setLanguage(next)
+                    LibraryPrefs(context).language = next
+                    com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(next)
+                },
+            )
+        }
 
         // ── 外观 ─────────────────────────────────────────────────────────────
         SectionHeader(t("Appearance"))
-        SettingRow(
-            title = t("App theme and reader page theme"),
-            summary = t("App theme + reader page colours"),
-            onClick = onOpenAppearance,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("App theme and reader page theme"),
+                summary = t("App theme + reader page colours"),
+                onClick = onOpenAppearance,
+            )
+        }
 
         // ── 阅读 ─────────────────────────────────────────────────────────────
         SectionHeader(t("Reading"))
-        SettingRow(
-            title = t("Font size"),
-            summary = t("Reader default font size"),
-            onClick = onOpenReading,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("Font size"),
+                summary = t("Reader default font size"),
+                onClick = onOpenReading,
+            )
+        }
 
         // ── 内容源 ──────────────────────────────────────────────────────────
         SectionHeader(t("Content Sources"))
-        SettingRow(
-            title = t("Dictionary"),
-            summary = t("Import and manage offline dictionaries"),
-            onClick = onOpenDictionary,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("Dictionary"),
+                summary = t("Import and manage offline dictionaries"),
+                onClick = onOpenDictionary,
+            )
+        }
 
         // ── 翻译与 AI ──────────────────────────────────────────────────────
         SectionHeader(t("Translation"))
-        SettingRow(
-            title = t("API key"),
-            summary = t("Selection translation (Google / Microsoft / DeepL)"),
-            onClick = onOpenTranslate,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("API key"),
+                summary = t("Selection translation (Google / Microsoft / DeepL)"),
+                onClick = onOpenTranslate,
+            )
+        }
 
         // ── 语音朗读 ───────────────────────────────────────────────────────
         SectionHeader(t("Text to speech"))
-        SettingRow(
-            title = t("Speed"),
-            summary = t("Rate, pitch, volume"),
-            onClick = onOpenTts,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("Speed"),
+                summary = t("Rate, pitch, volume"),
+                onClick = onOpenTts,
+            )
+        }
 
         // ── 数据 ───────────────────────────────────────────────────────────
         SectionHeader(t("Data"))
-        SettingRow(
-            title = t("Backup / restore"),
-            summary = t("Export or import a full library backup"),
-            onClick = onOpenBackup,
-        )
-        SettingRow(
-            title = t("Trash"),
-            summary = t("Books removed from the library"),
-            onClick = onOpenTrash,
-        )
-        SettingRow(
-            title = t("Logs"),
-            summary = t("App log (includes WebView console)"),
-            onClick = onOpenLogs,
-        )
+        SettingsGroup {
+            SettingRow(
+                title = t("Backup / restore"),
+                summary = t("Export or import a full library backup"),
+                onClick = onOpenBackup,
+            )
+            SettingRow(
+                title = t("Trash"),
+                summary = t("Books removed from the library"),
+                onClick = onOpenTrash,
+            )
+            SettingRow(
+                title = t("Logs"),
+                summary = t("App log (includes WebView console)"),
+                onClick = onOpenLogs,
+            )
+        }
 
         // ── 关于 ───────────────────────────────────────────────────────────
         SectionHeader(t("About"))
-        SettingRow(
-            title = "Readme Reader",
-            // Reuses the existing desktop keys rather than adding near-duplicates.
-            summary = t("Version") + " " + t("License"),
-            onClick = onOpenAbout,
-        )
-
-        HorizontalDivider()
+        SettingsGroup {
+            SettingRow(
+                title = t("About"),
+                summary = t("Version") + " " + t("License"),
+                onClick = onOpenAbout,
+            )
+        }
     }
 }

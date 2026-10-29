@@ -126,7 +126,16 @@ function makeCanvasFactory() {
             return {
                 width,
                 height,
-                getContext() { return { canvas: this }; },
+                getContext() {
+                    const canvas = this;
+                    return {
+                        canvas,
+                        drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh) {
+                            canvas.width = dw;
+                            canvas.height = dh;
+                        },
+                    };
+                },
                 toDataURL() { return 'data:image/png;base64,QUJD'; }, // "ABC"
             };
         },
@@ -186,6 +195,24 @@ async function main() {
         let threw = null;
         try { await engine.renderPage(9, 300); } catch (e) { threw = e.message; }
         check('renderPage rejects an out-of-range page', threw !== null && /out of range/.test(threw), String(threw));
+        const cropped = await engine.renderPage(1, 300, 20);
+        eq('renderPage crop returns bare base64', cropped, 'QUJD');
+        eq('renderPage crop shrinks the bitmap', canvas.sizes[2][0], 260);
+        eq('renderPage crop keeps aspect on height', canvas.sizes[2][1], 360);
+    }
+
+    console.log('pdfengine: reflowHtml');
+    {
+        const doc = makeDocument();
+        const pdfjs = makePdfjs(doc);
+        const engine = createPdfEngine({ pdfjsLib: pdfjs, log: collector().log });
+        await engine.open('http://127.0.0.1:1/__books__/x.pdf', '');
+        const html = await engine.reflowHtml(1, 480, 1.0);
+        check('reflowHtml is a document', html.indexOf('<html') >= 0, html.slice(0, 40));
+        check('reflowHtml includes extracted text', html.indexOf('Hello World') >= 0, html.slice(0, 80));
+        let threw = null;
+        try { await engine.reflowHtml(9, 300, 1); } catch (e) { threw = e.message; }
+        check('reflowHtml rejects an out-of-range page', threw !== null && /out of range/.test(threw), String(threw));
     }
 
     console.log('pdfengine: search');

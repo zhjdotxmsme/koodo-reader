@@ -3,6 +3,8 @@ package com.koodoreader.reader.epubhost
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.ReaderPerformancePolicy
+import com.koodoreader.reader.shell.ReaderSpreadPolicy
 import com.koodoreader.reader.shell.builtInPreset
 
 object ReadestViewSettings {
@@ -19,6 +21,9 @@ object ReadestViewSettings {
         val isDarkMode: Boolean,
         val colorScheme: String,
         val defaultFont: String,
+        val userStylesheet: String = "",
+        val textRulesJson: String = "",
+        val maxInlineSizePx: Int = 720,
     )
 
     fun from(kind: ThemeKind, features: ReaderFeatureState): Snapshot {
@@ -36,12 +41,15 @@ object ReadestViewSettings {
             defaultFontSize = fontSizePx / 1.25,
             lineHeight = ReaderFeatureCodec.clampedLineHeight(features).toDouble(),
             marginPx = ReaderFeatureCodec.clampedMargin(features).toInt().coerceAtLeast(0),
-            maxColumnCount = ReaderFeatureCodec.clampedColumns(features).coerceIn(1, 2),
-            scrolled = features.scrolled,
+            maxColumnCount = ReaderSpreadPolicy.foliateMaxColumnCount(features),
+            maxInlineSizePx = ReaderPerformancePolicy.foliateMaxInlineSizePx(features),
+            scrolled = ReaderSpreadPolicy.foliateScrolled(features),
             overrideColor = true,
             isDarkMode = dark,
             colorScheme = if (dark) "dark" else "light",
             defaultFont = defaultFont,
+            userStylesheet = ReaderFeatureCodec.userStylesheet(features),
+            textRulesJson = features.textRulesJson,
         )
     }
 }

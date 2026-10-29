@@ -50,6 +50,7 @@ data class PdfReaderUiState(
     val passwordRequired: Boolean = false,
     val passwordError: Boolean = false,
     val exporting: Boolean = false,
+    val reflowHtml: String? = null,
     val error: String? = null,
 ) {
     val zoomPercent: Int get() = Math.round(zoom * 100)
@@ -96,6 +97,17 @@ class PdfReaderController(
 
     /** Two-page spread: also rasterise page+1 into [PdfReaderUiState.companionImage]. */
     var spread: Boolean = false
+
+    /** [ReaderPerformancePolicy.pdfRenderScale] — lowers raster width on lite tier. */
+    var pdfRenderScale: Float = 1f
+
+    /** Uniform crop inset on raster output (px). */
+    var cropMarginPx: Int = 0
+
+    /** Text reflow mode instead of bitmap paging. */
+    var reflow: Boolean = false
+
+    var reflowFontScale: Float = 1f
 
     private var renderJob: Job? = null
 
@@ -172,28 +184,35 @@ class PdfReaderController(
         requestRender()
     }
 
-    /** Rasterise the current page at `viewport × zoom`. */
+    /** Rasterise the current page at `viewport × zoom`, or load reflow HTML. */
     fun requestRender(force: Boolean = false) {
         if (state.pageCount <= 0 || viewportPx <= 0) return
+        if (reflow) {
+            requestReflow(force)
+            return
+        }
         val page = state.page
-        val target = (viewportPx * state.zoom).toInt().coerceIn(MIN_RENDER_PX, MAX_RENDER_PX)
-        if (!force && page == renderedPage && target == renderedWidth) return
+        val scale = pdfRenderScale.coerceIn(0.5f, 1f)
+        val target = (viewportPx * state.zoom * scale).toInt().coerceIn(MIN_RENDER_PX, MAX_RENDER_PX)
+        val crop = cropMarginPx.coerceAtLeast(0)
+        if (!force && page == renderedPage && target == renderedWidth && crop == renderedCrop) return
         renderedPage = page
         renderedWidth = target
-        state = state.copy(rendering = true)
+        renderedCrop = crop
+        state = state.copy(rendering = true, reflowHtml = null)
         renderJob?.cancel()
         renderJob = scope.launch {
             val (bitmap, companion) = withContext(Dispatchers.IO) {
-                val left = runCatching { decode(bridge.renderPage(page, target)) }.getOrNull()
+                val left = runCatching { decode(bridge.renderPage(page, target, crop)) }.getOrNull()
                 val right = if (spread && page < state.pageCount) {
-                    runCatching { decode(bridge.renderPage(page + 1, target)) }.getOrNull()
+                    runCatching { decode(bridge.renderPage(page + 1, target, crop)) }.getOrNull()
                 } else {
                     null
                 }
                 left to right
             }
             // A newer page/zoom superseded this render while it was in flight.
-            if (page != state.page || target != renderedWidth) return@launch
+            if (page != state.page || target != renderedWidth || crop != renderedCrop) return@launch
             state = state.copy(
                 rendering = false,
                 pageImage = bitmap ?: state.pageImage,
@@ -203,8 +222,32 @@ class PdfReaderController(
         }
     }
 
+    private fun requestReflow(force: Boolean = false) {
+        val page = state.page
+        val target = viewportPx.coerceIn(MIN_RENDER_PX, MAX_RENDER_PX)
+        val fontScale = reflowFontScale.coerceIn(0.7f, 2.5f)
+        if (!force && page == renderedPage && target == renderedWidth) return
+        renderedPage = page
+        renderedWidth = target
+        renderedCrop = 0
+        state = state.copy(rendering = true, pageImage = null, companionImage = null)
+        renderJob?.cancel()
+        renderJob = scope.launch {
+            val html = withContext(Dispatchers.IO) {
+                runCatching { bridge.reflowHtml(page, target, fontScale) }.getOrNull()
+            }
+            if (page != state.page || target != renderedWidth) return@launch
+            state = state.copy(
+                rendering = false,
+                reflowHtml = html,
+                error = if (html == null) "reflow failed (page $page)" else state.error,
+            )
+        }
+    }
+
     private var renderedPage = -1
     private var renderedWidth = -1
+    private var renderedCrop = -1
 
     // ── outline ──────────────────────────────────────────────────────────────
 

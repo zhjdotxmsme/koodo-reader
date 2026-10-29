@@ -36,10 +36,12 @@ class NativeShellActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ReaderGestureRuntime.config = ReaderGesturePrefs(applicationContext).load()
         val i18n = I18nState.create(this)
         // P6 简繁 AUTO mode needs the reader language before the first layout.
         com.koodoreader.reader.zhconvert.ZhConvertBridge.setReaderLanguage(i18n.language.value)
         val assetHost = startAssetServer()
+        prefetchReflowEngine(assetHost)
         val appearance = ShellAppearancePrefs(applicationContext)
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
@@ -70,8 +72,12 @@ class NativeShellActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val gesture = ReaderPageGestures.onVolumeKey(event.keyCode)
-            ?: return super.dispatchKeyEvent(event)
+        val g = ReaderGestureRuntime.config
+        val gesture = ReaderPageGestures.onVolumeKey(
+            event.keyCode,
+            enabled = g.volumePageTurn,
+            inverted = g.volumeInverted,
+        ) ?: return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             if (ReaderPageTurn.dispatch(gesture)) return true
         }
@@ -84,7 +90,25 @@ class NativeShellActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /** Warm foliate bootstrap assets on the loopback server (M2). */
+    private fun prefetchReflowEngine(host: ReaderAssetHost) {
+        if (!host.available) return
+        val base = host.baseUrl.trimEnd('/')
+        Thread {
+            for (path in FOLIATE_WARM_PATHS) {
+                runCatching {
+                    java.net.URL("$base/$path").openStream().use { it.readBytes() }
+                }
+            }
+        }.start()
+    }
+
     private companion object {
         const val TAG = "NativeShellActivity"
+        val FOLIATE_WARM_PATHS = listOf(
+            "foliate/index.html",
+            "foliate/engine.mjs",
+            "foliate/view.js",
+        )
     }
 }

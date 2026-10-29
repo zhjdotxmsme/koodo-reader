@@ -99,7 +99,7 @@ fun KoodoBookCard(
                     Icon(
                         imageVector = Icons.Filled.Star,
                         contentDescription = favoriteContentDescription,
-                        tint = MaterialTheme.colorScheme.tertiary,
+                        tint = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(6.dp),
@@ -175,7 +175,7 @@ fun KoodoBookRow(
             Icon(
                 imageVector = Icons.Filled.Star,
                 contentDescription = favoriteContentDescription,
-                tint = MaterialTheme.colorScheme.tertiary,
+                tint = MaterialTheme.colorScheme.secondary,
             )
         }
     }

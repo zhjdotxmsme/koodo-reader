@@ -2,6 +2,7 @@ package com.koodoreader.reader.shell
 
 import android.content.Context
 import android.content.Intent
+import android.webkit.WebView
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -159,6 +160,33 @@ fun NativePdfScreen(
         )
     }
     val state = controller.state
+    LaunchedEffect(features.perfTier) {
+        controller.pdfRenderScale = ReaderPerformancePolicy.pdfRenderScale(features)
+        controller.requestRender(force = true)
+    }
+    LaunchedEffect(
+        features.pdfCropMarginPx,
+        features.pdfReflow,
+        features.fontScale,
+    ) {
+        controller.cropMarginPx = ReaderFeatureCodec.clampedPdfCrop(features).toInt()
+        controller.reflow = features.pdfReflow
+        controller.reflowFontScale = features.fontScale
+        controller.requestRender(force = true)
+    }
+    val reflowWeb = remember {
+        WebView(context).apply {
+            settings.javaScriptEnabled = false
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+        }
+    }
+    LaunchedEffect(features.pdfReflow, state.reflowHtml) {
+        val html = state.reflowHtml
+        if (features.pdfReflow && !html.isNullOrBlank()) {
+            reflowWeb.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+        }
+    }
     DisposableEffect(controller) {
         ReaderPageTurn.bind { gesture ->
             when (gesture) {
@@ -323,6 +351,20 @@ fun NativePdfScreen(
                                     featurePrefs.save(next)
                                 },
                             )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (features.pdfReflow) t("PDF raster view")
+                                        else t("PDF reflow view"),
+                                    )
+                                },
+                                onClick = {
+                                    moreMenu = false
+                                    val next = features.copy(pdfReflow = !features.pdfReflow)
+                                    features = next
+                                    featurePrefs.save(next)
+                                },
+                            )
                         }
                     }
                 },
@@ -342,7 +384,8 @@ fun NativePdfScreen(
                         onLongPress = { showPageMenu = true },
                     ) { offset ->
                         val width = size.width.toFloat()
-                        when (ReaderPageGestures.onTap(offset.x, width, edgeFraction = 0.25f)) {
+                        val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
+                        when (ReaderPageGestures.onTap(offset.x, width, edgeFraction = edge)) {
                             ReaderPageGesture.PREV_PAGE -> controller.previousPage()
                             ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
                             ReaderPageGesture.TOGGLE_CHROME -> showChrome = !showChrome
@@ -356,7 +399,13 @@ fun NativePdfScreen(
                     detectDragGestures(
                         onDragStart = { dx = 0f; dy = 0f },
                         onDragEnd = {
-                            when (ReaderPageGestures.onHorizontalSwipe(dx, dy)) {
+                            when (
+                                ReaderPageGestures.onHorizontalSwipe(
+                                    dx,
+                                    dy,
+                                    enabled = ReaderGestureRuntime.config.swipePageTurn,
+                                )
+                            ) {
                                 ReaderPageGesture.PREV_PAGE -> controller.previousPage()
                                 ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
                                 else -> Unit
@@ -391,10 +440,17 @@ fun NativePdfScreen(
                 )
 
                 else -> {
-                    if (state.rendering && state.pageImage == null) {
+                    if (state.rendering && state.pageImage == null && state.reflowHtml == null) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
-                    state.pageImage?.let { image ->
+                    if (features.pdfReflow) {
+                        AndroidView(
+                            factory = { reflowWeb },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                        )
+                    } else state.pageImage?.let { image ->
                         val spread = features.doublePage && state.companionImage != null
                         val drawnWidth = with(density) {
                             val base = if (spread) containerSize.width / 2f else containerSize.width.toFloat()

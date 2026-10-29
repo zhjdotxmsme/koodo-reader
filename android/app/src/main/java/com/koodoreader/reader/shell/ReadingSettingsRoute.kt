@@ -2,6 +2,7 @@ package com.koodoreader.reader.shell
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,7 +49,9 @@ import com.koodoreader.engine.feature.TextRuleJson
 fun ReadingSettingsRoute(onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember(context) { ReaderFeaturePrefs(context) }
+    val gestureStore = remember(context) { ReaderGesturePrefs(context) }
     var state by remember { mutableStateOf(store.load()) }
+    var gesture by remember { mutableStateOf(gestureStore.load()) }
     var pattern by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
 
@@ -56,6 +59,11 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
         state = next
         store.save(next)
         ReaderTextPipeline.setRulesJson(next.textRulesJson)
+    }
+
+    fun commitGesture(next: ReaderGestureConfig) {
+        gesture = next
+        gestureStore.save(next)
     }
 
     val fontPicker = rememberLauncherForActivityResult(
@@ -92,6 +100,61 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(8.dp))
 
+            Text(t("Performance profile"), style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                TextButton(onClick = {
+                    commit(state.copy(perfTier = ReaderPerformancePolicy.TIER_NORMAL))
+                }) {
+                    Text(
+                        t("Normal") +
+                            if (state.perfTier == ReaderPerformancePolicy.TIER_NORMAL) " ✓" else "",
+                    )
+                }
+                TextButton(onClick = {
+                    commit(
+                        state.copy(
+                            perfTier = ReaderPerformancePolicy.TIER_LITE,
+                            columnsPerPage = 1,
+                        ),
+                    )
+                }) {
+                    Text(
+                        t("Lite (low memory)") +
+                            if (state.perfTier == ReaderPerformancePolicy.TIER_LITE) " ✓" else "",
+                    )
+                }
+            }
+
+            Text(t("Reader gestures"), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "${t("Tap zone width")} · ${"%.0f".format(ReaderGestureCodec.clampedTapEdge(gesture) * 100)}%",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = gesture.tapEdgeFraction,
+                onValueChange = {
+                    commitGesture(gesture.copy(tapEdgeFraction = it))
+                },
+                valueRange = ReaderGestureCodec.TAP_EDGE_MIN..ReaderGestureCodec.TAP_EDGE_MAX,
+                steps = 5,
+            )
+            FeatureSwitch(
+                title = t("Swipe to turn pages"),
+                checked = gesture.swipePageTurn,
+                onChecked = { commitGesture(gesture.copy(swipePageTurn = it)) },
+            )
+            FeatureSwitch(
+                title = t("Volume keys turn pages"),
+                checked = gesture.volumePageTurn,
+                onChecked = { commitGesture(gesture.copy(volumePageTurn = it)) },
+            )
+            FeatureSwitch(
+                title = t("Invert volume turn direction"),
+                checked = gesture.volumeInverted,
+                onChecked = { commitGesture(gesture.copy(volumeInverted = it)) },
+            )
+
+            Spacer(Modifier.height(8.dp))
             val percent = (state.fontScale * 100).toInt().toString()
             Text(
                 text = "${t("Font size")} · ${percent}%",
@@ -131,6 +194,23 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 title = t("Double-page view"),
                 checked = state.doublePage,
                 onChecked = { commit(state.copy(doublePage = it)) },
+            )
+
+            Text(t("PDF display"), style = MaterialTheme.typography.titleMedium)
+            FeatureSwitch(
+                title = t("PDF reflow view"),
+                checked = state.pdfReflow,
+                onChecked = { commit(state.copy(pdfReflow = it)) },
+            )
+            Text(
+                text = "${t("PDF margin crop")} · ${ReaderFeatureCodec.clampedPdfCrop(state).toInt()} px",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = state.pdfCropMarginPx,
+                onValueChange = { commit(state.copy(pdfCropMarginPx = it)) },
+                valueRange = ReaderFeatureCodec.PDF_CROP_MIN..ReaderFeatureCodec.PDF_CROP_MAX,
+                steps = 15,
             )
 
             Text(
@@ -201,6 +281,21 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 )
             }
 
+            Spacer(Modifier.height(16.dp))
+            FeatureSwitch(
+                title = t("Custom book style (CSS)"),
+                checked = state.customBookCssEnabled,
+                onChecked = { commit(state.copy(customBookCssEnabled = it)) },
+            )
+            if (state.customBookCssEnabled) {
+                OutlinedTextField(
+                    value = state.customBookCss,
+                    onValueChange = { commit(state.copy(customBookCss = it)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(t("Enter custom CSS here")) },
+                    minLines = 4,
+                )
+            }
             Spacer(Modifier.height(16.dp))
             Text(t("Text rules"), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))

@@ -2,10 +2,12 @@ package com.koodoreader.reader.shell
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -47,13 +49,18 @@ fun ShellScaffold(
     val i18n = LocalI18n.current
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (!ShellNav.hidesBottomBar(route)) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                ) {
                     for (tab in ShellTab.barOrder()) {
                         NavigationBarItem(
                             selected = tab == selectedTab,
                             onClick = { navController.switchToTab(tab) },
+                            colors = ShellChrome.navItemColors(),
                             icon = { Icon(tab.icon(), contentDescription = null) },
                             // Label keys reuse the desktop catalogs where they
                             // exist ("Reading Stats", "Settings"); the remaining

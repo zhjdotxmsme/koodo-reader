@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -64,6 +62,15 @@ fun NotesScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = i18n.localization.t("Notes"),
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(
+                start = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                end = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                top = SpaceTokens.lg.dp,
+            ),
+        )
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -77,6 +84,7 @@ fun NotesScreen(
                     selected = index == filterIndex,
                     onClick = { filterIndex = index },
                     shape = SegmentedButtonDefaults.itemShape(index, filters.size),
+                    colors = ShellChrome.segmentedColors(),
                     label = { Text(i18n.localization.t(f.labelKey)) },
                 )
             }
@@ -104,7 +112,7 @@ fun NotesScreen(
                         Text(
                             text = section.bookTitle,
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(
@@ -115,8 +123,17 @@ fun NotesScreen(
                             ),
                         )
                     }
-                    items(section.items, key = { it.key }) { item ->
-                        NoteRow(item = item, onClick = { onJump(section.bookKey, item.cfi) })
+                    item(key = "group:${section.bookKey}") {
+                        ShellSettingsGroup(
+                            modifier = Modifier.padding(
+                                horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                                vertical = SpaceTokens.xs.dp,
+                            ),
+                        ) {
+                            section.items.forEach { item ->
+                                NoteRow(item = item, onClick = { onJump(section.bookKey, item.cfi) })
+                            }
+                        }
                     }
                 }
             }
@@ -158,7 +175,6 @@ private fun NoteRow(item: NoteListItem, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp),
         )
-        HorizontalDivider(modifier = Modifier.padding(top = SpaceTokens.sm.dp))
     }
 }
 
