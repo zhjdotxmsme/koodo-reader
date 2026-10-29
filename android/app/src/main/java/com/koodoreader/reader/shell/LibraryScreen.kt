@@ -284,21 +284,25 @@ fun LibraryScreen(
                 )
             }
             val finished = importState as? ImportState.Finished
+            val importFailedText = t("Import failed")
+            val importText = t("Import")
+            val duplicateText = t("Duplicate")
+            val viewDetailsText = t("View details")
             LaunchedEffect(finished) {
                 val state = finished ?: return@LaunchedEffect
                 val message = buildString {
                     if (state.error != null) {
-                        append(t("Import failed")).append(": ").append(state.error)
+                        append(importFailedText).append(": ").append(state.error)
                     } else {
-                        append(t("Import")).append(' ').append(state.imported)
-                        if (state.duplicates > 0) append(" · ").append(t("Duplicate")).append(' ').append(state.duplicates)
-                        if (state.failed > 0) append(" · ").append(t("Import failed")).append(' ').append(state.failed)
+                        append(importText).append(' ').append(state.imported)
+                        if (state.duplicates > 0) append(" · ").append(duplicateText).append(' ').append(state.duplicates)
+                        if (state.failed > 0) append(" · ").append(importFailedText).append(' ').append(state.failed)
                     }
                 }
                 val needsDetail = state.error != null || state.failed > 0
                 val result = snackbarHostState.showSnackbar(
                     message = message,
-                    actionLabel = if (needsDetail) t("View details") else null,
+                    actionLabel = if (needsDetail) viewDetailsText else null,
                     duration = SnackbarDuration.Long,
                 )
                 if (needsDetail && result == SnackbarResult.ActionPerformed) {
