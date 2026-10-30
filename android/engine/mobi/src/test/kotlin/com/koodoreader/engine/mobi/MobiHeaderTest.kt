@@ -86,6 +86,21 @@ class MobiHeaderTest {
     }
 
     @Test
+    fun `huffcdic offsets 112 and 116 are parsed`() {
+        val mobi = B.build(
+            textRecords = listOf(B.palmDocRecord(B.bytes(0x41))),
+        )
+        val record0 = record0Of(mobi)
+        B.u32(16).copyInto(record0, 112)
+        B.u32(3).copyInto(record0, 116)
+
+        val header = MobiHeader.read(record0)
+
+        assertEquals(16, header.huffcdicIndex)
+        assertEquals(3, header.numHuffcdicRecords)
+    }
+
+    @Test
     fun `DRM fields are surfaced`() {
         val mobi = B.build(
             textRecords = listOf(B.palmDocRecord(B.bytes(0x41))),

@@ -39,6 +39,10 @@ data class MobiHeader(
     val firstImageRecord: Int,
     val huffRecordOffset: Int,
     val huffRecordCount: Int,
+    /** HUFF record index at MOBI header offset 112; zero for non-HUFF/CDIC books. */
+    val huffcdicIndex: Int,
+    /** Total HUFF and CDIC record count at MOBI header offset 116. */
+    val numHuffcdicRecords: Int,
     val exthFlags: Long,
     val drmOffset: Int,
     val drmRecordCount: Int,
@@ -148,6 +152,8 @@ data class MobiHeader(
                 firstImageRecord = firstImage,
                 huffRecordOffset = huffOffset,
                 huffRecordCount = huffCount,
+                huffcdicIndex = huffOffset,
+                numHuffcdicRecords = huffCount,
                 exthFlags = exthFlags,
                 drmOffset = drmOffset,
                 drmRecordCount = drmCount,
