@@ -131,6 +131,7 @@ fun DictManagementScreen(
                         item = item,
                         installed = state.dicts.any { it.id == item.id },
                         downloading = state.downloadingId == item.id,
+                        downloadEnabled = state.downloadingId == null,
                         progress = state.downloadProgress,
                         strings = strings,
                         onDownloadClick = { onDownloadClick(item) },
@@ -213,6 +214,7 @@ private fun CloudDictRow(
     item: CloudDictItem,
     installed: Boolean,
     downloading: Boolean,
+    downloadEnabled: Boolean,
     progress: Float,
     strings: DictStrings,
     onDownloadClick: () -> Unit,
@@ -239,7 +241,9 @@ private fun CloudDictRow(
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
-                else -> TextButton(onClick = onDownloadClick) { Text(strings.download) }
+                else -> TextButton(onClick = onDownloadClick, enabled = downloadEnabled) {
+                    Text(strings.download)
+                }
             }
         }
     }

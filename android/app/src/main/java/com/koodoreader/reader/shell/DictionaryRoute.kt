@@ -16,11 +16,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.koodoreader.feature.dictionary.DictDownloadManager
 import com.koodoreader.feature.dictionary.DictRepository
+import com.koodoreader.feature.dictionary.HttpOnDemandDownloader
+import com.koodoreader.feature.dictionary.OnDemandDownloader
+import com.koodoreader.feature.dictionary.ServerRegion
 import com.koodoreader.feature.dictionary.ui.DictManagementScreen
 import com.koodoreader.feature.dictionary.ui.DictManagementState
 import com.koodoreader.feature.dictionary.ui.DictStrings
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,13 +35,11 @@ import kotlinx.coroutines.withContext
  *
  * Same shape as [StatsRoute]: the module owns the repository and the Compose
  * screen, this file owns the Android side (where the files live, the SAF picker,
- * i18n) and nothing else. See docs/android-completeness-2026-09-24.md §15.
+ * i18n) and download orchestration. See docs/android-completeness-2026-09-24.md §15.
  *
- * Deliberately local-only: `cloudDicts` stays empty, which the screen renders as
- * "no download section" (it only shows that block when the list is non-empty).
- * The cloud catalogue needs the desktop `dicts/manifest.json` asset and an HTTP
- * `OnDemandDownloader`, neither of which the module ships yet — a Download
- * button that cannot download would be worse than no section at all.
+ * The cloud catalog comes from the packaged `dicts/catalog.json` asset. Installed
+ * entries are filtered out of that section, while downloads report progress and
+ * install through the shared repository so a success appears in the local list.
  */
 @Composable
 fun DictionaryRoute(onBack: () -> Unit) {
@@ -53,10 +56,24 @@ fun DictionaryRoute(onBack: () -> Unit) {
     // DictRepository's storage layout), so a desktop import folder can be moved
     // over unchanged.
     val repository = remember(app) { DictRepository(app.filesDir) }
+    val downloadManager = remember(app, repository) {
+        DictDownloadManager(
+            repository = repository,
+            downloader = HttpOnDemandDownloader(),
+            catalogJsonProvider = {
+                runCatching {
+                    app.assets.open("dicts/catalog.json").bufferedReader().use { it.readText() }
+                }.getOrNull()
+            },
+        )
+    }
     var state by remember { mutableStateOf(DictManagementState()) }
 
     fun reload() {
-        state = state.copy(dicts = repository.dicts())
+        state = state.copy(
+            dicts = repository.dicts(),
+            cloudDicts = downloadManager.catalog().filter { !downloadManager.isInstalled(it.id) },
+        )
     }
 
     LaunchedEffect(repository) { withContext(Dispatchers.IO) { reload() } }
@@ -113,7 +130,50 @@ fun DictionaryRoute(onBack: () -> Unit) {
         // the book picker in MainActivity).
         onImportClick = { picker.launch(arrayOf("*/*")) },
         onDownloadClick = { item ->
-            Toast.makeText(context, str("Download failed") + ": " + item.name, Toast.LENGTH_SHORT).show()
+            if (state.downloadingId == null) {
+                state = state.copy(downloadingId = item.id, downloadProgress = -1f)
+                scope.launch {
+                    try {
+                        val outcome = try {
+                            withContext(Dispatchers.IO) {
+                                downloadManager.download(
+                                    item = item,
+                                    isAuthed = false,
+                                    region = ServerRegion.GLOBAL,
+                                    language = language,
+                                    onProgress = { progress ->
+                                        state = state.copy(downloadProgress = progress.fraction)
+                                    },
+                                )
+                            }
+                        } catch (cancelled: CancellationException) {
+                            OnDemandDownloader.Outcome.Cancelled
+                        } catch (error: Exception) {
+                            OnDemandDownloader.Outcome.Failure(
+                                reason = error.message ?: error.javaClass.simpleName,
+                                cause = error,
+                            )
+                        }
+                        when (outcome) {
+                            is OnDemandDownloader.Outcome.Success -> reload()
+                            is OnDemandDownloader.Outcome.Failure -> Toast.makeText(
+                                context,
+                                str("Download failed") + ": " + outcome.reason,
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            OnDemandDownloader.Outcome.Cancelled -> Unit
+                        }
+                    } catch (error: Exception) {
+                        Toast.makeText(
+                            context,
+                            str("Download failed") + ": " + (error.message ?: error.javaClass.simpleName),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } finally {
+                        state = state.copy(downloadingId = null, downloadProgress = -1f)
+                    }
+                }
+            }
         },
         onBack = onBack,
         strings = DictStrings(
