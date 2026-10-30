@@ -156,8 +156,8 @@ const backupToPath = async (config, sendProgress) => {
 
 // 流式解压恢复：用 yauzl 逐条目 openReadStream，避免把整个 zip 读入内存。
 // 资产文件（book/cover/dict/background/font/snapshot）在主进程直接流式写盘，
-// config 类文件（config/*.db、config.json、sync.json）回传渲染进程处理：
-// .db 经 sql.js 解析后与本地记录合并写入，json 写入 ConfigService。
+// config 类文件（config/*.db、config.json、sync.json、koodo-android.json）回传渲染进程处理：
+// .db 经 sql.js 解析后与本地记录合并写入，json 写入 ConfigService；Android 私有标记仅用于识别备份来源。
 const restoreFromPath = async (config, sendProgress) => {
   if (!config || typeof config !== "object") {
     throw new TypeError("Invalid restore config");
@@ -202,7 +202,10 @@ const restoreFromPath = async (config, sendProgress) => {
     const rest = name.slice("config/".length);
     if (rest.includes("/")) return false;
     return (
-      rest.endsWith(".db") || rest === "config.json" || rest === "sync.json"
+      rest.endsWith(".db") ||
+      rest === "config.json" ||
+      rest === "sync.json" ||
+      rest === "koodo-android.json"
     );
   };
   const isAssetFile = (name) =>
@@ -318,8 +321,8 @@ const restoreFromPath = async (config, sendProgress) => {
                 output.on("close", advance);
                 readStream.pipe(output);
               } else if (isConfigFile(name)) {
-                // config 类文件（*.db / config.json / sync.json）累积为 Buffer
-                // 回传渲染进程处理：.db 经 sql.js 解析合并，json 写入 ConfigService
+                // config 类文件（*.db / config.json / sync.json / koodo-android.json）累积为 Buffer
+                // 回传渲染进程处理：.db 经 sql.js 解析合并，json 写入 ConfigService 或作为来源标记
                 const chunks = [];
                 readStream.on("data", (chunk) => chunks.push(chunk));
                 readStream.on("error", reject);
