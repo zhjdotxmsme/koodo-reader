@@ -105,7 +105,7 @@ class HuffCdicDecoderTest {
     }
 }
 
-private object HuffCdicTestFixtures {
+internal object HuffCdicTestFixtures {
     private const val HUFF_HEADER_SIZE = 24
     private const val TABLE1_SIZE = 256 * 4
     private const val TABLE2_SIZE = 32 * 8

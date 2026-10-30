@@ -11,9 +11,9 @@ package com.koodoreader.engine.mobi
  *    compression, DRM, first image/non-book records, EXTH flag, KF8 boundary).
  * 3. [Exth] reads the metadata block (title/author/publisher/…, cover offset,
  *    KF8 boundary).
- * 4. Text records are [PalmDoc] decompressed and concatenated, then decoded once
- *    with the header charset (decoding per record would corrupt UTF-8 sequences
- *    that straddle a record boundary).
+ * 4. Text records are decompressed with PalmDOC or HUFF/CDIC and concatenated,
+ *    then decoded once with the header charset (decoding per record would corrupt
+ *    UTF-8 sequences that straddle a record boundary).
  * 5. Image records are sniffed from magic bytes ([ImageSniffer]) and the cover is
  *    resolved from EXTH 201 (falling back to the first image).
  *
@@ -21,8 +21,7 @@ package com.koodoreader.engine.mobi
  * never throws, so a bad book cannot crash the import/reader pipeline; use
  * [parseOrThrow] to surface the typed [KoodoMobiException] subclasses instead.
  *
- * Not implemented (typed error / no cover): HUFF/CDIC compression (17480) and
- * DRM-protected text (`encryptionType != 0`).
+ * DRM-protected text (`encryptionType != 0`) is refused with a typed error.
  */
 object MobiParser {
 
@@ -156,11 +155,16 @@ object MobiParser {
     // ---- text --------------------------------------------------------------
 
     private fun readText(db: PalmDatabase, header: MobiHeader): String {
-        if (header.isHuffCdic) {
-            // HUFF/CDIC needs the HUFF + CDIC records; declared but not
-            // implemented yet so callers get a precise, typed failure.
-            throw UnsupportedCompressionException(header.compression)
-        }
+        val huffCdicDecompressor: ((ByteArray) -> ByteArray)? = if (header.isHuffCdic) {
+            val first = header.huffcdicIndex
+            val count = header.numHuffcdicRecords
+            val end = first.toLong() + count.toLong()
+            if (first < 0 || count < 0 || end > db.recordCount) {
+                throw MalformedMobiException("MobiCapture: HUFF/CDIC records are outside the PalmDB")
+            }
+            val decoder = HuffCdicDecoder(db.records.subList(first, end.toInt()))
+            ({ data -> decoder.decompress(data) })
+        } else null
         val (first, lastExclusive) = textRecordRange(db.recordCount, header)
         if (first >= lastExclusive) {
             throw MalformedMobiException(
@@ -180,7 +184,9 @@ object MobiParser {
         var total = 0
         var i = first
         while (i < lastExclusive && total < declared) {
-            val decoded = decodeRecord(db.records[i], header.compression, declared - total)
+            val decoded = decodeRecord(
+                db.records[i], header.compression, declared - total, huffCdicDecompressor
+            )
             chunks.add(decoded)
             total += decoded.size
             i++
@@ -212,7 +218,12 @@ object MobiParser {
      * reads as opcodes, so a strict failure falls back to a bounded, lenient
      * decode which keeps the valid prefix up to `remaining` bytes.
      */
-    private fun decodeRecord(record: ByteArray, compression: Int, remaining: Int): ByteArray {
+    private fun decodeRecord(
+        record: ByteArray,
+        compression: Int,
+        remaining: Int,
+        huffCdicDecompressor: ((ByteArray) -> ByteArray)?,
+    ): ByteArray {
         if (remaining <= 0) return ByteArray(0)
         return when (compression) {
             MobiCompression.NONE -> {
@@ -230,6 +241,9 @@ object MobiParser {
                     .getOrElse { PalmDoc.decompressAtMost(payload, remaining) }
                     .let { if (it.size <= remaining) it else it.copyOf(remaining) }
             }
+
+            MobiCompression.HUFF_CDIC -> huffCdicDecompressor!!(record)
+                .let { if (it.size <= remaining) it else it.copyOf(remaining) }
 
             else -> throw UnsupportedCompressionException(compression)
         }

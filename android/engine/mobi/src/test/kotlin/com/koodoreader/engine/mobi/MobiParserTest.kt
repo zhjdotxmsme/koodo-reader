@@ -345,21 +345,56 @@ class MobiParserTest {
     }
 
     @Test
-    fun `HUFF CDIC compression is refused with a typed unsupported error`() {
+    fun `HUFF CDIC compression decodes the full bitstream`() {
         val mobi = B.build(
-            textRecords = listOf(B.textRecord(B.bytes(0x00))),
+            textRecords = listOf(B.bytes(0x00)),
+            trailingRecords = HuffCdicTestFixtures.twoSymbolBook(),
             options = TestMobiBuilder.Options(
                 compression = MobiCompression.HUFF_CDIC,
                 firstImageRecord = 0,
+                firstNonBookIndex = 2,
+                huffcdicIndex = 2,
+                numHuffcdicRecords = 2,
             ),
-            decompressedLength = 8,
+            decompressedLength = 16,
         )
+
+        assertEquals("ab".repeat(8), MobiParser.parseOrThrow(mobi).text)
+    }
+
+    @Test
+    fun `corrupt HUFF CDIC records are typed malformed errors`() {
+        val records = HuffCdicTestFixtures.twoSymbolBook().toMutableList()
+        records[0] = records[0].copyOf().also { it[0] = 'X'.code.toByte() }
+        val mobi = B.build(
+            textRecords = listOf(B.bytes(0x00)),
+            trailingRecords = records,
+            options = TestMobiBuilder.Options(
+                compression = MobiCompression.HUFF_CDIC,
+                firstImageRecord = 0,
+                firstNonBookIndex = 2,
+                huffcdicIndex = 2,
+                numHuffcdicRecords = 2,
+            ),
+            decompressedLength = 16,
+        )
+
+        assertThrows(MalformedMobiException::class.java) { MobiParser.parseOrThrow(mobi) }
+        assertNull(MobiParser.parse(mobi))
+    }
+
+    @Test
+    fun `unknown compression keeps its typed unsupported error`() {
+        val mobi = B.build(
+            textRecords = listOf(B.bytes(0x00)),
+            options = TestMobiBuilder.Options(compression = 3, firstImageRecord = 0),
+            decompressedLength = 1,
+        )
+
         val ex = assertThrows(UnsupportedCompressionException::class.java) {
             MobiParser.parseOrThrow(mobi)
         }
-        assertEquals(MobiCompression.HUFF_CDIC, ex.type)
-        assertTrue(ex.message!!.contains("HUFF/CDIC"), ex.message)
-        assertNull(MobiParser.parse(mobi))
+        assertEquals(3, ex.type)
     }
 
     @Test

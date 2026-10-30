@@ -105,6 +105,8 @@ object TestMobiBuilder {
         val recordCountOverride: Int? = null,
         val firstNonBookIndex: Int? = null,
         val firstImageRecord: Int? = null,
+        val huffcdicIndex: Int = 0,
+        val numHuffcdicRecords: Int = 0,
         val kf8Boundary: Int? = null,
         val fullName: String? = null,
         val exthRecords: List<ByteArray> = emptyList(),
@@ -214,6 +216,8 @@ object TestMobiBuilder {
         at(80, u32(firstNonBook))
         val fullNameOffsetAt = 84
         at(108, u32(firstImage))
+        at(112, u32(options.huffcdicIndex))
+        at(116, u32(options.numHuffcdicRecords))
         at(128, u32(exthFlags))
         at(168, u32(options.drmOffset))
         at(172, u32(options.drmRecordCount))
