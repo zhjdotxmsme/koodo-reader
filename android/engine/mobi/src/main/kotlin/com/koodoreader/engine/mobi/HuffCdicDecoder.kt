@@ -72,7 +72,9 @@ class HuffCdicDecoder(records: List<ByteArray>) {
         }
     }
 
-    fun decompress(data: ByteArray): ByteArray {
+    fun decompress(data: ByteArray): ByteArray = decompress(data, mutableSetOf(), depth = 0)
+
+    private fun decompress(data: ByteArray, activeSlices: MutableSet<Int>, depth: Int): ByteArray {
         val output = ByteArrayOutputStream()
         val bitLength = data.size * 8
         var bitOffset = 0
@@ -100,10 +102,24 @@ class HuffCdicDecoder(records: List<ByteArray>) {
             if (code < 0 || code >= dictionary.size) {
                 throw MalformedMobiException("MobiCapture: HUFF dictionary index $code is out of range")
             }
-            var result = dictionary[code.toInt()]
+            val index = code.toInt()
+            var result = dictionary[index]
             if (!result.decompressed) {
-                result = DictionaryEntry(decompress(result.bytes), decompressed = true)
-                dictionary[code.toInt()] = result
+                if (depth >= MAX_DICTIONARY_DEPTH) {
+                    throw MalformedMobiException("MobiCapture: HUFF dictionary nesting is too deep")
+                }
+                if (!activeSlices.add(index)) {
+                    throw MalformedMobiException("MobiCapture: cyclic HUFF dictionary slice $index")
+                }
+                try {
+                    result = DictionaryEntry(
+                        decompress(result.bytes, activeSlices, depth + 1),
+                        decompressed = true,
+                    )
+                    dictionary[index] = result
+                } finally {
+                    activeSlices.remove(index)
+                }
             }
             output.writeBytes(result.bytes)
         }
@@ -115,6 +131,7 @@ class HuffCdicDecoder(records: List<ByteArray>) {
         const val TABLE1_SIZE = 256 * 4
         const val TABLE2_SIZE = 32 * 8
         const val CDIC_HEADER_SIZE = 16
+        const val MAX_DICTIONARY_DEPTH = 256
     }
 }
 
