@@ -22,6 +22,32 @@ const mergeRecords = (localRecords: any[], backupRecords: any[]): any[] => {
   }
   return Array.from(recordMap.values());
 };
+const parseConfigObject = (value: any): Record<string, any> => {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+};
+const applyRestoredConfig = (config: any, isAndroidBackup: boolean) => {
+  for (const key in config) {
+    if (key !== "readerConfig" || !isAndroidBackup) {
+      ConfigService.setItem(key, config[key]);
+      continue;
+    }
+    const existing = parseConfigObject(ConfigService.getItem("readerConfig"));
+    const imported = parseConfigObject(config[key]);
+    for (const cssKey of ["customBookCSS", "isCustomBookCSS"]) {
+      if (Object.prototype.hasOwnProperty.call(imported, cssKey)) {
+        existing[cssKey] = imported[cssKey];
+      }
+    }
+    ConfigService.setItem("readerConfig", JSON.stringify(existing));
+  }
+};
 let oldConfigArr = [
   "notes.json",
   "books.json",
@@ -61,6 +87,7 @@ export const restoreFromBrowser = async (): Promise<
         const fileBuffer = await file.arrayBuffer();
         const zip = await JSZip.loadAsync(fileBuffer);
         const isNewBackup = zip.file("config/config.json") !== null;
+        const isAndroidBackup = zip.file("config/koodo-android.json") !== null;
         if (!isNewBackup) {
           resolve("failed");
           return;
@@ -93,7 +120,7 @@ export const restoreFromBrowser = async (): Promise<
                 break;
               }
               const config = JSON.parse(text);
-              for (const key in config) ConfigService.setItem(key, config[key]);
+              applyRestoredConfig(config, isAndroidBackup);
             } else if (entryName === "sync.json") {
               const text = await zip.file(fileName)!.async("string");
               if (!text) {
@@ -315,6 +342,9 @@ export const restoreFromfilePath = async (filePath: string) => {
   // 主进程已流式写盘资产文件，并回传 config 类文件 Buffer，在此处理。
   const configFiles: { name: string; buffer: ArrayBuffer }[] =
     result.configFiles || [];
+  const isAndroidBackup = configFiles.some(
+    (file) => path.basename(file.name) === "koodo-android.json"
+  );
   let failed = false;
   for (const file of configFiles) {
     try {
@@ -326,7 +356,7 @@ export const restoreFromfilePath = async (filePath: string) => {
           break;
         }
         const config = JSON.parse(text);
-        for (const key in config) ConfigService.setItem(key, config[key]);
+        applyRestoredConfig(config, isAndroidBackup);
       } else if (entryName === "sync.json") {
         const text = new TextDecoder().decode(file.buffer);
         if (!text) {

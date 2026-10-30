@@ -291,6 +291,57 @@ class DesktopPrefsBridgeTest {
         assertTrue(restored.warnings.isNotEmpty())
     }
 
+    @Test
+    fun `desktop rule entries with import warnings preserve current rules`() {
+        val current = currentFeature()
+        val config = desktopConfig(
+            ruleList = """["1"]""",
+            rules = """{"1":{"id":"1","replacement":"bar"}}""",
+        )
+
+        val restored = DesktopPrefsBridge.applyDesktopConfig(config, current)
+
+        assertEquals(current.textRulesJson, restored.textRulesJson)
+    }
+
+    @Test
+    fun `private rule entries with import warnings preserve current rules`() {
+        val current = currentFeature()
+        val json = DesktopPrefsBridge.exportAndroidPrefsJson(
+            feature = mapOf(ReaderFeatureCodec.KEY_TEXT_RULES to "[1]"),
+            gestures = emptyMap(),
+        )
+
+        val restored = DesktopPrefsBridge.restoreAndroidPrefs(
+            json,
+            current,
+            ReaderGestureConfig(),
+        )
+
+        assertEquals(current.textRulesJson, restored.feature.textRulesJson)
+        assertTrue(restored.warnings.isNotEmpty())
+    }
+
+    @Test
+    fun `valid empty private arrays and envelopes clear current rules`() {
+        val current = currentFeature()
+        for (emptyRules in listOf("[]", """{"textRuleList":[],"textRules":{}}""")) {
+            val json = DesktopPrefsBridge.exportAndroidPrefsJson(
+                feature = mapOf(ReaderFeatureCodec.KEY_TEXT_RULES to emptyRules),
+                gestures = emptyMap(),
+            )
+
+            val restored = DesktopPrefsBridge.restoreAndroidPrefs(
+                json,
+                current,
+                ReaderGestureConfig(),
+            )
+
+            assertTrue(TextRuleJson.importRules(restored.feature.textRulesJson).rules.isEmpty())
+            assertTrue(restored.warnings.isEmpty())
+        }
+    }
+
     private fun currentFeature() = ReaderFeatureState(
         fontScale = 1.3f,
         lineHeightRatio = 1.6f,

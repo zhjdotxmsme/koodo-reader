@@ -72,7 +72,9 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
                     onConfigJson = { json ->
                         if (json != null) {
                             val prefs = ReaderFeaturePrefs(getApplication<Application>())
-                            prefs.save(DesktopPrefsBridge.applyDesktopConfig(json, prefs.load()))
+                            val restored = DesktopPrefsBridge.applyDesktopConfigWithWarnings(json, prefs.load())
+                            prefs.save(restored.state)
+                            preferenceWarnings += restored.warnings
                         }
                     },
                     onAndroidPrefsJson = { json ->
@@ -98,7 +100,7 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
             }
             val imported = report.getOrThrow()
             _state.value = BackupUiState.Finished(
-                formatImportReport(imported.copy(failures = imported.failures + preferenceWarnings)),
+                formatImportReport(imported, preferenceWarnings),
             )
         }
     }
@@ -248,7 +250,10 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        fun formatImportReport(r: ImportReport): String = buildString {
+        fun formatImportReport(
+            r: ImportReport,
+            preferenceWarnings: List<String> = emptyList(),
+        ): String = buildString {
             r.tables.forEach { (t, tr) ->
                 append(t).append("[").append(tr.source).append("] ")
                     .append(tr.imported).append("/").append(tr.rows)
@@ -256,9 +261,10 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
             }
             append("\ncovers: ").append(r.coversImported)
             append("  books: ").append(r.booksImported)
-            if (r.failures.isNotEmpty()) {
+            val failures = r.failures + preferenceWarnings
+            if (failures.isNotEmpty()) {
                 append("\nwarnings:\n")
-                r.failures.forEach { append(" - ").append(it).append('\n') }
+                failures.forEach { append(" - ").append(it).append('\n') }
             }
         }
     }

@@ -27,17 +27,31 @@ object DesktopPrefsBridge {
             "gestures" to stringMap(gestures),
         )))
 
-    fun applyDesktopConfig(configJson: String?, current: ReaderFeatureState): ReaderFeatureState {
-        if (configJson.isNullOrBlank()) return current
-        val root = runCatching { TextRuleJson.parse(configJson) as? JsonValue.Obj }.getOrNull()
-            ?: return current
+    data class DesktopConfigRestore(
+        val state: ReaderFeatureState,
+        val warnings: List<String>,
+    )
+
+    fun applyDesktopConfig(configJson: String?, current: ReaderFeatureState): ReaderFeatureState =
+        applyDesktopConfigWithWarnings(configJson, current).state
+
+    fun applyDesktopConfigWithWarnings(
+        configJson: String?,
+        current: ReaderFeatureState,
+    ): DesktopConfigRestore {
+        if (configJson.isNullOrBlank()) return DesktopConfigRestore(current, emptyList())
         val parsed = DesktopConfigPrefs.parseDesktopConfig(configJson)
+        val root = runCatching { TextRuleJson.parse(configJson) as? JsonValue.Obj }.getOrNull()
+            ?: return DesktopConfigRestore(current, parsed.warnings)
         var next = current
 
         val ruleList = root.fields[TextRuleJson.KEY_RULE_LIST].stringValue()
         val rules = root.fields[TextRuleJson.KEY_RULES].stringValue()
-        if (ruleList != null && rules != null && validRuleEnvelope(ruleList, rules)) {
-            next = next.copy(textRulesJson = TextRuleJson.exportRules(parsed.rules))
+        if (ruleList != null && rules != null) {
+            val imported = importRules(ruleList, rules)
+            if (imported != null && imported.warnings.isEmpty()) {
+                next = next.copy(textRulesJson = TextRuleJson.exportRules(imported.rules))
+            }
         }
 
         val readerConfig = root.fields[DesktopConfigPrefs.KEY_READER_CONFIG].stringValue()
@@ -51,7 +65,7 @@ object DesktopPrefsBridge {
                 next = next.copy(customBookCssEnabled = parsed.customBookCssEnabled)
             }
         }
-        return next
+        return DesktopConfigRestore(next, parsed.warnings)
     }
 
     fun parseAndroidPrefsVersion(json: String?): Int? {
@@ -113,9 +127,13 @@ object DesktopPrefsBridge {
         return AndroidPrefsRestore(feature, gestures, accepted = true, warnings = warnings)
     }
 
-    private fun validRuleEnvelope(ruleList: String, rules: String): Boolean = runCatching {
-        TextRuleJson.parse(ruleList) is JsonValue.Arr && TextRuleJson.parse(rules) is JsonValue.Obj
-    }.getOrDefault(false)
+    private fun importRules(ruleList: String, rules: String): TextRuleJson.ImportResult? = runCatching {
+        val envelope = TextRuleJson.render(JsonValue.Obj(linkedMapOf(
+            TextRuleJson.KEY_RULE_LIST to TextRuleJson.parse(ruleList),
+            TextRuleJson.KEY_RULES to TextRuleJson.parse(rules),
+        )))
+        TextRuleJson.importRules(envelope)
+    }.getOrNull()
 
     private fun JsonValue?.stringValue(): String? = (this as? JsonValue.Str)?.value
 
@@ -179,7 +197,7 @@ object DesktopPrefsBridge {
             value.equals(ReaderPerformancePolicy.TIER_NORMAL, ignoreCase = true) ||
                 value.equals(ReaderPerformancePolicy.TIER_LITE, ignoreCase = true)
         ReaderFeatureCodec.KEY_TEXT_RULES -> value.isEmpty() || runCatching {
-            TextRuleJson.parse(value) is JsonValue.Arr || TextRuleJson.parse(value) is JsonValue.Obj
+            TextRuleJson.importRules(value).warnings.isEmpty()
         }.getOrDefault(false)
         else -> true
     }
