@@ -239,11 +239,24 @@ class DesktopPrefsBridgeTest {
     }
 
     @Test
-    fun `missing Android prefs reject restoration with a warning`() {
+    fun `missing Android prefs skip restoration without a warning`() {
         val current = currentFeature()
         val gestures = ReaderGestureConfig(volumePageTurn = false)
 
         val restored = DesktopPrefsBridge.restoreAndroidPrefs(null, current, gestures)
+
+        assertFalse(restored.accepted)
+        assertEquals(current, restored.feature)
+        assertEquals(gestures, restored.gestures)
+        assertTrue(restored.warnings.isEmpty())
+    }
+
+    @Test
+    fun `blank Android prefs reject restoration with a warning`() {
+        val current = currentFeature()
+        val gestures = ReaderGestureConfig(volumePageTurn = false)
+
+        val restored = DesktopPrefsBridge.restoreAndroidPrefs("  \n", current, gestures)
 
         assertFalse(restored.accepted)
         assertEquals(current, restored.feature)

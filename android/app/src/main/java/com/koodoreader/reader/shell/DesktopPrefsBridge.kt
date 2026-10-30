@@ -81,8 +81,11 @@ object DesktopPrefsBridge {
             accepted = false,
             warnings = listOf(warning),
         )
-        if (json.isNullOrBlank()) {
-            return rejected("Android private preferences were not restored: koodo-android.json is missing")
+        if (json == null) {
+            return AndroidPrefsRestore(currentFeature, currentGestures, accepted = false, warnings = emptyList())
+        }
+        if (json.isBlank()) {
+            return rejected("Android private preferences were not restored: koodo-android.json is blank")
         }
         val root = runCatching { TextRuleJson.parse(json) as? JsonValue.Obj }.getOrNull()
             ?: return rejected("Android private preferences were not restored: koodo-android.json is malformed")
