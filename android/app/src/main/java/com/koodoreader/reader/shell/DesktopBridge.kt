@@ -67,6 +67,8 @@ object DesktopBridge {
         booksDir: File,
         coverDir: File,
         fontsDir: File? = null,
+        onConfigJson: (String?) -> Unit = {},
+        onAndroidPrefsJson: (String?) -> Unit = {},
     ): ImportReport = withContext(Dispatchers.IO) {
         val failures = mutableListOf<String>()
         val reports = LinkedHashMap<String, TableReport>()
@@ -117,6 +119,12 @@ object DesktopBridge {
                     }
                     if (ok.isFailure) failures.add("font ${ff.name}: ${ok.exceptionOrNull()}")
                 }
+            }
+            runCatching { onConfigJson(bundle.configJson) }.onFailure {
+                failures.add("desktop preferences: ${it.message ?: it}")
+            }
+            runCatching { onAndroidPrefsJson(bundle.androidPrefsJson) }.onFailure {
+                failures.add("Android private preferences: ${it.message ?: it}")
             }
         }
         ImportReport(reports, coverCount, bookCount, failures)

@@ -61,15 +61,45 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             val file = local.getOrThrow()
+            val preferenceWarnings = mutableListOf<String>()
             val report = runCatching {
-                DesktopBridge.importBackup(file, db, booksDir, coverDir, fontsDir)
+                DesktopBridge.importBackup(
+                    source = file,
+                    db = db,
+                    booksDir = booksDir,
+                    coverDir = coverDir,
+                    fontsDir = fontsDir,
+                    onConfigJson = { json ->
+                        if (json != null) {
+                            val prefs = ReaderFeaturePrefs(getApplication<Application>())
+                            prefs.save(DesktopPrefsBridge.applyDesktopConfig(json, prefs.load()))
+                        }
+                    },
+                    onAndroidPrefsJson = { json ->
+                        val featurePrefs = ReaderFeaturePrefs(getApplication<Application>())
+                        val gesturePrefs = ReaderGesturePrefs(getApplication<Application>())
+                        val restored = DesktopPrefsBridge.restoreAndroidPrefs(
+                            json,
+                            featurePrefs.load(),
+                            gesturePrefs.load(),
+                        )
+                        if (restored.accepted) {
+                            featurePrefs.save(restored.feature)
+                            gesturePrefs.save(restored.gestures)
+                        }
+                        preferenceWarnings += restored.warnings
+                    },
+                )
             }
             withContext(Dispatchers.IO) { file.parentFile?.deleteRecursively() }
             if (report.isFailure) {
                 _state.value = BackupUiState.Errored(report.exceptionOrNull()?.message ?: "import failed")
                 return@launch
             }
-            _state.value = BackupUiState.Finished(formatImportReport(report.getOrThrow()))
+            val imported = report.getOrThrow()
+            _state.value = BackupUiState.Finished(
+                formatImportReport(imported.copy(failures = imported.failures + preferenceWarnings)),
+            )
         }
     }
 

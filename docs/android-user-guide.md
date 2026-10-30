@@ -360,8 +360,10 @@ PDF 阅读器 → 工具栏 → **OCR** 图标 → 弹出 OCR 索引对话框。
 ### 10.2 导出备份
 
 - 备份页 → **Export backup** → 选择保存位置（SAF）。
-- 输出文件为 zip，结构与桌面版完全一致（包含 `books / notes / bookmarks / plugins / words / config.json`）。
-- 桌面端可直接用该备份恢复，反之亦然。
+- 输出文件为 zip，数据库与目录结构采用桌面版格式（包含 `books / notes / bookmarks / plugins / words / config.json`）。
+- `config.json` 同时包含文本替换规则（`textRuleList` / `textRules`）和自定义书籍 CSS（`readerConfig.customBookCSS` / `isCustomBookCSS`）。
+- 安卓私有阅读偏好与手势设置写入 `config/koodo-android.json`；桌面端会忽略这个安卓专用文件。
+- 桌面端可直接用该备份恢复数据库、书籍、规则和 CSS，反之亦然。
 
 ### 10.3 导入备份
 
@@ -371,6 +373,8 @@ PDF 阅读器 → 工具栏 → **OCR** 图标 → 弹出 OCR 索引对话框。
   2. 校验文件结构与 schema。
   3. 写入 Room 数据库（覆盖式 / 合并式视版本而定）。
   4. 还原书籍文件到 `filesDir/books/`。
+  5. 还原桌面备份中的同名文本替换规则与自定义 CSS；明确的空规则、空 CSS 和停用 CSS 也会按备份应用，缺失或损坏的字段不会改变当前设置。
+  6. 备份含版本 1 的 `config/koodo-android.json` 时，合并还原其中有效的阅读偏好和手势字段；未知键、无效值、缺失或损坏的文件及未知版本不会重置当前设置，并会在完成信息中显示警告。
 - 导入完成后，书库自动刷新。
 
 ### 10.4 当前边界
