@@ -11,7 +11,7 @@ package com.koodoreader.engine.feature
  * The accepted language is strict JSON — no comments, no trailing commas —
  * which is exactly what `JSON.stringify` produces on the desktop side.
  */
-internal sealed class JsonValue {
+sealed class JsonValue {
     data class Str(val value: String) : JsonValue()
     data class Num(val value: Double) : JsonValue()
     data class Bool(val value: Boolean) : JsonValue()

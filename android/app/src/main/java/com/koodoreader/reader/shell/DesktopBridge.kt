@@ -128,6 +128,8 @@ object DesktopBridge {
         coverDir: File,
         timestamp: Long,
         booksDir: File? = null,
+        configJson: String = "{}",
+        androidPrefsJson: String = "",
     ): ExportReport = withContext(Dispatchers.IO) {
         outDir.mkdirs()
         val tables: Map<String, List<Row>> = mapOf(
@@ -151,7 +153,15 @@ object DesktopBridge {
             ?: emptyList()
         // Desktop naming (backup.ts): KoodoReader-Backup-y-m-d-<epoch>.zip
         val out = File(outDir, "KoodoReader-Backup-local-$timestamp.zip")
-        BackupBundle.write(out, tables, "{}", covers, bookFiles)
+        BackupBundle.write(
+            out = out,
+            tables = tables,
+            configJson = configJson,
+            covers = covers,
+            bookFiles = bookFiles,
+            syncJson = "",
+            androidPrefsJson = androidPrefsJson,
+        )
         ExportReport(out, tables.mapValues { it.value.size }, covers.size, bookFiles.size)
     }
 

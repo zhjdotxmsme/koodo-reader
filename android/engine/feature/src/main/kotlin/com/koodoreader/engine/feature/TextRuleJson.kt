@@ -201,6 +201,8 @@ object TextRuleJson {
         )
     }
 
-    private fun render(value: JsonValue, pretty: Boolean): String =
+    fun parse(text: String): JsonValue = Json.parse(text)
+
+    fun render(value: JsonValue, pretty: Boolean = false): String =
         if (pretty) Json.writePretty(value) else Json.write(value)
 }

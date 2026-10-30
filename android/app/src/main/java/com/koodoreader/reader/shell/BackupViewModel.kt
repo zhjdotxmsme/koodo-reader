@@ -79,12 +79,19 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = BackupUiState.Running("Building desktop backup…")
             val report = runCatching {
+                val featureState = ReaderFeaturePrefs(getApplication<Application>()).load()
+                val gestureConfig = ReaderGesturePrefs(getApplication<Application>()).load()
                 DesktopBridge.exportBackup(
                     outDir = backupDir,
                     db = db,
                     coverDir = coverDir,
                     booksDir = booksDir, // P7: bundle books/ entries under <filesDir>/books
                     timestamp = System.currentTimeMillis(),
+                    configJson = DesktopPrefsBridge.exportConfigJson(featureState),
+                    androidPrefsJson = DesktopPrefsBridge.exportAndroidPrefsJson(
+                        feature = ReaderFeatureCodec.toMap(featureState),
+                        gestures = ReaderGestureCodec.toMap(gestureConfig),
+                    ),
                 )
             }
             if (report.isFailure) {

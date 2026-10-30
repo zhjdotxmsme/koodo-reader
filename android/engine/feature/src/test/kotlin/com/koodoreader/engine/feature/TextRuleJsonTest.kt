@@ -157,4 +157,20 @@ class TextRuleJsonTest {
         val json = TextRuleJson.exportRules(rules)
         assertEquals(rules, TextRuleJson.importRules(json).rules)
     }
+
+    @Test
+    fun `public parse and render wrappers preserve JSON and default to compact output`() {
+        val value = JsonValue.Obj(linkedMapOf(
+            "text" to JsonValue.Str("line 1\n\"line 2\""),
+            "items" to JsonValue.Arr(listOf(JsonValue.Num(1.0), JsonValue.Bool(false))),
+        ))
+
+        val compact = TextRuleJson.render(value)
+        val pretty = TextRuleJson.render(value, pretty = true)
+
+        assertFalse(compact.contains('\n'))
+        assertTrue(pretty.contains('\n'))
+        assertEquals(value, TextRuleJson.parse(compact))
+        assertEquals(value, TextRuleJson.parse(pretty))
+    }
 }
