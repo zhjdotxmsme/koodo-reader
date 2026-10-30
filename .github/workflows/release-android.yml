@@ -86,6 +86,9 @@ jobs:
       - name: Check P6 locale packs, OpenCC seed and doc hash table (locale guard)
         run: node scripts/check-locales.mjs
 
+      - name: Check Android cloud-dict catalog matches desktop list
+        run: node scripts/check-dict-catalog.js
+
       - name: Check TTS manifest wiring matches the feature module (P6 guard)
         run: node scripts/check-tts-manifest.js
 

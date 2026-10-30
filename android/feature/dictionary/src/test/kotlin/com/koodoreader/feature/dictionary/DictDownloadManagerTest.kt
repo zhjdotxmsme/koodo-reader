@@ -101,6 +101,43 @@ class DictDownloadManagerTest {
         assertTrue(empty.catalog().isEmpty())
     }
 
+    @Test
+    fun `shipped catalog parses with 11 cloud dicts`() {
+        val manager = DictDownloadManager(DictRepository(root), FakeDownloader(dictionaryBytes))
+        val manifest = manager.parseManifest(
+            """
+            {
+              "dicts": [
+                {"id":"basic-english-irish","name":"Basic English-Irish Dictionary","translation":"简明英爱词典","source":"Pat Griffin","bytes":0},
+                {"id":"english-italian","name":"English-Italian Dictionary","translation":"简明英意词典","source":"Pat Griffin","bytes":0},
+                {"id":"cc-cedict","name":"CC-CEDICT","translation":"简明中英词典","source":"www.mdbg.net","bytes":0},
+                {"id":"et-tedict","name":"ET-TEDICT","translation":"简明中英英中词典","source":"cdict-1.0-1.i386.rpm","bytes":0},
+                {"id":"jmdict","name":"Japanese English Dictionary","translation":"简明日英词典","source":"JMDict","bytes":0},
+                {"id":"moby","name":"Moby Thesaurus","translation":"Moby Thesaurus","source":"Chua Welic","bytes":0},
+                {"id":"wordnet","name":"Wordnet","translation":"Wordnet","source":"Chua Welic","bytes":0},
+                {"id":"opted","name":"Online Plain Text English Dictionary","translation":"简明英英词典","source":"Chua Welic","bytes":0},
+                {"id":"english-arabic","name":"English-Arabic Dictionary","translation":"简明英阿词典","source":"Khaldoun Mahmoud","bytes":0},
+                {"id":"tcm_textbook","name":"中医教材仓库","translation":"中医教材仓库","source":"Fredrik Jornebo","bytes":0},
+                {"id":"ecdict","name":"ECDICT","translation":"简明英汉字典增强版","source":"GitHub-skywind3000","bytes":0}
+              ],
+              "bundled": []
+            }
+            """.trimIndent(),
+        )
+        val catalog = manifest.dicts
+
+        assertEquals(11, catalog.size)
+        assertTrue(catalog.all { it.bytes == 0L })
+        assertTrue(manifest.bundled.isEmpty())
+        val ccCedict = catalog.first { it.id == "cc-cedict" }
+        assertEquals("简明中英词典", manager.displayName(ccCedict, "zh-CN"))
+        assertEquals("CC-CEDICT", manager.displayName(ccCedict, "en"))
+        assertEquals(
+            "https://storage.koodoreader.com/dicts/cc-cedict.mdx",
+            manager.cloudUrl("cc-cedict", isAuthed = false, region = ServerRegion.GLOBAL),
+        )
+    }
+
     // -------------------------------------------------------------- download
 
     @Test
