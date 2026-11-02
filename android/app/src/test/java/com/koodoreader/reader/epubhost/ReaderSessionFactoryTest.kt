@@ -56,8 +56,8 @@ class ReaderSessionFactoryTest {
         val covered = owners.flatten().toSet()
         val uncovered = whitelist - covered
         assertTrue(uncovered.isEmpty(), "uncovered formats: $uncovered")
-        // 也不该认领白名单外的格式
-        assertTrue(covered.all { it in whitelist }, "claims outside whitelist: ${covered - whitelist}")
+        // CBR 不可导入，但仍须由岛认领；其他白名单外格式不应被认领。
+        assertEquals(emptySet<String>(), covered - whitelist - setOf("cbr"))
     }
 
     @Test

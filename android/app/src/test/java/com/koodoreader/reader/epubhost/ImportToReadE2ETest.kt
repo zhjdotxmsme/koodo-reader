@@ -108,16 +108,15 @@ class ImportToReadE2ETest {
             ),
         )
 
-        // MOBI 家族：导入只取基础字段（深度解析是阅读期的事），任意字节即可。
-        "mobi", "azw3", "azw" -> textFile("book.$ext", "not parsed at import time")
+        // 二进制占位不能是纯文本，否则内容探测会按设计识别为 TXT。
+        "mobi", "azw3", "azw", "cbt", "cb7" ->
+            File(dir, "book.$ext").apply { writeBytes(byteArrayOf(0, 1, 2, 3)) }
 
-        // 漫画：CBZ 需要真实 zip（ComicCover 会抽封面/页数），CBT/CB7 导入期同样只取基础字段。
+        // 漫画：CBZ 需要真实 zip（ComicCover 会抽封面/页数）。
         "cbz" -> zipFile(
             "book.cbz",
             mapOf("001.png" to "PNG1", "002.png" to "PNG2"),
         )
-        "cbt" -> textFile("book.cbt", "tar placeholder")
-        "cb7" -> textFile("book.cb7", "7z placeholder")
         "cbr" -> textFile("book.cbr", "rar placeholder")
 
         else -> error("no fixture for $ext")
@@ -140,7 +139,8 @@ class ImportToReadE2ETest {
         val record = result.records.single()
         val format = record.format
         assertNotNull(format, "$ext: format column empty")
-        assertEquals(ext.uppercase(), format, "$ext: wrong format column")
+        val expectedFormat = if (ext in setOf("htm", "xhtml", "xml")) "HTML" else ext.uppercase()
+        assertEquals(expectedFormat, format, "$ext: wrong format column")
 
         // ②书架点开时按 key/format/path 找回文件
         val resolved = ReaderFiles.resolveBookFile(
@@ -237,12 +237,25 @@ class ImportToReadE2ETest {
     // ------------------------------------------------------- CBR 通道
 
     @Test
-    fun `cbr imports but stays on the island route`() {
-        val (format, file) = importAndResolve("cbr")
-        assertEquals("CBR", format)
+    fun `cbr is rejected and stays on the island route`() = runBlocking {
+        val source = fixture("cbr")
+        val result = ImportPipeline().process(
+            pending = listOf(
+                BookSource(
+                    name = source.name,
+                    openStream = { source.inputStream() },
+                    size = source.length(),
+                ),
+            ),
+            booksOut = booksOut,
+        )
+        assertEquals(0, result.imported)
+        assertEquals(1, result.unsupported)
+        assertTrue(result.failures.isEmpty())
+        assertTrue(booksOut.listFiles().orEmpty().isEmpty())
         assertEquals(
             IntentRoutePolicy.Route.ISLAND,
-            IntentRoutePolicy.decide("application/x-cbr", file.name),
+            IntentRoutePolicy.decide("application/x-cbr", source.name),
         )
     }
 
