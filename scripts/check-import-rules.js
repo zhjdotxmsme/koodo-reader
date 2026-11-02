@@ -66,12 +66,11 @@ function extractCall(src, name) {
 /** Parse Kotlin rules: { extensions, mime, maxFiles, folderDepth, folderEvent }. */
 function parseKotlin(file) {
   const src = fs.readFileSync(file, 'utf8');
-  const extBody = extractCall(src, 'BOOK_EXTENSIONS');
-  const mimeBody = extractCall(src, 'MIME_BY_EXT');
-  let extensions = [...extBody.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  let mime = {};
-  for (const m of mimeBody.matchAll(/"([^"]+)"\s+to\s+"([^"]+)"/g)) mime[m[1]] = m[2];
-  if (extensions.length === 0) {
+  const derived = /^\s*val BOOK_EXTENSIONS[^=]*=\s*BookFormat\.entries\b/m.test(src) &&
+    /^\s*val MIME_BY_EXT[^=]*=\s*BookFormat\.entries\b/m.test(src);
+  let extensions;
+  let mime;
+  if (derived) {
     const formatFile = path.join(path.dirname(file), 'BookFormat.kt');
     if (!fs.existsSync(formatFile)) fail(`missing registry file ${formatFile}`);
     const formatSrc = fs.readFileSync(formatFile, 'utf8');
@@ -79,6 +78,12 @@ function parseKotlin(file) {
     if (formats.length === 0) fail('BookFormat registry parsed empty');
     extensions = formats.map((m) => m[1]);
     mime = Object.fromEntries(formats.map((m) => [m[1], m[2]]));
+  } else {
+    const extBody = extractCall(src, 'BOOK_EXTENSIONS');
+    const mimeBody = extractCall(src, 'MIME_BY_EXT');
+    extensions = [...extBody.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    mime = {};
+    for (const m of mimeBody.matchAll(/"([^"]+)"\s+to\s+"([^"]+)"/g)) mime[m[1]] = m[2];
   }
   const num = (name) => {
     // Tolerate optional Kotlin type annotations: `const val X: Int = 1000`.

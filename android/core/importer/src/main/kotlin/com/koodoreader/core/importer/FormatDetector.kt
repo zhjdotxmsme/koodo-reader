@@ -7,6 +7,10 @@ import java.util.zip.ZipInputStream
 
 internal object FormatDetector {
     private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")
+    private val textFormats = setOf(
+        BookFormat.TXT, BookFormat.MD, BookFormat.XML, BookFormat.HTM,
+        BookFormat.HTML, BookFormat.XHTML, BookFormat.MHTML, BookFormat.FB2,
+    )
     private val fb2Root = Regex("<(?:[\\w.-]+:)?FictionBook(?=[\\s>/])", RegexOption.IGNORE_CASE)
     private val htmlRoot = Regex(
         "<!DOCTYPE\\s+html\\b|<(?:[\\w.-]+:)?html(?=[\\s>])",
@@ -25,6 +29,12 @@ internal object FormatDetector {
         }
         val byName = BookFormat.entries.firstOrNull { it.extension == ext }
         val byMime = BookFormat.entries.firstOrNull { it.mime.equals(normalizedMime, true) }
+        if (isPlainText(decodeText(header))) {
+            val textFormat = byName?.takeIf { it in textFormats }
+                ?: byMime?.takeIf { it in textFormats }
+                ?: BookFormat.TXT
+            return FormatDetection.Supported(textFormat)
+        }
         return (byName ?: byMime)?.let(FormatDetection::Supported) ?: FormatDetection.Unknown
     }
 
@@ -43,7 +53,6 @@ internal object FormatDetector {
             fb2Root.containsMatchIn(text) -> FormatDetection.Supported(BookFormat.FB2)
             mhtmlRoot.containsMatchIn(text) -> FormatDetection.Supported(BookFormat.MHTML)
             htmlRoot.containsMatchIn(text) -> FormatDetection.Supported(BookFormat.HTML)
-            isPlainText(text) -> FormatDetection.Supported(BookFormat.TXT)
             else -> null
         }
     }

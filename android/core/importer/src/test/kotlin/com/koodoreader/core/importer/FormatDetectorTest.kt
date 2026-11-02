@@ -138,6 +138,25 @@ class FormatDetectorTest {
     }
 
     @Test
+    fun `plain text respects a markdown extension`() {
+        val detected = BookFormat.detect("notes.md", null) { "# Title\n".byteInputStream() }
+        assertEquals(FormatDetection.Supported(BookFormat.MD), detected)
+    }
+
+    @Test
+    fun `plain text respects an xml extension`() {
+        val xml = "<?xml version=\"1.0\"?><catalog/>"
+        val detected = BookFormat.detect("catalog.xml", null) { xml.byteInputStream() }
+        assertEquals(FormatDetection.Supported(BookFormat.XML), detected)
+    }
+
+    @Test
+    fun `plain text respects an html extension for a fragment`() {
+        val detected = BookFormat.detect("fragment.html", null) { "<p>fragment</p>".byteInputStream() }
+        assertEquals(FormatDetection.Supported(BookFormat.HTML), detected)
+    }
+
+    @Test
     fun `detects plain text without metadata`() {
         val detected = BookFormat.detect(null, null) { "A plain text book.\n".byteInputStream() }
         assertEquals(FormatDetection.Supported(BookFormat.TXT), detected)
