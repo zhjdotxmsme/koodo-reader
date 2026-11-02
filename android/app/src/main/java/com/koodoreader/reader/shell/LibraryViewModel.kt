@@ -18,7 +18,9 @@ import com.koodoreader.core.importer.BookSource
 import com.koodoreader.core.importer.ImportPipeline
 import com.koodoreader.reader.FolderEnumerator
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,9 +69,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db: KoodoDatabase = KoodoDatabaseProvider.get(app)
     private val prefs = LibraryPrefs(app)
-    private val importReconciliation = viewModelScope.launch(Dispatchers.IO) {
-        val ownedPaths = db.bookDao().observeAll().first().mapNotNull { it.path }
-        runCatching { AtomicBookStore(File(app.filesDir, "books")).reconcile(ownedPaths) }
+    private val importReconciliation = viewModelScope.async(Dispatchers.IO) {
+        val booksDir = File(app.filesDir, "books")
+        val rows = db.bookDao().observeAll().first()
+        val ownedPaths = ReaderFiles.resolvableBookPaths(booksDir, rows)
+        AtomicBookStore(booksDir).reconcile(ownedPaths)
     }
 
     val books: StateFlow<List<BookEntity>> =
@@ -325,7 +329,19 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _importState.value = ImportState.Running(0, pending.size)
 
-                importReconciliation.join()
+                try {
+                    importReconciliation.await()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _importState.value = ImportState.Finished(
+                        imported = 0,
+                        duplicates = 0,
+                        failed = batch.skipped,
+                        error = "cannot reconcile book files: ${e.message ?: "unknown error"}",
+                    )
+                    return@withContext
+                }
                 val dao = db.bookDao()
                 val booksDir = File(app.filesDir, "books")
                 val coverStore = CoverStore(app)

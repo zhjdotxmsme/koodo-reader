@@ -1,5 +1,6 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.core.data.entity.BookEntity
 import java.io.File
 
 /**
@@ -46,6 +47,12 @@ object ReaderFiles {
             ?.sortedBy { it.name }
             ?.firstOrNull()
     }
+
+    /** Files that remain reachable through [resolveBookFile] for database rows. */
+    fun resolvableBookPaths(booksDir: File, books: List<BookEntity>): Set<String> =
+        books.mapNotNullTo(LinkedHashSet()) { book ->
+            resolveBookFile(booksDir, book.key, book.format, book.path)?.path
+        }
 
     /**
      * Virtual path to publish [file] at on the loopback server.

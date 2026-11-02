@@ -7,7 +7,10 @@ import java.security.MessageDigest
 
 data class StoredCopy(val file: File, val md5: String)
 
-class AtomicBookStore(private val booksDir: File) {
+class AtomicBookStore(
+    private val booksDir: File,
+    private val listFiles: (File) -> Array<File>? = { it.listFiles() },
+) {
     fun copy(source: InputStream, finalName: String): StoredCopy {
         require(booksDir.isDirectory || booksDir.mkdirs()) { "cannot create books directory" }
         val part = File(booksDir, "$finalName.part")
@@ -39,7 +42,8 @@ class AtomicBookStore(private val booksDir: File) {
     fun reconcile(ownedPaths: Collection<String>) {
         if (!booksDir.isDirectory) return
         val owned = ownedPaths.mapTo(HashSet()) { File(it).canonicalPath }
-        booksDir.listFiles()?.forEach { file ->
+        val files = listFiles(booksDir) ?: throw IOException("cannot list books directory: ${booksDir.path}")
+        files.forEach { file ->
             if (!file.isFile) return@forEach
             if ((file.name.endsWith(".part") || file.canonicalPath !in owned) && !file.delete()) {
                 throw IOException("cannot remove unowned book file: ${file.path}")

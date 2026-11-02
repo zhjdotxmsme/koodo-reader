@@ -1,5 +1,6 @@
 package com.koodoreader.core.importer
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -152,6 +153,53 @@ class AtomicImportTest {
 
         assertTrue(owned.isFile)
         assertEquals(listOf("nested", "owned.epub"), booksDir.listFiles()?.map { it.name }?.sorted())
+    }
+
+    @Test
+    fun `reconciliation fails when the books directory cannot be listed`() {
+        booksDir.mkdirs()
+        val store = AtomicBookStore(booksDir, listFiles = { null })
+
+        assertThrows(IOException::class.java) { store.reconcile(emptyList()) }
+        assertTrue(booksDir.isDirectory)
+    }
+
+    @Test
+    fun `cancellation cleans the current copy and stops the batch`() {
+        var secondOpened = false
+        val first = BookSource("first.txt", { "first".byteInputStream() })
+        val second = BookSource("second.txt", {
+            secondOpened = true
+            "second".byteInputStream()
+        })
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                ImportPipeline().process(
+                    pending = listOf(first, second),
+                    booksOut = booksDir,
+                    existingRecord = { throw CancellationException("cancel import") },
+                )
+            }
+        }
+
+        assertFalse(secondOpened)
+        assertEquals(emptyList<String>(), booksDir.listFiles()?.map { it.name }.orEmpty())
+    }
+
+    @Test
+    fun `cancellation from legacy dedupe cleans the copied file`() {
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                ImportPipeline().process(
+                    pending = listOf(BookSource("first.txt", { "first".byteInputStream() })),
+                    booksOut = booksDir,
+                    existingMd5 = { throw CancellationException("cancel legacy dedupe") },
+                )
+            }
+        }
+
+        assertEquals(emptyList<String>(), booksDir.listFiles()?.map { it.name }.orEmpty())
     }
 
     private fun md5(content: ByteArray): String =

@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.core.data.entity.BookEntity
+import com.koodoreader.core.importer.AtomicBookStore
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
@@ -67,6 +69,30 @@ class ReaderFilesTest {
             first.path,
             ReaderFiles.resolveBookFile(dir, "abc", null, null)?.path,
         )
+    }
+
+    @Test
+    fun `reconciliation protects recorded conventional and changed-extension files`() {
+        val dir = tempBooksDir()
+        val recorded = book(dir, "recorded.book")
+        val nullPath = book(dir, "null-path.pdf")
+        val stalePath = book(dir, "stale-path.pdf")
+        val changedExtension = book(dir, "changed-extension.fb2")
+        val rows = listOf(
+            BookEntity(key = "recorded", format = "PDF", path = recorded.path),
+            BookEntity(key = "null-path", format = "PDF", path = null),
+            BookEntity(key = "stale-path", format = "PDF", path = "/missing/book.pdf"),
+            BookEntity(key = "changed-extension", format = "PDF", path = null),
+        )
+
+        val owned = ReaderFiles.resolvableBookPaths(dir, rows)
+        AtomicBookStore(dir).reconcile(owned)
+
+        assertEquals(
+            setOf(recorded.path, nullPath.path, stalePath.path, changedExtension.path),
+            owned,
+        )
+        assertTrue(listOf(recorded, nullPath, stalePath, changedExtension).all { it.isFile })
     }
 
     @Test

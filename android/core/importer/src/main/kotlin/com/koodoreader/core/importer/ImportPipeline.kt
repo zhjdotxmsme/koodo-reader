@@ -4,6 +4,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 
 /** One import candidate with a fresh stream available per open. */
 data class BookSource(
@@ -91,6 +92,7 @@ class ImportPipeline(
         for (book in pending) {
             if (taken >= BookRules.MAX_FILES) continue
             taken++
+            var uncommitted: BookRecord? = null
             try {
                 val prepared = importInternal(book, booksOut) { md5 ->
                     existingRecord?.invoke(md5) ?: seenThisBatch[md5]
@@ -106,17 +108,29 @@ class ImportPipeline(
                         val record = outcome.record
                         if (outcome.duplicate) {
                             duplicates++
-                        } else if (existingMd5(record.md5)) {
-                            deleteCopiedFile(record)
-                            duplicates++
                         } else {
-                            seenThisBatch[record.md5] = record
-                            records.add(record)
-                            prepared.cover?.let { covers[record.key] = it }
+                            uncommitted = record
+                            if (existingMd5(record.md5)) {
+                                deleteCopiedFile(record)
+                                duplicates++
+                            } else {
+                                seenThisBatch[record.md5] = record
+                                records.add(record)
+                                prepared.cover?.let { covers[record.key] = it }
+                            }
+                            uncommitted = null
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                uncommitted?.let { record ->
+                    runCatching { deleteCopiedFile(record) }.exceptionOrNull()?.let(e::addSuppressed)
+                }
+                throw e
             } catch (e: Exception) {
+                uncommitted?.let { record ->
+                    runCatching { deleteCopiedFile(record) }.exceptionOrNull()?.let(e::addSuppressed)
+                }
                 failures.add(BookFailure(book.name, e.message?.take(200) ?: "error"))
             }
             onProgress?.invoke(taken, pending.size)
@@ -211,6 +225,11 @@ class ImportPipeline(
             }
             copied = null
             return PreparedImport(ImportOutcome.Success(record, duplicate = false), cover)
+        } catch (e: CancellationException) {
+            copied?.let { file ->
+                runCatching { deleteFile(file) }.exceptionOrNull()?.let(e::addSuppressed)
+            }
+            throw e
         } catch (e: Exception) {
             copied?.let { file ->
                 runCatching { deleteFile(file) }.exceptionOrNull()?.let(e::addSuppressed)
