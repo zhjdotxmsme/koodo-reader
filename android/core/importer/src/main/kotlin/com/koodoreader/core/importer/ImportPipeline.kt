@@ -1,5 +1,6 @@
 package com.koodoreader.core.importer
 
+import com.koodoreader.core.importer.metadata.MetadataParsers
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -56,6 +57,8 @@ class ImportPipeline(
     private val random: () -> Int = { (0..999).random() },
     /** Host-provided cover extractors for formats requiring Android APIs. */
     private val extraCoverExtractors: Map<String, (File) -> BookCover?> = emptyMap(),
+    /** PDF Document Info supplied by the Android/PDFium host, never loaded by this JVM module. */
+    private val pdfMetadataExtractor: ((File) -> BookMetadata?)? = null,
 ) {
     private data class PreparedImport(
         val outcome: ImportOutcome,
@@ -187,14 +190,22 @@ class ImportPipeline(
                 return PreparedImport(ImportOutcome.Success(existing, duplicate = true))
             }
 
+            val fallbackName = BookRules.bookNameFromFile(book.name)
+            val metadata = if (format == BookFormat.PDF) {
+                pdfMetadataExtractor?.let { extractor ->
+                    runCatching { extractor(stored.file) }.getOrNull()
+                } ?: BookMetadata(fallbackName, null, null, null)
+            } else {
+                MetadataParsers.parse(format, stored.file, fallbackName)
+            }
             var record = BookRecord(
                 key = key,
-                name = BookRules.bookNameFromFile(book.name),
-                author = null,
-                description = null,
+                name = metadata.name?.takeIf { it.isNotBlank() } ?: fallbackName,
+                author = metadata.author?.takeIf { it.isNotBlank() },
+                description = metadata.description?.takeIf { it.isNotBlank() },
                 md5 = stored.md5,
                 format = format.extension.uppercase(Locale.ROOT),
-                publisher = null,
+                publisher = metadata.publisher?.takeIf { it.isNotBlank() },
                 size = stored.file.length(),
                 page = null,
                 path = stored.file.path,
@@ -202,15 +213,7 @@ class ImportPipeline(
             var cover: BookCover? = null
             when (format.extension) {
                 "epub" -> {
-                    runCatching { EpubBook.parse(stored.file) }.getOrNull()?.let { parsed ->
-                        record = record.copy(
-                            name = parsed.metadata.title ?: record.name,
-                            author = parsed.metadata.creator,
-                            description = parsed.metadata.description,
-                            publisher = parsed.metadata.publisher,
-                        )
-                        cover = parsed.cover
-                    }
+                    cover = runCatching { EpubBook.parse(stored.file) }.getOrNull()?.cover
                 }
                 "cbz" -> {
                     ComicCover.extract(stored.file)?.let { comic ->
