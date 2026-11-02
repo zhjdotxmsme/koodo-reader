@@ -60,6 +60,7 @@ fun BookCard(
     onToggleFavorite: () -> Unit = {},
     onMoveToTrash: () -> Unit = {},
     onAddToShelf: () -> Unit = {},
+    onShowDetails: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -74,6 +75,10 @@ fun BookCard(
         favoriteContentDescription = t("Favorite"),
         menu = {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(t("Book Detail")) },
+                    onClick = { onShowDetails(); menuOpen = false },
+                )
                 DropdownMenuItem(
                     text = {
                         Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite"))
@@ -103,11 +108,13 @@ fun BookListRow(
     onToggleFavorite: (() -> Unit)? = null,
     onMoveToTrash: (() -> Unit)? = null,
     onAddToShelf: (() -> Unit)? = null,
+    onShowDetails: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val hasMenu = onToggleFavorite != null || onMoveToTrash != null || onAddToShelf != null
+    val hasMenu = onToggleFavorite != null || onMoveToTrash != null || onAddToShelf != null ||
+        onShowDetails != null
     KoodoBookRow(
         model = book.toCardModel(isFavorite),
         cover = rememberCoverPainter(book.cover, book.key, coverVersion),
@@ -116,6 +123,12 @@ fun BookListRow(
         favoriteContentDescription = t("Favorite"),
         menu = if (hasMenu) ({
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (onShowDetails != null) {
+                    DropdownMenuItem(
+                        text = { Text(t("Book Detail")) },
+                        onClick = { onShowDetails(); menuOpen = false },
+                    )
+                }
                 DropdownMenuItem(
                     text = {
                         Text(if (isFavorite) t("Remove from favorite") else t("Add to favorite"))

@@ -74,10 +74,12 @@ import com.koodoreader.reader.R
 fun LibraryScreen(
     onOpenBook: (String) -> Unit,
     viewModel: LibraryViewModel = viewModel(),
+    metadataViewModel: BookMetadataViewModel = viewModel(),
 ) {
     val books by viewModel.libraryBooks.collectAsStateWithLifecycle()
     val shelf by viewModel.shelf.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
+    val metadataState by metadataViewModel.state.collectAsStateWithLifecycle()
     val treeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> uri?.let(viewModel::importFolder) }
@@ -92,6 +94,7 @@ fun LibraryScreen(
     var newShelfOpen by remember { mutableStateOf(false) }
     var newShelfTitle by remember { mutableStateOf("") }
     var shelfPickKey by remember { mutableStateOf<String?>(null) }
+    var metadataBookKey by remember { mutableStateOf<String?>(null) }
 
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
@@ -332,6 +335,10 @@ fun LibraryScreen(
                             onToggleFavorite = { viewModel.toggleFavorite(book.key) },
                             onMoveToTrash = { viewModel.moveToTrash(book.key) },
                             onAddToShelf = { shelfPickKey = book.key },
+                            onShowDetails = {
+                                metadataViewModel.reset()
+                                metadataBookKey = book.key
+                            },
                             onClick = { onOpenBook(book.key) },
                             modifier = Modifier.pointerInput(book.key) {
                                 detectDragGesturesAfterLongPress(
@@ -374,6 +381,10 @@ fun LibraryScreen(
                                 onToggleFavorite = { viewModel.toggleFavorite(book.key) },
                                 onMoveToTrash = { viewModel.moveToTrash(book.key) },
                                 onAddToShelf = { shelfPickKey = book.key },
+                                onShowDetails = {
+                                    metadataViewModel.reset()
+                                    metadataBookKey = book.key
+                                },
                                 onClick = { onOpenBook(book.key) },
                                 modifier = Modifier.padding(
                                     horizontal = SpaceTokens.md.dp,
@@ -385,6 +396,24 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+    LaunchedEffect(metadataState) {
+        if (metadataState is BookMetadataUiState.Saved) {
+            metadataBookKey = null
+            metadataViewModel.reset()
+        }
+    }
+    val metadataBook = books.firstOrNull { it.key == metadataBookKey }
+    if (metadataBook != null) {
+        BookMetadataDialog(
+            book = metadataBook,
+            state = metadataState,
+            onSave = { draft -> metadataViewModel.save(metadataBook.key, draft) },
+            onDismiss = {
+                metadataBookKey = null
+                metadataViewModel.reset()
+            },
+        )
     }
     if (newShelfOpen) {
         AlertDialog(
