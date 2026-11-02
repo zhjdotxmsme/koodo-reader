@@ -1,12 +1,12 @@
 package com.koodoreader.core.importer.metadata
 
 import com.koodoreader.core.importer.BookMetadata
-import com.koodoreader.engine.mobi.MobiParser
+import com.koodoreader.engine.mobi.MobiMetadataReader
 import java.io.File
 
 object MobiMetadataParser {
     fun parse(file: File): BookMetadata {
-        val metadata = MobiParser.parse(file)?.metadata
+        val metadata = MobiMetadataReader.read(file)
             ?: throw IllegalArgumentException("not a readable MOBI: ${file.path}")
         return BookMetadata(
             name = metadata.title,

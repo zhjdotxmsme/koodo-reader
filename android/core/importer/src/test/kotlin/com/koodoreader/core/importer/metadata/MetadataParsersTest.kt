@@ -1,13 +1,18 @@
 package com.koodoreader.core.importer.metadata
 
+import com.koodoreader.core.importer.BookCover
 import com.koodoreader.core.importer.BookFormat
 import com.koodoreader.core.importer.BookMetadata
 import com.koodoreader.core.importer.BookSource
+import com.koodoreader.core.importer.EpubBook
+import com.koodoreader.core.importer.EpubMetadata
 import com.koodoreader.core.importer.ImportPipeline
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import kotlin.coroutines.cancellation.CancellationException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -226,6 +231,69 @@ class MetadataParsersTest {
 
         assertTrue(result.failures.isEmpty(), "failures: ${result.failures}")
         assertEquals("document", result.records.single().name)
+    }
+
+    @Test
+    fun `pdf metadata cancellation cleans the copy and is rethrown`() {
+        val file = File(dir, "document.pdf").apply { writeText("%PDF-1.4\n%%EOF\n") }
+        val booksOut = File(dir, "books")
+        val pipeline = ImportPipeline(pdfMetadataExtractor = { throw CancellationException("cancel") })
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                pipeline.process(
+                    listOf(BookSource("document.pdf", { file.inputStream() })),
+                    booksOut,
+                )
+            }
+        }
+        assertTrue(booksOut.listFiles().orEmpty().isEmpty(), "cancelled PDF copy must be removed")
+    }
+
+    @Test
+    fun `epub import parses once and reuses metadata with cover`() = runBlocking {
+        val file = zipWith(
+            "single.epub",
+            "META-INF/container.xml" to """
+                <container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>
+            """,
+            "content.opf" to """
+                <package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata>
+                    <dc:title>Original Title</dc:title><dc:creator>EPUB Author</dc:creator>
+                    <meta name="cover" content="cover-image"/>
+                </metadata><manifest>
+                    <item id="cover-image" href="cover.png" media-type="image/png"/>
+                </manifest><spine/></package>
+            """,
+            "cover.png" to "cover bytes",
+        )
+        val expectedCover = BookCover("reused cover".toByteArray(), "png")
+        var calls = 0
+        val pipeline = ImportPipeline(
+            epubParser = {
+                calls++
+                val parsed = EpubBook.parse(it)
+                parsed.copy(
+                    metadata = EpubMetadata(
+                        "Single Parse Title",
+                        parsed.metadata.creator,
+                        parsed.metadata.description,
+                        parsed.metadata.publisher,
+                    ),
+                    cover = expectedCover,
+                )
+            },
+        )
+
+        val result = pipeline.process(
+            listOf(BookSource("single.epub", { file.inputStream() })),
+            File(dir, "books"),
+        )
+
+        assertEquals(1, calls)
+        assertEquals("Single Parse Title", result.records.single().name)
+        assertEquals("EPUB Author", result.records.single().author)
+        assertEquals(expectedCover, result.covers.values.single())
     }
 
     private fun zipWith(name: String, vararg entries: Pair<String, String>): File {
