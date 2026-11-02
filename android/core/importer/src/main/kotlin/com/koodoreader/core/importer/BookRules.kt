@@ -7,13 +7,8 @@ import kotlin.random.Random
  * Book-file import rules — the KOTLIN SINGLE SOURCE OF TRUTH for the native
  * track (P1: "SAF 导入（规则迁 Kotlin 为单一事实源）").
  *
- * Format list parity:
- *  - `BOOK_EXTENSIONS` mirrors the DESKTOP import list in
- *    `src/utils/common.ts` (`supportedFormats`, 18 formats incl. `xml`) —
- *    CI runs `node scripts/check-import-rules.js` to fail on drift.
- *  - `src/utils/android/folderBridge.js` (WebView track, `xml` excluded) is a
- *    legacy protocol SUBSET of the desktop list; it retires with the WebView
- *    track (P8) and is only subset-checked by the parity guard.
+ * Native format and MIME rules come from [BookFormat]. CBR/RAR is deliberately
+ * excluded; the legacy desktop and WebView lists are not mutated by this track.
  *
  * Book-row key/name/format generation mirrors the desktop importer
  * (`src/components/importLocal/component.tsx`): key = timestamp + random
@@ -30,39 +25,11 @@ object BookRules {
     /** Directory depth below the root to enumerate (folderBridge FOLDER_DEPTH). */
     const val FOLDER_DEPTH: Int = 2
 
-    /**
-     * Book extensions the reader supports (lower-case) — set-equal to the
-     * desktop import list `src/utils/common.ts` `supportedFormats` (kept in
-     * order; the parity guard is order-insensitive).
-     */
-    val BOOK_EXTENSIONS: List<String> = listOf(
-        "epub", "pdf", "txt", "mobi", "azw3", "azw",
-        "htm", "html", "xml", "xhtml", "mhtml",
-        "docx", "md", "fb2",
-        "cbz", "cbt", "cbr", "cb7",
-    )
+    /** Supported native book extensions, in registry order. */
+    val BOOK_EXTENSIONS: List<String> = BookFormat.entries.map { it.extension }
 
-    /** Canonical MIME type per book extension. */
-    val MIME_BY_EXT: Map<String, String> = mapOf(
-        "epub" to "application/epub+zip",
-        "pdf" to "application/pdf",
-        "mobi" to "application/x-mobipocket-ebook",
-        "azw3" to "application/vnd.amazon.ebook",
-        "azw" to "application/vnd.amazon.ebook",
-        "txt" to "text/plain",
-        "fb2" to "application/x-fictionbook+xml",
-        "cbz" to "application/x-cbz",
-        "cbr" to "application/x-cbr",
-        "cbt" to "application/x-cbt",
-        "cb7" to "application/x-cb7",
-        "md" to "text/markdown",
-        "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "html" to "text/html",
-        "htm" to "text/html",
-        "xml" to "application/xml",
-        "xhtml" to "application/xhtml+xml",
-        "mhtml" to "message/rfc822",
-    )
+    /** Canonical MIME type per supported native book extension. */
+    val MIME_BY_EXT: Map<String, String> = BookFormat.entries.associate { it.extension to it.mime }
 
     /**
      * Lower-cased extension of a file name (without the dot), or "" when there

@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test
 
 /**
  * Kotlin mirror of `src/utils/android/folderBridge.test.js` (17 Jest cases)
- * plus the desktop key/name/format generation rules. Keep both suites in
- * lock-step — `scripts/check-import-rules.js` fails CI on constant drift.
+ * plus the desktop key/name/format generation rules. Native supported formats
+ * come from [BookFormat]; CBR is deliberately rejected.
  */
 class BookRulesTest {
 
@@ -58,7 +58,7 @@ class BookRulesTest {
     fun `isBookName accepts supported book files case-insensitively`() {
         val names = listOf(
             "book.epub", "book.pdf", "book.MOBI", "book.AZW3", "story.azw",
-            "notes.txt", "book.fb2", "comic.cbz", "comic.cbr", "comic.CBT",
+            "notes.txt", "book.fb2", "comic.cbz", "comic.CBT",
             "comic.cb7", "doc.md", "doc.docx", "page.html", "page.htm",
             "page.xhtml", "page.mhtml",
         )
@@ -68,19 +68,18 @@ class BookRulesTest {
     }
 
     @Test
-    fun `xml is part of the desktop import list`() {
+    fun `xml is part of the native import list`() {
         assertTrue(BookRules.isBookName("page.xml"))
         assertEquals("application/xml", BookRules.mimeForExt("x.XML"))
         assertTrue("xhtml" in BookRules.BOOK_EXTENSIONS)
-        // folderBridge (WebView track) is the 17-format subset without xml.
-        assertEquals(18, BookRules.BOOK_EXTENSIONS.size)
+        assertEquals(17, BookRules.BOOK_EXTENSIONS.size)
     }
 
     @Test
     fun `isBookName rejects non-book names`() {
         val names = listOf(
             "IMG_0001.jpg", "readme", ".hidden", "trailing.",
-            "data.json", "app.exe", null,
+            "data.json", "app.exe", "comic.cbr", null,
         )
         for (name in names) {
             assertFalse(BookRules.isBookName(name), "should reject $name")

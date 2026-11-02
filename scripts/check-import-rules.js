@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-// check-import-rules.js — guard: the Kotlin import rules in
-// android/core/importer/BookRules.kt must stay in lock-step with the DESKTOP
-// import list and the WebView-track mirror.
+// check-import-rules.js — guard: the native Kotlin format registry must stay
+// in lock-step with the desktop import list and legacy WebView-track mirror,
+// except that CBR remains legacy-only and is deliberately unsupported natively.
 //
 //   node scripts/check-import-rules.js        # verify, exit 0/2
 //   node scripts/check-import-rules.js --verbose
 //
 // Checked:
-//   1. BOOK_EXTENSIONS (Kotlin) == supportedFormats (src/utils/common.ts,
-//      the desktop import list — the card acceptance "桌面端同格式列表")
-//   2. folderBridge.js (WebView track) is a SUBSET of the Kotlin list
-//      (it intentionally excludes .xml until WebView-track parity is needed)
-//   3. MIME_BY_EXT: every folderBridge mapping is present with the same value
+//   1. BookFormat == supportedFormats (src/utils/common.ts), excluding CBR
+//   2. folderBridge.js is a subset of the native list, excluding legacy CBR
+//      (it also intentionally excludes .xml until WebView-track parity is needed)
+//   3. Every non-CBR folderBridge MIME mapping matches the registry
 //   4. MAX_FILES / FOLDER_DEPTH / FOLDER_EVENT shared constants
 // Rationale: P1 migrates the import rules to Kotlin as the single source of
 // truth for the native track; folderBridge.js stays until the WebView track
@@ -37,8 +36,8 @@ function fail(msg) {
 
 function usage() {
   console.log('Usage: node scripts/check-import-rules.js [--verbose]');
-  console.log('  Verifies BookRules.kt against the desktop import list (src/utils/common.ts)');
-  console.log('  and the WebView-track mirror (src/utils/android/folderBridge.js).');
+  console.log('  Verifies the native registry against the desktop and WebView lists,');
+  console.log('  allowing CBR only in those legacy lists.');
 }
 
 /**
@@ -69,9 +68,18 @@ function parseKotlin(file) {
   const src = fs.readFileSync(file, 'utf8');
   const extBody = extractCall(src, 'BOOK_EXTENSIONS');
   const mimeBody = extractCall(src, 'MIME_BY_EXT');
-  const extensions = [...extBody.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  const mime = {};
+  let extensions = [...extBody.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  let mime = {};
   for (const m of mimeBody.matchAll(/"([^"]+)"\s+to\s+"([^"]+)"/g)) mime[m[1]] = m[2];
+  if (extensions.length === 0) {
+    const formatFile = path.join(path.dirname(file), 'BookFormat.kt');
+    if (!fs.existsSync(formatFile)) fail(`missing registry file ${formatFile}`);
+    const formatSrc = fs.readFileSync(formatFile, 'utf8');
+    const formats = [...formatSrc.matchAll(/^\s*[A-Z][A-Z0-9]*\("([^"]+)",\s*"([^"]+)"\)/gm)];
+    if (formats.length === 0) fail('BookFormat registry parsed empty');
+    extensions = formats.map((m) => m[1]);
+    mime = Object.fromEntries(formats.map((m) => [m[1], m[2]]));
+  }
   const num = (name) => {
     // Tolerate optional Kotlin type annotations: `const val X: Int = 1000`.
     const m = src.match(new RegExp(`const val ${name}[^=]*=\\s*(\\d+)`));
@@ -128,15 +136,17 @@ function main() {
   const desktop = parseDesktopList(DESKTOP_LIST_FILE);
   const kt = parseKotlin(KT_FILE);
 
-  // 1) Kotlin == desktop import list (acceptance: 桌面端同格式列表)
-  diffSets(desktop, kt.extensions, 'BOOK_EXTENSIONS vs common.ts');
-  // 2) WebView-track mirror is a subset (it excludes .xml deliberately)
+  // 1) Native formats match the desktop list except deliberately unsupported CBR.
+  diffSets(desktop.filter((ext) => ext !== 'cbr'), kt.extensions, 'BookFormat vs common.ts');
+  // 2) Legacy WebView CBR remains in its protocol but is not a native format.
   const ktSet = new Set(kt.extensions);
   for (const ext of js.BOOK_EXTENSIONS) {
+    if (ext === 'cbr') continue;
     if (!ktSet.has(ext)) fail(`folderBridge "${ext}" missing from BookRules`);
   }
   // 3) shared MIME mappings agree
   for (const [ext, mime] of Object.entries(js.MIME_BY_EXT)) {
+    if (ext === 'cbr') continue;
     if (kt.mime[ext] !== mime) {
       fail(`MIME_BY_EXT[${ext}] drift (JS "${mime}" vs Kotlin "${kt.mime[ext]}")`);
     }
@@ -147,8 +157,8 @@ function main() {
   if (js.FOLDER_EVENT !== kt.folderEvent) fail(`FOLDER_EVENT differs (JS "${js.FOLDER_EVENT}" vs Kotlin "${kt.folderEvent}")`);
 
   if (VERBOSE) {
-    console.log(`[check-import-rules] ${kt.extensions.length} extensions (desktop list), ` +
-      `folderBridge subset of ${js.BOOK_EXTENSIONS.length}, MAX_FILES=${kt.maxFiles}, ` +
+    console.log(`[check-import-rules] ${kt.extensions.length} native extensions (CBR excluded), ` +
+      `legacy folderBridge has ${js.BOOK_EXTENSIONS.length}, MAX_FILES=${kt.maxFiles}, ` +
       `FOLDER_DEPTH=${kt.folderDepth}, FOLDER_EVENT="${kt.folderEvent}" — rules in lock-step.`);
   }
   process.exit(0);
