@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -13,10 +14,10 @@ import java.util.zip.ZipOutputStream
 class ImportPipelineTest {
 
     @TempDir
-    var workRoot: File = File("build/tmp/pipeline")
+    lateinit var workRoot: File
 
-    private val booksOut = File(workRoot, "books")
-    private val srcDir = File(workRoot, "src")
+    private val booksOut get() = File(workRoot, "books")
+    private val srcDir get() = File(workRoot, "src")
 
     private var seq = 0
     private fun tickClock(): Long {
@@ -29,7 +30,8 @@ class ImportPipelineTest {
     // This toolchain's byteArrayOf wants Byte args; literals stay Int-friendly.
     private fun bytes(vararg v: Int): ByteArray = ByteArray(v.size) { v[it].toByte() }
 
-    init {
+    @BeforeEach
+    fun setUp() {
         booksOut.mkdirs()
         srcDir.mkdirs()
     }

@@ -11,6 +11,7 @@ import com.koodoreader.core.common.ShelfLogic
 import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookEntity
+import com.koodoreader.core.importer.AtomicBookStore
 import com.koodoreader.core.importer.BookRecord
 import com.koodoreader.core.importer.BookRules
 import com.koodoreader.core.importer.BookSource
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
@@ -65,6 +67,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db: KoodoDatabase = KoodoDatabaseProvider.get(app)
     private val prefs = LibraryPrefs(app)
+    private val importReconciliation = viewModelScope.launch(Dispatchers.IO) {
+        val ownedPaths = db.bookDao().observeAll().first().mapNotNull { it.path }
+        runCatching { AtomicBookStore(File(app.filesDir, "books")).reconcile(ownedPaths) }
+    }
 
     val books: StateFlow<List<BookEntity>> =
         db.bookDao().observeAll()
@@ -262,6 +268,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                                 resolver.openInputStream(file.uri)
                                     ?: throw IllegalStateException("stream missing for ${file.name}")
                             },
+                            size = file.size,
+                            mime = file.mime,
                         )
                     },
                 skipped = 0,
@@ -317,6 +325,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _importState.value = ImportState.Running(0, pending.size)
 
+                importReconciliation.join()
                 val dao = db.bookDao()
                 val booksDir = File(app.filesDir, "books")
                 val coverStore = CoverStore(app)
@@ -332,8 +341,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 ).process(
                     pending = pending,
                     booksOut = booksDir,
-                    existingMd5 = { md5 -> dao.getByMd5(md5).isNotEmpty() },
                     onProgress = progressHook,
+                    existingRecord = { md5 -> dao.getByMd5(md5).firstOrNull()?.toRecord() },
                 )
 
                 // Cover images -> desktop-parity cover/ directory.
@@ -381,6 +390,21 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         author = author,
         description = description,
         md5 = md5,
+        cover = cover,
+        format = format,
+        publisher = publisher,
+        size = size,
+        page = page,
+        path = path,
+        charset = charset,
+    )
+
+    private fun BookEntity.toRecord(): BookRecord = BookRecord(
+        key = key,
+        name = name,
+        author = author,
+        description = description,
+        md5 = checkNotNull(md5) { "MD5 query returned a row without MD5" },
         cover = cover,
         format = format,
         publisher = publisher,
