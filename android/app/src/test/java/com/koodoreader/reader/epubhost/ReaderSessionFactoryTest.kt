@@ -61,17 +61,17 @@ class ReaderSessionFactoryTest {
     }
 
     @Test
-    fun `intent routing sends every whitelist format to a native path except cbr`() {
+    fun `intent routing sends every importable format native and rejects cbr`() {
+        assertEquals(
+            IntentRoutePolicy.Route.UNSUPPORTED,
+            IntentRoutePolicy.decide(null, "book.cbr"),
+        )
         for (ext in BookRules.BOOK_EXTENSIONS) {
             val route = IntentRoutePolicy.decide(null, "book.$ext")
-            if (ext == "cbr") {
-                assertEquals(IntentRoutePolicy.Route.ISLAND, route, "cbr must stay on the island")
-            } else {
-                assertTrue(
-                    route != IntentRoutePolicy.Route.ISLAND,
-                    "format $ext would fall to the island but has no island in the native APK",
-                )
-            }
+            assertTrue(
+                route != IntentRoutePolicy.Route.ISLAND,
+                "format $ext would fall to the island but has no island in the native APK",
+            )
         }
     }
 

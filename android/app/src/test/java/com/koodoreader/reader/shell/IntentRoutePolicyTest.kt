@@ -75,17 +75,25 @@ class IntentRoutePolicyTest {
     // ------------------------------------------------ CBR / RAR 拦截
 
     @Test
-    fun `cbr extension routes island even with a comic mime`() {
+    fun `cbr extension is rejected even with a comic mime`() {
         assertEquals(
-            IntentRoutePolicy.Route.ISLAND,
+            IntentRoutePolicy.Route.UNSUPPORTED,
             decide("application/vnd.comicbook-rar", "book.cbr"),
         )
     }
 
     @Test
-    fun `rar mime routes island`() {
+    fun `cbr mime is rejected without a useful filename`() {
         assertEquals(
-            IntentRoutePolicy.Route.ISLAND,
+            IntentRoutePolicy.Route.UNSUPPORTED,
+            decide("application/x-cbr", "download"),
+        )
+    }
+
+    @Test
+    fun `rar mime is rejected`() {
+        assertEquals(
+            IntentRoutePolicy.Route.UNSUPPORTED,
             decide("application/x-rar-compressed", "book"),
         )
     }

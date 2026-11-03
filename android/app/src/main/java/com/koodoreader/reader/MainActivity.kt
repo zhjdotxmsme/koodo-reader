@@ -23,12 +23,19 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import com.koodoreader.core.importer.BookRules
 import com.koodoreader.reader.imagehost.ComicViewerActivity
+import com.koodoreader.reader.shell.ExternalBookOpener
+import com.koodoreader.reader.shell.ExternalOpenState
 import com.koodoreader.reader.shell.IntentRoutePolicy
-import com.koodoreader.reader.shell.LibraryViewModel
 import com.koodoreader.reader.shell.NativeShellActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Koodo Reader Android host.
@@ -55,9 +62,10 @@ import java.io.File
  * mirrored by the Kotlin single source of truth `:core:importer` (kept in
  * lock-step by `scripts/check-import-rules.js`).
  *
- * Files opened from other apps (`VIEW`/`SEND` intents) are copied into the cache,
- * exposed through the loopback server and handed to the web app via the
- * `__koodoNative.openLocalFile` hook (see `src/utils/android/nativeBridge.js`).
+ * Supported documents opened from other apps are imported atomically and opened
+ * by book key in the native shell. Native comics use [ComicViewerActivity];
+ * unknown formats retain the legacy `__koodoNative.openLocalFile` WebView path.
+ * CBR/RAR is rejected before any import.
  */
 class MainActivity : Activity() {
 
@@ -77,6 +85,8 @@ class MainActivity : Activity() {
     }
 
     private var pendingBook: PendingBook? = null
+    private val externalOpenScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var externalOpenJob: Job? = null
 
     /**
      * Engine event consumer (21-event protocol). Lazily built so the WebView
@@ -270,31 +280,34 @@ class MainActivity : Activity() {
 
     /**
      * Act on a VIEW/SEND intent carrying a book (file manager / share sheet).
-     * P8-F1: the payload is routed by [IntentRoutePolicy] — native readers
-     * first (comics → [ComicViewerActivity]; PDF → import + native shell),
-     * with the web island as the fallback for everything else.
+     * Native formats wait for import before opening; unknown formats retain the
+     * legacy WebView island until that track is retired.
      */
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.action == Intent.ACTION_SEND) {
             val stream = getParcelableUri(intent, Intent.EXTRA_STREAM)
-            if (stream != null) routeIntent(stream, intent.type)
+            if (stream != null) {
+                setIntent(Intent(Intent.ACTION_MAIN))
+                routeIntent(stream, intent.type)
+            }
             return
         }
         val data = intent.data ?: return
         val scheme = data.scheme?.lowercase() ?: return
         when (scheme) {
-            "content", "file" -> routeIntent(data, intent.type)
+            "content", "file" -> {
+                setIntent(Intent(Intent.ACTION_MAIN))
+                routeIntent(data, intent.type)
+            }
             // App scheme (koodo-reader://) and plain web links: nothing to import.
             else -> Unit
         }
     }
 
     /**
-     * 分流入口（P8-F1 + 全格式适配收尾）：漫画 → 原生漫画屏；PDF 与全部
-     * 文本/文档格式（EPUB/TXT/MD/MOBI/AZW/HTML/MHTML/FB2/DOCX…）→ 导入管线 +
-     * 原生壳（书进书架，READER 路由按格式分派到对应 ReaderSession）；
-     * 仅 CBR 与无法识别的载荷走兜底岛。
+     * 漫画 → 原生漫画屏；其余原生支持格式 → 原子导入 + 按书键直达 READER。
+     * CBR/RAR 显式拒绝；只有无法识别的载荷保留旧 WebView 兜底岛。
      */
     private fun routeIntent(uri: Uri, mimeType: String?) {
         val displayName = uri.lastPathSegment
@@ -303,12 +316,14 @@ class MainActivity : Activity() {
             IntentRoutePolicy.Route.NATIVE_PDF,
             IntentRoutePolicy.Route.NATIVE_SHELL,
             -> importToNativeShell(uri)
+            IntentRoutePolicy.Route.UNSUPPORTED -> {
+                AppLog.i(TAG, "unsupported external book: $uri")
+                toast("Unsupported book format")
+            }
             IntentRoutePolicy.Route.ISLAND -> {
                 if (!BuildConfig.ISLAND_PACKAGED) {
-                    // stripIsland 构建：兜底岛不存在，CBR（ADR-006）与无法识别的
-                    // 载荷显式不支持，避免无声死路。
-                    AppLog.i(TAG, "island not packaged; unsupported payload: $uri")
-                    toast("CBR and unrecognized formats are not supported in this build.")
+                    AppLog.i(TAG, "island not packaged; unrecognized payload: $uri")
+                    toast("Unrecognized formats are not supported in this build.")
                     return
                 }
                 queueBook(uri, mimeType)
@@ -316,20 +331,27 @@ class MainActivity : Activity() {
         }
     }
 
-    /**
-     * PDF：走既有导入管线进 Room（LibraryViewModel.importFiles →
-     * ImportPipeline），随后打开原生壳——书在书架可见，READER 路由由
-     * NativePdfScreen 承接。打开即读书（深链）在宿主改造卡挂账。
-     */
     private fun importToNativeShell(uri: Uri) {
-        runCatching {
-            // MainActivity 是裸 Activity（非 ViewModelStoreOwner）；导入是
-            // 一次性操作（AndroidViewModel 自持 application 上下文，与 UI
-            // 生命周期解耦），直接构造即可。
-            LibraryViewModel(application).importFiles(listOf(uri))
-            startActivity(Intent(this, NativeShellActivity::class.java))
-        }.onFailure { AppLog.w(TAG, "native import failed: $uri", it) }
-        AppLog.i(TAG, "import to native shell: $uri")
+        if (externalOpenJob?.isActive == true) {
+            AppLog.i(TAG, "external import already running; ignoring $uri")
+            return
+        }
+        externalOpenJob = externalOpenScope.launch {
+            ExternalBookOpener(application).open(uri).collect { state ->
+                when (state) {
+                    ExternalOpenState.Importing ->
+                        AppLog.i(TAG, "importing external book: $uri")
+                    is ExternalOpenState.Open -> startActivity(
+                        Intent(this@MainActivity, NativeShellActivity::class.java)
+                            .putExtra(NativeShellActivity.EXTRA_BOOK_KEY, state.bookKey),
+                    )
+                    is ExternalOpenState.Failed -> {
+                        AppLog.w(TAG, "external import failed: ${state.message}")
+                        toast(state.message)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -686,6 +708,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        externalOpenScope.cancel()
         assetServer.stop()
         if (this::webView.isInitialized) {
             webView.destroy()

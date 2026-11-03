@@ -11,8 +11,8 @@ import com.koodoreader.core.importer.BookRules
  *  - PDF / EPUB / TXT / MD / MOBI / AZW(AZW3) / HTML(XHTML/XML) / MHTML /
  *    FB2 / DOCX → [Route.NATIVE_PDF]/[Route.NATIVE_SHELL]（导入管线进 Room +
  *    原生壳 READER，由格式分派到对应 ReaderSession）；
- *  - CBR → [Route.ISLAND]（UnRAR 许可 + .so 16KB，ADR-006 §4.2 明确不原生）；
- *  - 无法识别 → [Route.ISLAND]。
+ *  - CBR/RAR → [Route.UNSUPPORTED]（不导入，也不进入旧 WebView）；
+ *  - 无法识别 → [Route.ISLAND]（保留旧轨直到最终收口）。
  *
  * 判定顺序（与文件管理器的真实行为一致）：
  *  1. 扩展名（`.cbz` 之类）—— 最可靠；
@@ -39,7 +39,10 @@ object IntentRoutePolicy {
          */
         NATIVE_SHELL,
 
-        /** 兜底岛 WebView（CBR，以及一切无法识别的载荷）。 */
+        /** 明确不支持的 CBR/RAR 载荷；不导入，也不投递到旧 WebView。 */
+        UNSUPPORTED,
+
+        /** 兜底岛 WebView（仅无法识别的载荷）。 */
         ISLAND,
     }
 
@@ -81,15 +84,14 @@ object IntentRoutePolicy {
         val name = fileName.orEmpty().lowercase()
         val ext = name.substringAfterLast('.', "")
 
-        if (ext in ISLAND_ONLY_EXTS) return Route.ISLAND
+        if (ext in ISLAND_ONLY_EXTS) return Route.UNSUPPORTED
         if (ext in COMIC_EXTS) return Route.NATIVE_COMIC
         if (ext in PDF_EXTS) return Route.NATIVE_PDF
         if (ext in NATIVE_SHELL_EXTS) return Route.NATIVE_SHELL
 
         val mime = mimeType.orEmpty().lowercase().substringBefore(';').trim()
-        // RAR 容器的 mime（application/vnd.comicbook-rar / application/x-rar-compressed）
-        // 一律兜底岛：容器是 RAR，engine 解不了。
-        if (mime.contains("rar")) return Route.ISLAND
+        // CBR/RAR 容器不是 engine:image 可读的漫画格式，必须显式拒绝。
+        if (mime == "application/x-cbr" || mime.contains("rar")) return Route.UNSUPPORTED
         if (mime in NATIVE_COMIC_MIMES) return Route.NATIVE_COMIC
         if (mime in NATIVE_PDF_MIMES) return Route.NATIVE_PDF
         if (mime in NATIVE_SHELL_MIMES) return Route.NATIVE_SHELL

@@ -237,7 +237,7 @@ class ImportToReadE2ETest {
     // ------------------------------------------------------- CBR 通道
 
     @Test
-    fun `cbr is rejected and stays on the island route`() = runBlocking {
+    fun `cbr is rejected without import or navigation`() = runBlocking {
         val source = fixture("cbr")
         val result = ImportPipeline().process(
             pending = listOf(
@@ -254,7 +254,7 @@ class ImportToReadE2ETest {
         assertTrue(result.failures.isEmpty())
         assertTrue(booksOut.listFiles().orEmpty().isEmpty())
         assertEquals(
-            IntentRoutePolicy.Route.ISLAND,
+            IntentRoutePolicy.Route.UNSUPPORTED,
             IntentRoutePolicy.decide("application/x-cbr", source.name),
         )
     }
@@ -267,7 +267,7 @@ class ImportToReadE2ETest {
         for (ext in BookRules.BOOK_EXTENSIONS) {
             val route = IntentRoutePolicy.decide(null, "book.$ext")
             when {
-                ext == "cbr" -> assertEquals(IntentRoutePolicy.Route.ISLAND, route)
+                ext == "cbr" -> assertEquals(IntentRoutePolicy.Route.UNSUPPORTED, route)
                 ext in ReaderSessionFactory.COMIC_EXTENSIONS ->
                     assertEquals(IntentRoutePolicy.Route.NATIVE_COMIC, route)
                 ext == "pdf" -> assertEquals(IntentRoutePolicy.Route.NATIVE_PDF, route)

@@ -49,6 +49,7 @@ import com.koodoreader.reader.translate.TranslateSettingsRoute
 fun ShellNavHost(
     navController: NavHostController,
     assets: ReaderAssetHost = ReaderAssetHost.NONE,
+    initialBookKey: String? = null,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -221,6 +222,10 @@ fun ShellNavHost(
                 )
             }
         }
+    }
+
+    LaunchedEffect(initialBookKey) {
+        initialBookKey?.let { key -> navController.navigate(ShellNav.reader(key)) }
     }
 }
 

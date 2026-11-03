@@ -28,6 +28,7 @@ const KT_FILE = path.join(
   'com', 'koodoreader', 'core', 'importer', 'BookRules.kt',
 );
 const VERBOSE = process.argv.includes('--verbose');
+const EXPLICITLY_UNSUPPORTED = new Set(['cbr']);
 
 function fail(msg) {
   console.error(`[check-import-rules] ${msg}`);
@@ -141,17 +142,18 @@ function main() {
   const desktop = parseDesktopList(DESKTOP_LIST_FILE);
   const kt = parseKotlin(KT_FILE);
 
-  // 1) Native formats match the desktop list except deliberately unsupported CBR.
-  diffSets(desktop.filter((ext) => ext !== 'cbr'), kt.extensions, 'BookFormat vs common.ts');
-  // 2) Legacy WebView CBR remains in its protocol but is not a native format.
+  // 1) Native formats are exactly SUPPORTED - EXPLICITLY_UNSUPPORTED.
+  const expectedNative = desktop.filter((ext) => !EXPLICITLY_UNSUPPORTED.has(ext));
+  diffSets(expectedNative, kt.extensions, 'BookFormat vs common.ts');
+  // 2) Legacy WebView retains explicitly unsupported formats, but native must not import them.
   const ktSet = new Set(kt.extensions);
   for (const ext of js.BOOK_EXTENSIONS) {
-    if (ext === 'cbr') continue;
+    if (EXPLICITLY_UNSUPPORTED.has(ext)) continue;
     if (!ktSet.has(ext)) fail(`folderBridge "${ext}" missing from BookRules`);
   }
   // 3) shared MIME mappings agree
   for (const [ext, mime] of Object.entries(js.MIME_BY_EXT)) {
-    if (ext === 'cbr') continue;
+    if (EXPLICITLY_UNSUPPORTED.has(ext)) continue;
     if (kt.mime[ext] !== mime) {
       fail(`MIME_BY_EXT[${ext}] drift (JS "${mime}" vs Kotlin "${kt.mime[ext]}")`);
     }

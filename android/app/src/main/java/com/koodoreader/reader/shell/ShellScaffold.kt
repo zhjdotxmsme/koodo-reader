@@ -30,15 +30,23 @@ import com.koodoreader.reader.R
  * back-press to change tabs.
  */
 @Composable
-fun ShellScaffold(assets: ReaderAssetHost = ReaderAssetHost.NONE) {
+fun ShellScaffold(
+    assets: ReaderAssetHost = ReaderAssetHost.NONE,
+    initialBookKey: String? = null,
+) {
     val navController = rememberNavController()
-    ShellScaffold(navController = navController, assets = assets)
+    ShellScaffold(
+        navController = navController,
+        assets = assets,
+        initialBookKey = initialBookKey,
+    )
 }
 
 @Composable
 fun ShellScaffold(
     navController: NavHostController,
     assets: ReaderAssetHost = ReaderAssetHost.NONE,
+    initialBookKey: String? = null,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     // `destination.route` is the NavHost PATTERN, so the reader reports
@@ -75,6 +83,7 @@ fun ShellScaffold(
         ShellNavHost(
             navController = navController,
             assets = assets,
+            initialBookKey = initialBookKey,
             modifier = Modifier.padding(padding),
         )
     }

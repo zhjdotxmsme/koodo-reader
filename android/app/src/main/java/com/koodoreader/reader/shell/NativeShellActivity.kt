@@ -43,6 +43,11 @@ class NativeShellActivity : ComponentActivity() {
         val assetHost = startAssetServer()
         prefetchReflowEngine(assetHost)
         val appearance = ShellAppearancePrefs(applicationContext)
+        val initialBookKey = ShellNav.initialReaderRequest(
+            bookKey = intent.getStringExtra(EXTRA_BOOK_KEY),
+            restoring = savedInstanceState != null,
+        )
+        intent.removeExtra(EXTRA_BOOK_KEY)
         setContent {
             CompositionLocalProvider(LocalI18n provides i18n) {
                 // Settings「外观」writes the same backing file; the flow re-emits
@@ -53,7 +58,7 @@ class NativeShellActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        ShellScaffold(assets = assetHost)
+                        ShellScaffold(assets = assetHost, initialBookKey = initialBookKey)
                     }
                 }
             }
@@ -103,9 +108,10 @@ class NativeShellActivity : ComponentActivity() {
         }.start()
     }
 
-    private companion object {
-        const val TAG = "NativeShellActivity"
-        val FOLIATE_WARM_PATHS = listOf(
+    companion object {
+        const val EXTRA_BOOK_KEY = "extra_book_key"
+        private const val TAG = "NativeShellActivity"
+        private val FOLIATE_WARM_PATHS = listOf(
             "foliate/index.html",
             "foliate/engine.mjs",
             "foliate/view.js",

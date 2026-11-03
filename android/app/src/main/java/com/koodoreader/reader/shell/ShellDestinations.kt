@@ -80,6 +80,10 @@ object ShellNav {
     const val READER_WITH_CFI_PATTERN = "reader/{bookKey}?cfi={cfi}"
     private const val READER_PREFIX = "reader/"
 
+    /** External reader extras are consumed only for a fresh activity, not process restoration. */
+    fun initialReaderRequest(bookKey: String?, restoring: Boolean): String? =
+        bookKey.takeUnless { restoring }
+
     /** Concrete route for a book. Book keys can contain '/', so encode. */
     fun reader(bookKey: String): String = "$READER_PREFIX${Uri.encode(bookKey)}"
 

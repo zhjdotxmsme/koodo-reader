@@ -37,6 +37,13 @@ class ShellDestinationsTest {
     }
 
     @Test
+    fun `external reader request opens only on a fresh shell`() {
+        assertEquals("stable-key", ShellNav.initialReaderRequest("stable-key", restoring = false))
+        assertNull(ShellNav.initialReaderRequest("stable-key", restoring = true))
+        assertNull(ShellNav.initialReaderRequest(null, restoring = false))
+    }
+
+    @Test
     fun `every tab route matches its own constant`() {
         assertEquals(ShellNav.LIBRARY, ShellTab.LIBRARY.route)
         assertEquals(ShellNav.NOTES, ShellTab.NOTES.route)
