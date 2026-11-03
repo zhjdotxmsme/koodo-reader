@@ -310,8 +310,13 @@ class MainActivity : Activity() {
      * CBR/RAR 显式拒绝；只有无法识别的载荷保留旧 WebView 兜底岛。
      */
     private fun routeIntent(uri: Uri, mimeType: String?) {
-        val displayName = uri.lastPathSegment
-        when (IntentRoutePolicy.decide(mimeType, displayName)) {
+        when (
+            IntentRoutePolicy.decide(
+                mimeType,
+                queryDisplayName(uri),
+                uri.lastPathSegment,
+            )
+        ) {
             IntentRoutePolicy.Route.NATIVE_COMIC -> queueBook(uri, mimeType)
             IntentRoutePolicy.Route.NATIVE_PDF,
             IntentRoutePolicy.Route.NATIVE_SHELL,
@@ -454,15 +459,16 @@ class MainActivity : Activity() {
         return target
     }
 
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+        }
+    }.getOrNull()
+
     /** Best-effort display name for an incoming document URI. */
     private fun displayName(uri: Uri, mimeType: String?): String {
-        val fromProvider = runCatching {
-            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-            }
-        }.getOrNull()
-        val raw = fromProvider
+        val raw = queryDisplayName(uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "book"
         val safe = raw.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001f]"), "_").trim()

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookEntity
-import com.koodoreader.core.importer.AtomicBookStore
 import com.koodoreader.core.importer.BookRecord
 import com.koodoreader.core.importer.BookSource
 import com.koodoreader.core.importer.ImportFailure
@@ -16,7 +15,6 @@ import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
@@ -55,28 +53,12 @@ class ExternalBookOpener(private val app: Application) {
         )
         val dao = KoodoDatabaseProvider.get(app).bookDao()
         val booksDir = File(app.filesDir, "books")
-        val rows = dao.observeAll().first()
-        AtomicBookStore(booksDir).reconcile(ReaderFiles.resolvableBookPaths(booksDir, rows))
-
-        val outcome = ImportPipeline().importBook(
-            book = source,
-            booksOut = booksDir,
+        return importBook(
+            source = source,
+            booksDir = booksDir,
             existingBook = { md5 -> dao.getByMd5(md5).firstOrNull()?.toRecord() },
+            onNewBook = { record -> dao.upsert(record.toEntity()) },
         )
-        if (outcome is ImportOutcome.Success && !outcome.duplicate) {
-            try {
-                dao.upsert(outcome.record.toEntity())
-            } catch (e: Exception) {
-                outcome.record.path?.let { path ->
-                    val file = File(path)
-                    if (file.exists() && !file.delete()) {
-                        e.addSuppressed(IOException("Cannot remove uncommitted book: $path"))
-                    }
-                }
-                throw e
-            }
-        }
-        return outcome
     }
 
     private fun displayName(uri: Uri): String? = runCatching {
@@ -87,6 +69,29 @@ class ExternalBookOpener(private val app: Application) {
     }.getOrNull()
 
     companion object {
+        internal suspend fun importBook(
+            source: BookSource,
+            booksDir: File,
+            existingBook: suspend (String) -> BookRecord? = { null },
+            onNewBook: suspend (BookRecord) -> Unit = {},
+        ): ImportOutcome {
+            val outcome = ImportPipeline().importBook(source, booksDir, existingBook)
+            if (outcome is ImportOutcome.Success && !outcome.duplicate) {
+                try {
+                    onNewBook(outcome.record)
+                } catch (e: Exception) {
+                    outcome.record.path?.let { path ->
+                        val file = File(path)
+                        if (file.exists() && !file.delete()) {
+                            e.addSuppressed(IOException("Cannot remove uncommitted book: $path"))
+                        }
+                    }
+                    throw e
+                }
+            }
+            return outcome
+        }
+
         internal fun open(importBook: suspend () -> ImportOutcome): Flow<ExternalOpenState> = flow {
             emit(ExternalOpenState.Importing)
             emit(stateAfter(importBook()))

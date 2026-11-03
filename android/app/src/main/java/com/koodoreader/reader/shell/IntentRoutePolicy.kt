@@ -80,6 +80,12 @@ object IntentRoutePolicy {
             // 少数真实世界变体（文件管理器/浏览器另存）
             setOf("text/x-markdown", "multipart/related", "application/x-fictionbook")
 
+    fun decide(mimeType: String?, displayName: String?, fallbackFileName: String?): Route =
+        decide(
+            mimeType,
+            displayName?.takeIf { it.isNotBlank() } ?: fallbackFileName,
+        )
+
     fun decide(mimeType: String?, fileName: String?): Route {
         val name = fileName.orEmpty().lowercase()
         val ext = name.substringAfterLast('.', "")

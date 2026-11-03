@@ -98,6 +98,38 @@ class IntentRoutePolicyTest {
         )
     }
 
+    @Test
+    fun `provider display name rejects cbr behind an opaque content uri`() {
+        assertEquals(
+            IntentRoutePolicy.Route.UNSUPPORTED,
+            IntentRoutePolicy.decide(null, "book.cbr", "document-42"),
+        )
+    }
+
+    @Test
+    fun `provider display name routes supported books behind an opaque content uri`() {
+        assertEquals(
+            IntentRoutePolicy.Route.NATIVE_SHELL,
+            IntentRoutePolicy.decide(null, "book.epub", "document-42"),
+        )
+        assertEquals(
+            IntentRoutePolicy.Route.NATIVE_PDF,
+            IntentRoutePolicy.decide(null, "book.pdf", "document-42"),
+        )
+    }
+
+    @Test
+    fun `missing provider display name falls back to the uri segment`() {
+        assertEquals(
+            IntentRoutePolicy.Route.UNSUPPORTED,
+            IntentRoutePolicy.decide(null, null, "book.cbr"),
+        )
+        assertEquals(
+            IntentRoutePolicy.Route.NATIVE_SHELL,
+            IntentRoutePolicy.decide(null, "", "book.epub"),
+        )
+    }
+
     // ------------------------------------------------ 原生 PDF（P8-F1）
 
     @Test

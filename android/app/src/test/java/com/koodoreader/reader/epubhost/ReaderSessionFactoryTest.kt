@@ -56,7 +56,7 @@ class ReaderSessionFactoryTest {
         val covered = owners.flatten().toSet()
         val uncovered = whitelist - covered
         assertTrue(uncovered.isEmpty(), "uncovered formats: $uncovered")
-        // CBR 不可导入，但仍须由岛认领；其他白名单外格式不应被认领。
+        // CBR 在外部路由明确拒绝且不做原生导入；岛集合仅保留旧 WebView 所有权。
         assertEquals(emptySet<String>(), covered - whitelist - setOf("cbr"))
     }
 
