@@ -99,6 +99,7 @@ import com.koodoreader.reader.reader.RoomNoteAnnotationStore
 import com.koodoreader.reader.reader.TextSearchHit
 import com.koodoreader.reader.reader.TextReaderScreenControl
 import com.koodoreader.reader.reader.ReaderSettingsSheet
+import com.koodoreader.reader.reader.ReaderTocPage
 import com.koodoreader.reader.reader.ReaderWindowController
 import com.koodoreader.reader.reader.BookAnnotationsScreen
 import com.koodoreader.reader.reader.BookAnnotationsViewModel
@@ -1267,7 +1268,7 @@ fun NativeEpubScreen(
 
     MaterialTheme(colorScheme = ThemeSpecBridge.readerScheme(readerPreset)) {
     Box(modifier = Modifier.fillMaxSize()) {
-    ReaderImmersiveBars(showChrome)
+    ReaderImmersiveBars(showChrome || showToc)
     Scaffold(
         containerColor = bgColor,
         contentColor = fgColor,
@@ -1882,22 +1883,16 @@ fun NativeEpubScreen(
         }
     }
 
-    // ── 目录（底部表，和 PDF outline 同一套交互，避免 AlertDialog+TextButton 像超链接）
+    // ── 目录（全屏页，复用阅读会话直接跳转） ─────────────────────────────────
     if (showToc) {
-        val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
-            onDismissRequest = { showToc = false },
-            sheetState = sheetState,
-        ) {
-            Text(
-                text = t("Content"),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+        ReaderTocPage(
+            title = t("Content"),
+            onBack = { showToc = false },
+        ) { padding ->
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.8f),
+                    .fillMaxSize()
+                    .padding(padding),
             ) {
                 if (useFoliate) {
                     items(foliateToc) { item ->

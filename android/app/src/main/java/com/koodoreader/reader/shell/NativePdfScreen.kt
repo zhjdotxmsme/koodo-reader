@@ -60,6 +60,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.koodoreader.reader.reader.ReaderWindowController
 import com.koodoreader.reader.reader.ReaderSettingsSheet
+import com.koodoreader.reader.reader.ReaderTocPage
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -379,7 +380,7 @@ fun NativePdfScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-    ReaderImmersiveBars(showChrome)
+    ReaderImmersiveBars(showChrome || showOutline)
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -771,11 +772,10 @@ fun NativePdfScreen(
     }
 
     if (showOutline) {
-        val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
-            onDismissRequest = { showOutline = false },
-            sheetState = sheetState,
-        ) {
+        ReaderTocPage(
+            title = t("PDF outline"),
+            onBack = { showOutline = false },
+        ) { padding ->
             OutlineList(
                 rows = state.outline,
                 loading = state.outlineLoading,
@@ -783,6 +783,9 @@ fun NativePdfScreen(
                     controller.openOutlineRow(row)
                     showOutline = false
                 },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
             )
         }
     }
@@ -930,13 +933,9 @@ private fun OutlineList(
     rows: List<OutlineResolver.Row>,
     loading: Boolean,
     onPick: (OutlineResolver.Row) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = t("PDF outline"),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp),
-        )
+    Column(modifier = modifier) {
         if (loading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -949,7 +948,7 @@ private fun OutlineList(
             )
             return@Column
         }
-        LazyColumn(modifier = Modifier.fillMaxHeight(0.8f)) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
             itemsIndexed(rows) { _, row ->
                 val resolved = row.entry.pageNumber > 0
                 TextButton(
