@@ -14,7 +14,7 @@ object ReaderEnginePolicy {
     const val CANVAS = "canvas"
 
     fun useFoliate(format: String?, engine: String = FOLIATE): Boolean =
-        FoliateFormats.usesHost(format) && engine != CANVAS
+        engine != CANVAS && (format == null || FoliateFormats.usesHost(format))
 
     /** Canvas path: [ChapterLoader] + [com.koodoreader.reader.reader.NativeTextReaderScreen]. */
     fun useChapterLoaderCanvas(format: String?, engine: String = FOLIATE): Boolean {

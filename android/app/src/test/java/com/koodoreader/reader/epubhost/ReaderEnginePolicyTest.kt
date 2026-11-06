@@ -16,6 +16,12 @@ class ReaderEnginePolicyTest {
     }
 
     @Test
+    fun `metadata loading never enters the legacy canvas branch`() {
+        assertTrue(ReaderEnginePolicy.useFoliate(null))
+        assertFalse(ReaderEnginePolicy.useChapterLoaderCanvas(null))
+    }
+
+    @Test
     fun `canvas engine flag rolls reflowable books back to the factory`() {
         assertFalse(ReaderEnginePolicy.useFoliate("epub", ReaderEnginePolicy.CANVAS))
         assertFalse(ReaderEnginePolicy.useFoliate("txt", ReaderEnginePolicy.CANVAS))
