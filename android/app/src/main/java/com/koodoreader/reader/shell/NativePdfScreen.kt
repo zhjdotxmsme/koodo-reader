@@ -59,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.koodoreader.reader.reader.ReaderWindowController
+import com.koodoreader.reader.reader.ReaderSettingsSheet
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -157,6 +158,7 @@ fun NativePdfScreen(
     var showChrome by remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
     var reflowSelectionText by remember { mutableStateOf("") }
     var showReflowSelection by remember { mutableStateOf(false) }
+    var showReaderSettings by remember { mutableStateOf(false) }
     var showReflowNoteInput by remember { mutableStateOf(false) }
     var reflowNoteDraft by remember { mutableStateOf("") }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -291,9 +293,14 @@ fun NativePdfScreen(
             }
         }
     }
-    LaunchedEffect(features.pdfReflow, state.reflowHtml) {
-        val html = state.reflowHtml
-        if (features.pdfReflow && !html.isNullOrBlank()) {
+    LaunchedEffect(features.pdfReflow, state.reflowHtml, features.fontKey) {
+        val raw = state.reflowHtml
+        if (features.pdfReflow && !raw.isNullOrBlank()) {
+            val family = features.fontKey.replace("'", "").trim()
+            val html = if (family.isEmpty()) raw else raw.replace(
+                "font-family:Georgia,serif",
+                "font-family:'$family',sans-serif",
+            )
             reflowWeb?.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
         }
     }
@@ -459,6 +466,13 @@ fun NativePdfScreen(
                                     val next = features.copy(doublePage = !features.doublePage)
                                     features = next
                                     featurePrefs.save(next)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Settings")) },
+                                onClick = {
+                                    moreMenu = false
+                                    showReaderSettings = true
                                 },
                             )
                             DropdownMenuItem(
@@ -634,6 +648,17 @@ fun NativePdfScreen(
             color = if (noteContent.isEmpty()) 0xFFFFEB3B else null,
         )
         scope.launch(Dispatchers.IO) { annotationDb.noteDao().upsert(entity) }
+    }
+
+    if (showReaderSettings) {
+        ReaderSettingsSheet(
+            state = features,
+            onChange = {
+                features = it
+                featurePrefs.save(it)
+            },
+            onDismiss = { showReaderSettings = false },
+        )
     }
 
     if (showReflowSelection) {

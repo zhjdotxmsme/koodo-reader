@@ -177,7 +177,7 @@ export function createPdfEngine(options) {
         }
         const width = Math.max(240, Number(targetWidthPx) || 720);
         const scale = Math.max(0.7, Math.min(2.5, Number(fontScale) || 1));
-        const fontPx = Math.max(14, Math.min(28, (width / 42) * scale));
+        const fontPx = Math.max(12, Math.min(32, (width / 64) * scale));
         const page = await d.getPage(n);
         const content = await page.getTextContent();
         const items = (content && content.items) || [];
