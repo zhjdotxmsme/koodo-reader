@@ -3,6 +3,18 @@ package com.koodoreader.reader.shell
 import android.content.Context
 import android.content.Intent
 import android.webkit.WebView
+import android.os.Handler
+import android.os.Looper
+import android.view.ActionMode
+import android.view.MotionEvent
+import android.webkit.WebViewClient
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.koodoreader.core.data.KoodoDatabaseProvider
+import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.pdf.CfiPdfMapper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -143,6 +155,13 @@ fun NativePdfScreen(
     var showPageMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var showChrome by remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
+    var reflowSelectionText by remember { mutableStateOf("") }
+    var showReflowSelection by remember { mutableStateOf(false) }
+    var showReflowNoteInput by remember { mutableStateOf(false) }
+    var reflowNoteDraft by remember { mutableStateOf("") }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val clipboard = LocalClipboardManager.current
+    val annotationDb = remember(context) { KoodoDatabaseProvider.get(context) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // One engine WebView per book URL; the controller tears the document down on
@@ -185,11 +204,83 @@ fun NativePdfScreen(
     }
     val reflowWeb = remember(features.pdfReflow) {
         if (!features.pdfReflow) return@remember null
-        WebView(context).apply {
-            settings.javaScriptEnabled = false
+        ReflowWebView(context).apply {
+            // JS is needed for the selection relay (the system ActionMode is
+            // suppressed by ReflowWebView so the app menu can take over).
+            settings.javaScriptEnabled = true
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript(REFLOW_SELECTION_RELAY_JS, null)
+                }
+            }
+            addJavascriptInterface(object {
+                @android.webkit.JavascriptInterface
+                fun onSelection(text: String) {
+                    if (text.isBlank()) return
+                    mainHandler.post {
+                        reflowSelectionText = text
+                        showReflowSelection = true
+                    }
+                }
+            }, "__koodoReflow")
         }
+    }
+    // WebView eats Compose taps (same problem as foliate): host-side touch
+    // handling restores center-tap chrome and edge page-turns in reflow mode.
+    // Long-press selects the word/paragraph at the touch point via JS instead
+    // of the system ActionMode (suppressed by ReflowWebView).
+    DisposableEffect(reflowWeb) {
+        var downX = 0f
+        var downY = 0f
+        var longPress: Runnable? = null
+        fun cancelLongPress(v: android.view.View) {
+            longPress?.let(v::removeCallbacks)
+            longPress = null
+        }
+        reflowWeb?.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    cancelLongPress(v)
+                    val x = downX
+                    val y = downY
+                    longPress = Runnable {
+                        reflowWeb?.evaluateJavascript(reflowSelectAtPointJs(x, y), null)
+                    }.also { v.postDelayed(it, 500) }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (kotlin.math.abs(event.x - downX) > 24f ||
+                        kotlin.math.abs(event.y - downY) > 24f
+                    ) {
+                        cancelLongPress(v)
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    cancelLongPress(v)
+                    // A long-press is text selection, not a tap: without the
+                    // timeout check the ACTION_UP would page-turn and reload
+                    // the reflow HTML, destroying the fresh selection.
+                    if (event.eventTime - event.downTime >= 500) return@setOnTouchListener false
+                    val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
+                    val tap = ReaderPageGestures.tapIfNotDrag(
+                        downX, downY, event.x, event.y,
+                        v.width.toFloat(), edgeFraction = edge,
+                    )
+                    when (tap) {
+                        ReaderPageGesture.TOGGLE_CHROME -> v.post { showChrome = !showChrome }
+                        ReaderPageGesture.PREV_PAGE -> v.post { controller.previousPage() }
+                        ReaderPageGesture.NEXT_PAGE -> v.post { controller.nextPage() }
+                        else -> Unit
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> cancelLongPress(v)
+            }
+            false
+        }
+        onDispose { reflowWeb?.setOnTouchListener(null) }
     }
     DisposableEffect(reflowWeb) {
         onDispose {
@@ -526,6 +617,91 @@ fun NativePdfScreen(
         modifier = Modifier.align(Alignment.TopCenter),
         onReveal = { showChrome = true },
     )
+    }
+
+    fun saveReflowAnnotation(noteContent: String) {
+        val range = CfiPdfMapper.PdfRange(
+            fingerprint = book?.md5.orEmpty(),
+            page = state.page,
+        )
+        val entity = NoteEntity(
+            key = System.currentTimeMillis().toString(),
+            bookKey = bookKey,
+            chapter = "PDF · ${state.page}",
+            text = reflowSelectionText,
+            cfi = CfiPdfMapper.serialise(range),
+            notes = noteContent,
+            color = if (noteContent.isEmpty()) 0xFFFFEB3B else null,
+        )
+        scope.launch(Dispatchers.IO) { annotationDb.noteDao().upsert(entity) }
+    }
+
+    if (showReflowSelection) {
+        ModalBottomSheet(onDismissRequest = { showReflowSelection = false }) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    reflowSelectionText,
+                    maxLines = 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+                TextButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(reflowSelectionText))
+                        showReflowSelection = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Copy")) }
+                TextButton(
+                    onClick = {
+                        saveReflowAnnotation("")
+                        showReflowSelection = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Highlight")) }
+                TextButton(
+                    onClick = {
+                        showReflowSelection = false
+                        showReflowNoteInput = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Note")) }
+                TextButton(
+                    onClick = {
+                        controller.search(reflowSelectionText)
+                        showSearch = true
+                        showReflowSelection = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(t("Search in book")) }
+            }
+        }
+    }
+    if (showReflowNoteInput) {
+        AlertDialog(
+            onDismissRequest = { showReflowNoteInput = false },
+            title = { Text(t("Note")) },
+            text = {
+                Column {
+                    Text(reflowSelectionText, maxLines = 3, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = reflowNoteDraft,
+                        onValueChange = { reflowNoteDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    saveReflowAnnotation(reflowNoteDraft)
+                    reflowNoteDraft = ""
+                    showReflowNoteInput = false
+                }) { Text(t("Confirm")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReflowNoteInput = false }) { Text(t("Cancel")) }
+            },
+        )
     }
 
     if (showPageMenu) {
@@ -866,3 +1042,54 @@ private fun shareSnapshot(context: Context, file: File) {
         Toast.makeText(context, it.message ?: "share failed", Toast.LENGTH_SHORT).show()
     }
 }
+
+
+/** Reflow WebView with the system selection ActionMode suppressed — the app
+ *  shows its own selection sheet via the JS relay instead. */
+private class ReflowWebView(context: Context) : WebView(context) {
+    override fun startActionMode(callback: ActionMode.Callback?): ActionMode? = null
+    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? = null
+}
+
+/** Debounced selection relay; injected on every reflow page load. */
+private const val REFLOW_SELECTION_RELAY_JS = """
+(function(){
+  if (window.__koodoReflowBound) return;
+  window.__koodoReflowBound = true;
+  var timer = null;
+  document.addEventListener('selectionchange', function(){
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      var s = String(window.getSelection() || '');
+      if (s.trim().length > 0) window.__koodoReflow.onSelection(s);
+    }, 500);
+  });
+})();
+"""
+
+
+/** Selects the text run at viewport point (x, y) and relays it to the app.
+ *  Expands to whitespace/punctuation boundaries (CJK runs select the sentence). */
+private fun reflowSelectAtPointJs(x: Float, y: Float): String = """
+(function(){
+  var range = document.caretRangeFromPoint($x, $y);
+  if (!range) return;
+  var node = range.startContainer;
+  if (!node || node.nodeType !== 3) return;
+  var text = node.textContent || '';
+  var offset = range.startOffset;
+  var start = offset, end = offset;
+  var boundary = /[\s，。；、：！？,.;:!?（）()《》<>「」"\n\r]/;
+  while (start > 0 && !boundary.test(text[start-1])) start--;
+  while (end < text.length && !boundary.test(text[end])) end++;
+  if (start === end) return;
+  var sel = window.getSelection();
+  var r = document.createRange();
+  r.setStart(node, start);
+  r.setEnd(node, end);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  var s = sel.toString();
+  if (s.trim().length > 0) window.__koodoReflow.onSelection(s);
+})();
+"""
