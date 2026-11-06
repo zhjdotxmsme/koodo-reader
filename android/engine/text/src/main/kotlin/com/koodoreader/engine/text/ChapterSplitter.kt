@@ -222,48 +222,19 @@ object ChapterSplitter {
         return builder.out
     }
 
-    /** @return title to level, or null when [line] is body text. */
+    /**
+     * @return title to level, or null when [line] is body text.
+     *
+     * Delegates to [TitleMatcher] so the whole-text splitter and the streaming
+     * scanner ([StreamingTextIndex]) share exactly one rule implementation —
+     * a rule change here automatically reaches both.
+     */
     private fun detectTitle(
         line: String,
         options: Options,
         custom: Regex?,
-    ): Pair<String, Int>? {
-        val trimmed = line.trim()
-        if (trimmed.isEmpty()) return null
-
-        if (custom != null) {
-            return if (custom.containsMatchIn(line)) trimmed to 1 else null
-        }
-
-        val cleaned = TextNormalizer.cleanText(line)
-        if (cleaned.isEmpty() || cleaned.length >= options.maxTitleLength) return null
-
-        // Markdown heading: `## Title` — level from the hash count, title is the
-        // rendered text (hashes stripped), which is what the TOC should show.
-        val md = RE_MD_HEADING.matchEntire(trimmed)
-        if (md != null) {
-            val level = trimmed.takeWhile { it == '#' }.length
-            val title = trimmed.dropWhile { it == '#' }.trim()
-            if (title.isNotEmpty()) return title to level
-        }
-
-        val candidate = cleaned
-
-        if (RE_DI.matches(candidate)) {
-            // Exclude "第二天早上…"-style prose: require the unit to sit within
-            // the first 8 characters and the remainder to be short-ish.
-            val unitIdx = candidate.indexOfFirst { it in CN_UNIT }
-            if (unitIdx in 1..8) return candidate to 1
-        }
-        if (RE_JUAN.matches(candidate) && candidate.length <= 8) return candidate to 1
-        if (RE_EN.matches(candidate)) return candidate to 1
-        if (SPECIAL_TITLES.any { candidate.startsWith(it) }) return candidate to 1
-        if (options.numericTitles && RE_NUMERIC.matches(candidate)) return candidate to 1
-        // `第` appearing early, as the desktop's last-resort branch.
-        val di = candidate.indexOf('第')
-        if (di in 0..6 && RE_DI.matches(candidate.substring(di))) return candidate to 1
-        return null
-    }
+    ): Pair<String, Int>? =
+        TitleMatcher.detectTitle(line, options, custom)
 
     /**
      * Length fallback. Cuts [chapter] into pieces of at most

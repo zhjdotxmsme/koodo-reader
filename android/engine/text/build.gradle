@@ -6,6 +6,7 @@
 //
 // Reference: kookit `TxtRender` / `MdRender` + `textProcessor.ts`
 // (docs/android-native-migration.md P5).
+
 plugins {
     id 'org.jetbrains.kotlin.jvm'
 }
@@ -20,7 +21,15 @@ kotlin {
 }
 
 dependencies {
-    // Test only — this module has zero runtime dependencies.
+    // The `ChapterLoader` interface the streaming text reader adapts to —
+    // declared in :engine:layout (the incremental reading contract, T1):
+    //   android/engine/layout/src/main/kotlin/com/koodoreader/engine/layout/reader/ChapterLoader.kt
+    // engine:text does not otherwise use layout; this is the single cross-module
+    // link required by T2.
+    api project(':engine:layout')
+    // Test only — :engine:layout already brings in JUnit via its own test
+    // dependencies, but we declare it here explicitly so a future refactor of
+    // :engine:layout's test setup never silently breaks this module's tests.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
