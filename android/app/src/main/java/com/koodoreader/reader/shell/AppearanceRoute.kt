@@ -30,13 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.koodoreader.core.designsystem.ColorTokens
 import com.koodoreader.core.designsystem.CssColor
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.designsystem.ThemeKind
@@ -91,25 +92,28 @@ fun AppearanceRoute(onBack: () -> Unit) {
             Spacer(Modifier.height(SpaceTokens.xs.dp))
             ShellSettingsGroup {
                 // The swatch on each row previews the palette that mode produces.
+                // SYSTEM renders with the palette the OS currently resolves to,
+                // so its preview uses the live scheme; LIGHT/DARK come straight
+                // from the tokens.
                 ThemeModeRow(
                     label = t("Follow OS"),
                     selected = appMode == AppThemeMode.SYSTEM,
-                    background = Color(0xFF525252),
-                    text = Color(0xFFE6E6E6),
+                    background = MaterialTheme.colorScheme.background,
+                    text = MaterialTheme.colorScheme.onSurface,
                     onClick = { prefs.appThemeMode = AppThemeMode.SYSTEM },
                 )
                 ThemeModeRow(
                     label = t("Light mode"),
                     selected = appMode == AppThemeMode.LIGHT,
-                    background = Color(0xFFFFFFFF),
-                    text = Color(0xFF333333),
+                    background = Color(ColorTokens.LIGHT.background.toInt()),
+                    text = Color(ColorTokens.LIGHT.onBackground.toInt()),
                     onClick = { prefs.appThemeMode = AppThemeMode.LIGHT },
                 )
                 ThemeModeRow(
                     label = t("Night mode"),
                     selected = appMode == AppThemeMode.DARK,
-                    background = Color(0xFF141414),
-                    text = Color(0xFFE6E6E6),
+                    background = Color(ColorTokens.DARK.background.toInt()),
+                    text = Color(ColorTokens.DARK.onBackground.toInt()),
                     onClick = { prefs.appThemeMode = AppThemeMode.DARK },
                 )
             }
@@ -245,8 +249,18 @@ private fun ThemeModeRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
-            style = if (selected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.width(8.dp))
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    shape = CircleShape,
+                ),
         )
     }
 }
@@ -281,8 +295,9 @@ private fun ReaderThemeRow(
 /** A little "book page" preview: background colour + two text lines. */
 @Composable
 private fun ThemeSwatch(background: Color, text: Color) {
+    val cornerPx = with(LocalDensity.current) { 8.dp.toPx() }
     Canvas(modifier = Modifier.size(44.dp, 30.dp)) {
-        drawRoundRect(color = background, size = size, cornerRadius = CornerRadius(8f, 8f))
+        drawRoundRect(color = background, size = size, cornerRadius = CornerRadius(cornerPx, cornerPx))
         drawRoundRect(
             color = text.copy(alpha = 0.75f),
             topLeft = Offset(8f, 9f),

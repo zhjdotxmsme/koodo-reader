@@ -1,6 +1,5 @@
 package com.koodoreader.reader.reader
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +15,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -29,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.koodoreader.reader.shell.FontManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -160,15 +162,22 @@ fun ReaderSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(vertical = 12.dp),
             ) {
-                listOf(0xFFFFFFFF.toInt(), 0xFFF5F0E1.toInt(), 0xFF1B1B1F.toInt(), 0xFF121212.toInt())
-                    .forEach { argb ->
+                listOf(
+                    0xFFFFFFFF.toInt() to t("White background"),
+                    0xFFF5F0E1.toInt() to t("Paper background"),
+                    0xFF1B1B1F.toInt() to t("Dark gray background"),
+                    0xFF121212.toInt() to t("Black background"),
+                ).forEach { (argb, description) ->
+                    // 32dp 色块外包 48dp 触达盒（IconButton 默认最小尺寸）。
+                    IconButton(onClick = { onChange(state.copy(customBackgroundArgb = argb)) }) {
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(Color(argb), CircleShape)
-                                .clickable { onChange(state.copy(customBackgroundArgb = argb)) },
+                                .semantics { contentDescription = description },
                         )
                     }
+                }
                 TextButton(onClick = { onChange(state.copy(customBackgroundArgb = null)) }) {
                     Text(t("Default"))
                 }

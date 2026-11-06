@@ -2,7 +2,14 @@ package com.koodoreader.reader.shell
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -13,11 +20,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookEntity
@@ -71,16 +78,30 @@ fun BookCard(
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val coverState = rememberCoverState(book.cover, book.key, coverVersion)
     KoodoBookCard(
         model = book.toCardModel(isFavorite),
-        cover = rememberCoverPainter(book.cover, book.key, coverVersion),
+        cover = (coverState as? CoverState.Ready)?.painter,
+        coverLoading = coverState is CoverState.Loading,
+        selectionActive = selectionActive,
+        selected = selected,
         onClick = if (selectionActive) onToggleSelection else onClick,
-        onLongClick = if (selectionActive) onToggleSelection else ({ menuOpen = true }),
+        // Long-press now enters multi-select directly; the per-book menu moved
+        // to an explicit MoreVert button (see below).
+        onLongClick = onToggleSelection,
         // Was the hardcoded literal "Favorite", i.e. an untranslated string
         // exposed to TalkBack. Now routed through i18n; the key is added to
         // src/assets/locales/en.json with the rest of the W6a keys.
         favoriteContentDescription = t("Favorite"),
         menu = {
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .align(Alignment.BottomEnd),
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = t("More options"))
+            }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text(t("Book Detail")) },
@@ -139,17 +160,27 @@ fun BookListRow(
     var menuOpen by remember { mutableStateOf(false) }
     val hasMenu = onToggleFavorite != null || onMoveToTrash != null || onAddToShelf != null ||
         onShowDetails != null
+    val coverState = rememberCoverState(book.cover, book.key, coverVersion)
     KoodoBookRow(
         model = book.toCardModel(isFavorite),
-        cover = rememberCoverPainter(book.cover, book.key, coverVersion),
+        cover = (coverState as? CoverState.Ready)?.painter,
+        coverLoading = coverState is CoverState.Loading,
+        selectionActive = selectionActive,
+        selected = selected,
         onClick = if (selectionActive) onToggleSelection else onClick,
-        onLongClick = when {
-            selectionActive -> onToggleSelection
-            hasMenu -> ({ menuOpen = true })
-            else -> ({})
-        },
+        // Long-press enters multi-select directly; the menu keeps its explicit
+        // trigger so grid and row behave the same.
+        onLongClick = onToggleSelection,
         favoriteContentDescription = t("Favorite"),
         menu = if (hasMenu) ({
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .align(Alignment.BottomEnd),
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = t("More options"))
+            }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 if (onShowDetails != null) {
                     DropdownMenuItem(
@@ -191,27 +222,39 @@ fun BookListRow(
     )
 }
 
+/** Tri-state cover resolution: shimmer while decoding, art once ready. */
+private sealed interface CoverState {
+    data object Loading : CoverState
+    data class Ready(val painter: BitmapPainter) : CoverState
+    data object Failed : CoverState
+}
+
 /**
- * Resolve the cover for a book and hand it to the design system as a [Painter].
+ * Resolve the cover for a book into a [CoverState].
  *
  * Row base64 first (desktop-imported rows), then the `cover/` dir file written by
- * the native import ([CoverStore]), else null → the component draws its
- * deterministic placeholder.
+ * the native import ([CoverStore]), else [CoverState.Failed] → the component
+ * draws its deterministic placeholder.
  */
 @Composable
-private fun rememberCoverPainter(
+private fun rememberCoverState(
     cover: String?,
     seed: String,
     coverVersion: Int,
-): Painter? {
+): CoverState {
     val context = LocalContext.current
     val coverStore = remember(context) { CoverStore(context) }
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, cover, seed, coverVersion) {
+    val state by produceState<CoverState>(
+        initialValue = CoverState.Loading,
+        cover, seed, coverVersion,
+    ) {
+        // BitmapPainter rather than an `asImagePainter()` extension: the
+        // extension is not available in this Compose BOM's ui-graphics artifact.
         value = decodeCover(cover, coverStore.fileFor(seed))
+            ?.let { CoverState.Ready(BitmapPainter(it)) }
+            ?: CoverState.Failed
     }
-    // BitmapPainter rather than an `asImagePainter()` extension: the extension
-    // is not available in this Compose BOM's ui-graphics artifact.
-    return bitmap?.let { BitmapPainter(it) }
+    return state
 }
 
 private suspend fun decodeCover(

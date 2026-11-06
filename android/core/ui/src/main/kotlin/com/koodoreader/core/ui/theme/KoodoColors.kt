@@ -47,7 +47,7 @@ fun koodoLightScheme(t: ColorTokens = ColorTokens.LIGHT): ColorScheme = lightCol
     // Elevation stays flat on purpose: hierarchy comes from the tonal ramp
     // above, not from shadows.
     surfaceTint = Color(t.primary),
-    scrim = Color(0xFF000000),
+    scrim = Color(t.scrim),
     inverseSurface = Color(t.onSurface),
     inverseOnSurface = Color(t.surface),
     inversePrimary = Color(t.primaryContainer),
@@ -80,7 +80,7 @@ fun koodoDarkScheme(t: ColorTokens = ColorTokens.DARK): ColorScheme = darkColorS
     error = Color(t.error),
     onError = Color(t.onError),
     surfaceTint = Color(t.primary),
-    scrim = Color(0xFF000000),
+    scrim = Color(t.scrim),
     inverseSurface = Color(t.onSurface),
     inverseOnSurface = Color(t.surface),
     inversePrimary = Color(t.primaryContainer),

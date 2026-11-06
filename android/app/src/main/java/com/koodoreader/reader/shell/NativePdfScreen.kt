@@ -12,10 +12,14 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.annotate.HighlightColor
+import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.engine.pdf.CfiPdfMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -29,6 +33,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,10 +63,13 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import com.koodoreader.reader.reader.BookAnnotationsScreen
+import com.koodoreader.reader.reader.BookAnnotationsViewModel
 import com.koodoreader.reader.reader.ReaderWindowController
 import com.koodoreader.reader.reader.ReaderSettingsSheet
 import com.koodoreader.reader.reader.ReaderTocPage
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,6 +98,23 @@ import com.koodoreader.reader.R
 import com.koodoreader.reader.pdfhost.PdfJsHostBridge
 import com.koodoreader.reader.pdfhost.PdfRendererSnapshot
 import java.io.File
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import com.koodoreader.core.designsystem.MotionTokens
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import com.koodoreader.core.ui.component.ErrorState
 
 /**
  * Native PDF reader screen (P3).
@@ -158,14 +183,61 @@ fun NativePdfScreen(
     var moreMenu by remember { mutableStateOf(false) }
     var showChrome by remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
     var reflowSelectionText by remember { mutableStateOf("") }
+    var reflowSelectionX by remember { mutableStateOf(0f) }
+    var reflowSelectionY by remember { mutableStateOf(0f) }
+    var reflowSelectionW by remember { mutableStateOf(0f) }
+    var reflowSelectionH by remember { mutableStateOf(0f) }
     var showReflowSelection by remember { mutableStateOf(false) }
     var showReaderSettings by remember { mutableStateOf(false) }
     var showReflowNoteInput by remember { mutableStateOf(false) }
     var reflowNoteDraft by remember { mutableStateOf("") }
+    var showBookAnnotations by remember { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val clipboard = LocalClipboardManager.current
     val annotationDb = remember(context) { KoodoDatabaseProvider.get(context) }
+    val bookAnnotations = remember(bookKey, annotationDb) {
+        BookAnnotationsViewModel(
+            annotationDb.noteDao(),
+            annotationDb.bookmarkDao(),
+            bookKey,
+            scope,
+        )
+    }
+    val annotationNotes by bookAnnotations.notes.collectAsStateWithLifecycle()
+    val annotationBookmarks by bookAnnotations.bookmarks.collectAsStateWithLifecycle()
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    // 打开失败重试：ErrorState 的 onRetry 递增，重跑下方 open LaunchedEffect。
+    var retryKey by remember { mutableIntStateOf(0) }
+
+    // ── 返回键链（后注册且 enabled 优先）：选区/弹层 > 目录 > chrome > 双击退出 ──
+    // 置于 bridge 早退（PdfUnavailableScreen）之前，未打开状态下也有双击退出兜底。
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exitBackHint = t("Press back again to exit")
+    var lastBackAt by remember { mutableStateOf(0L) }
+    BackHandler {
+        val now = System.currentTimeMillis()
+        if (now - lastBackAt < MotionTokens.HINT) {
+            onBack()
+        } else {
+            lastBackAt = now
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = exitBackHint,
+                    duration = SnackbarDuration.Short,
+                )
+            }
+        }
+    }
+    BackHandler(enabled = showChrome) { showChrome = false }
+    BackHandler(enabled = showOutline) { showOutline = false }
+    // 底部弹层（reflow 选区 / 页面菜单 / 批注）自身已注册更晚的 back 处理，这里兜底。
+    BackHandler(enabled = showReflowSelection || showPageMenu || showBookAnnotations) {
+        when {
+            showReflowSelection -> showReflowSelection = false
+            showPageMenu -> showPageMenu = false
+            else -> showBookAnnotations = false
+        }
+    }
 
     // One engine WebView per book URL; the controller tears the document down on
     // dispose. Created during composition, which is the main thread.
@@ -205,6 +277,10 @@ fun NativePdfScreen(
         controller.reflowFontScale = features.fontScale
         controller.requestRender(force = true)
     }
+    val reflowPaintSink = remember { ReflowPaintSink() }
+    val reflowHighlightsJson = remember(annotationNotes, state.page) {
+        PdfReflowHighlights.jsonForPage(annotationNotes, state.page)
+    }
     val reflowWeb = remember(features.pdfReflow) {
         if (!features.pdfReflow) return@remember null
         ReflowWebView(context).apply {
@@ -216,19 +292,39 @@ fun NativePdfScreen(
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     view?.evaluateJavascript(REFLOW_SELECTION_RELAY_JS, null)
+                    view?.evaluateJavascript(
+                        PdfReflowHighlights.paintJavascript(reflowPaintSink.highlightsJson),
+                        null,
+                    )
+                    reflowPaintSink.pendingScrollY?.let { y ->
+                        view?.evaluateJavascript("window.scrollTo(0,${y.toInt()});", null)
+                        reflowPaintSink.pendingScrollY = null
+                    }
                 }
             }
             addJavascriptInterface(object {
                 @android.webkit.JavascriptInterface
-                fun onSelection(text: String) {
+                fun onSelection(text: String, x: Float, y: Float, width: Float, height: Float) {
                     if (text.isBlank()) return
                     mainHandler.post {
                         reflowSelectionText = text
+                        reflowSelectionX = x
+                        reflowSelectionY = y
+                        reflowSelectionW = width
+                        reflowSelectionH = height
                         showReflowSelection = true
                     }
                 }
             }, "__koodoReflow")
         }
+    }
+    LaunchedEffect(reflowHighlightsJson, features.pdfReflow, state.reflowHtml, reflowWeb) {
+        if (!features.pdfReflow || state.reflowHtml.isNullOrBlank() || reflowWeb == null) return@LaunchedEffect
+        reflowPaintSink.highlightsJson = reflowHighlightsJson
+        reflowWeb.evaluateJavascript(
+            PdfReflowHighlights.paintJavascript(reflowHighlightsJson),
+            null,
+        )
     }
     // WebView eats Compose taps (same problem as foliate): host-side touch
     // handling restores center-tap chrome and edge page-turns in reflow mode.
@@ -338,7 +434,7 @@ fun NativePdfScreen(
         )
     }
 
-    LaunchedEffect(controller) {
+    LaunchedEffect(controller, retryKey) {
         controller.spread = features.doublePage
         controller.open()
     }
@@ -372,20 +468,41 @@ fun NativePdfScreen(
         onDispose { ocrController.close() }
     }
 
+    // 冷启动打开失败由内容区的 ErrorState + 重试承载（见下方 when 分支）；
+    // 这里只处理已有页面后的中途错误，仍用轻提示。
     state.error?.let { message ->
-        LaunchedEffect(message) {
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-            controller.dismissError()
+        if (state.pageCount > 0) {
+            LaunchedEffect(message) {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                controller.dismissError()
+            }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
     ReaderImmersiveBars(showChrome || showOutline)
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (showChrome) {
+            AnimatedVisibility(
+                visible = showChrome,
+                enter = fadeIn(tween(MotionTokens.NORMAL)) + slideInVertically(tween(MotionTokens.NORMAL)) { -it },
+                exit = fadeOut(tween(MotionTokens.NORMAL)) + slideOutVertically(tween(MotionTokens.NORMAL)) { -it },
+            ) {
+            // 渐变遮罩替代实底：TopAppBar 透明，遮罩不参与正文排版。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
+                            1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
+                        ),
+                    ),
+            ) {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = {
                     Column {
                         Text(book?.name.orEmpty(), maxLines = 1)
@@ -470,6 +587,13 @@ fun NativePdfScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text(t("Notes")) },
+                                onClick = {
+                                    moreMenu = false
+                                    showBookAnnotations = true
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(t("Settings")) },
                                 onClick = {
                                     moreMenu = false
@@ -500,6 +624,7 @@ fun NativePdfScreen(
                     }
                 },
             )
+            }
             }
         },
     ) { padding ->
@@ -571,6 +696,21 @@ fun NativePdfScreen(
                     onSubmit = { password -> controller.open(password) },
                 )
 
+                // 冷启动失败：没有任何页面可显示时给全屏重试入口。
+                state.error != null && state.pageCount == 0 -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ErrorState(
+                        message = state.error.orEmpty(),
+                        onRetry = {
+                            controller.dismissError()
+                            retryKey++
+                        },
+                        retryText = t("Retry"),
+                    )
+                }
+
                 else -> {
                     if (state.rendering && state.pageImage == null && state.reflowHtml == null) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -587,6 +727,39 @@ fun NativePdfScreen(
                         val drawnWidth = with(density) {
                             val base = if (spread) containerSize.width / 2f else containerSize.width.toFloat()
                             (base * state.zoom).coerceAtLeast(1f).toDp()
+                        }
+                        val drawnWidthPx = with(density) { drawnWidth.toPx() }
+                        val drawnHeightPx = drawnWidthPx * (image.height.toFloat() / image.width.coerceAtLeast(1))
+                        val pdfHighlights = remember(
+                            annotationNotes,
+                            state.page,
+                            state.pageWidthPt,
+                            state.pageHeightPt,
+                            drawnWidthPx,
+                            drawnHeightPx,
+                        ) {
+                            annotationNotes.mapNotNull { note ->
+                                val range = note.cfi?.let(CfiPdfMapper::parse)
+                                    ?.takeIf { it.page == state.page }
+                                    ?: return@mapNotNull null
+                                val rect = PdfHighlightOverlay.toOverlayRect(
+                                    range,
+                                    state.pageWidthPt,
+                                    state.pageHeightPt,
+                                    drawnWidthPx,
+                                    drawnHeightPx,
+                                ) ?: return@mapNotNull null
+                                rect to HighlightPalette.paintArgb(note.color)
+                            }
+                        }
+                        LaunchedEffect(pdfHighlights, features.pdfReflow) {
+                            if (features.pdfReflow) return@LaunchedEffect
+                            val ranges = annotationNotes.mapNotNull { note ->
+                                note.cfi?.let(CfiPdfMapper::parse)?.takeIf { it.page == state.page }
+                            }
+                            withContext(Dispatchers.IO) {
+                                runCatching { bridge.paintHighlights(ranges) }
+                            }
                         }
                         Box(
                             modifier = Modifier
@@ -617,17 +790,49 @@ fun NativePdfScreen(
                                         .width(drawnWidth)
                                         .align(Alignment.TopCenter),
                                 )
+                                if (pdfHighlights.isNotEmpty()) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .width(drawnWidth)
+                                            .height(with(density) { drawnHeightPx.toDp() })
+                                            .align(Alignment.TopCenter),
+                                    ) {
+                                        pdfHighlights.forEach { (rect, argb) ->
+                                            drawRect(
+                                                color = androidx.compose.ui.graphics.Color(argb.toInt()),
+                                                topLeft = androidx.compose.ui.geometry.Offset(rect.left, rect.top),
+                                                size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    if (showChrome) {
-                        PagerBar(
-                            page = state.page,
-                            pageCount = state.pageCount,
-                            onPrevious = controller::previousPage,
-                            onNext = controller::nextPage,
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                        )
+                    AnimatedVisibility(
+                        visible = showChrome,
+                        enter = fadeIn(tween(MotionTokens.NORMAL)) + slideInVertically(tween(MotionTokens.NORMAL)) { it },
+                        exit = fadeOut(tween(MotionTokens.NORMAL)) + slideOutVertically(tween(MotionTokens.NORMAL)) { it },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
+                                        1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
+                                    ),
+                                )
+                                .navigationBarsPadding(),
+                        ) {
+                            PagerBar(
+                                page = state.page,
+                                pageCount = state.pageCount,
+                                onPrevious = controller::previousPage,
+                                onNext = controller::nextPage,
+                            )
+                        }
                     }
                 }
             }
@@ -641,10 +846,23 @@ fun NativePdfScreen(
     )
     }
 
+    fun jumpToAnnotationCfi(cfi: String) {
+        ReaderProgressMath.pageFromStoredCfi(cfi)?.let { controller.goTo(it) }
+        CfiPdfMapper.parse(cfi)?.takeIf { it.reflowDocument && !it.isPageLevel }?.let { range ->
+            reflowPaintSink.pendingScrollY = range.y
+            reflowWeb?.evaluateJavascript("window.scrollTo(0,${range.y.toInt()});", null)
+        }
+    }
+
     fun saveReflowAnnotation(noteContent: String) {
         val range = CfiPdfMapper.PdfRange(
             fingerprint = book?.md5.orEmpty(),
             page = state.page,
+            x = reflowSelectionX,
+            y = reflowSelectionY,
+            width = reflowSelectionW,
+            height = reflowSelectionH,
+            reflowDocument = true,
         )
         val entity = NoteEntity(
             key = System.currentTimeMillis().toString(),
@@ -653,7 +871,7 @@ fun NativePdfScreen(
             text = reflowSelectionText,
             cfi = CfiPdfMapper.serialise(range),
             notes = noteContent,
-            color = if (noteContent.isEmpty()) 0xFFFFEB3B else null,
+            color = if (noteContent.isEmpty()) HighlightColor.YELLOW.code.toLong() else null,
         )
         scope.launch(Dispatchers.IO) { annotationDb.noteDao().upsert(entity) }
     }
@@ -820,6 +1038,34 @@ fun NativePdfScreen(
             onDismiss = { showOcr = false },
         )
     }
+
+    if (showBookAnnotations) {
+        ModalBottomSheet(onDismissRequest = { showBookAnnotations = false }) {
+            BookAnnotationsScreen(
+                notes = annotationNotes,
+                bookmarks = annotationBookmarks,
+                onJump = { cfi ->
+                    showBookAnnotations = false
+                    jumpToAnnotationCfi(cfi)
+                },
+                onRecolor = { note, color ->
+                    scope.launch { bookAnnotations.changeHighlightColor(note.key, color) }
+                },
+                onAddNote = { content ->
+                    scope.launch { bookAnnotations.addNote(content) }
+                },
+                onEditNote = { note, content ->
+                    scope.launch { bookAnnotations.editNote(note.key, content) }
+                },
+                onDeleteNote = { note ->
+                    scope.launch { bookAnnotations.deleteNote(note.key) }
+                },
+                onDeleteBookmark = { bookmark ->
+                    scope.launch { bookAnnotations.deleteBookmark(bookmark.key) }
+                },
+            )
+        }
+    }
 }
 
 /**
@@ -851,13 +1097,11 @@ private fun PdfUnavailableScreen(title: String, bookKey: String, onBack: () -> U
                 .padding(24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "The local PDF engine is unavailable for this book.\n" +
-                    "(book key: $bookKey)\n\n" +
-                    "The loopback asset server must be running and the book file must " +
-                    "exist under files/books/.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 引擎/资源不可用不是瞬时错误：重试无法恢复，故不提供重试按钮。
+            ErrorState(
+                message = t("The local PDF engine is unavailable for this book.") +
+                    "\n(book key: $bookKey)\n\n" +
+                    t("The loopback asset server must be running and the book file must exist under files/books/."),
             )
         }
     }
@@ -1082,6 +1326,11 @@ private class ReflowWebView(context: Context) : WebView(context) {
     override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? = null
 }
 
+private class ReflowPaintSink {
+    @Volatile var highlightsJson: String = "[]"
+    @Volatile var pendingScrollY: Float? = null
+}
+
 /** Debounced selection relay; injected on every reflow page load. */
 private const val REFLOW_SELECTION_RELAY_JS = """
 (function(){
@@ -1092,7 +1341,17 @@ private const val REFLOW_SELECTION_RELAY_JS = """
     clearTimeout(timer);
     timer = setTimeout(function(){
       var s = String(window.getSelection() || '');
-      if (s.trim().length > 0) window.__koodoReflow.onSelection(s);
+      if (s.trim().length === 0) return;
+      var rect = { left: 0, top: 0, width: 0, height: 0 };
+      try {
+        var sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          var b = sel.getRangeAt(0).getBoundingClientRect();
+          var sx = window.scrollX || 0, sy = window.scrollY || 0;
+          rect = { left: b.left + sx, top: b.top + sy, width: b.width, height: b.height };
+        }
+      } catch (e) {}
+      window.__koodoReflow.onSelection(s, rect.left, rect.top, rect.width, rect.height);
     }, 500);
   });
 })();
@@ -1121,6 +1380,9 @@ private fun reflowSelectAtPointJs(x: Float, y: Float): String = """
   sel.removeAllRanges();
   sel.addRange(r);
   var s = sel.toString();
-  if (s.trim().length > 0) window.__koodoReflow.onSelection(s);
+  if (s.trim().length === 0) return;
+  var b = r.getBoundingClientRect();
+  var sx = window.scrollX || 0, sy = window.scrollY || 0;
+  window.__koodoReflow.onSelection(s, b.left + sx, b.top + sy, b.width, b.height);
 })();
 """

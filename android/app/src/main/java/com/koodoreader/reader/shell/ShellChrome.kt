@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.koodoreader.core.designsystem.ShapeTokens
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -24,8 +25,8 @@ import androidx.compose.ui.unit.dp
  * inventing a second design system.
  */
 object ShellChrome {
-    val searchCorner = RoundedCornerShape(12.dp)
-    val groupCorner = RoundedCornerShape(16.dp)
+    val searchCorner = RoundedCornerShape(ShapeTokens.medium.dp)
+    val groupCorner = RoundedCornerShape(ShapeTokens.large.dp)
 
     @Composable
     fun searchFieldColors() = TextFieldDefaults.colors(

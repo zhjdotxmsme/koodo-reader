@@ -65,6 +65,13 @@ data class ColorTokens(
 
     val error: Long,
     val onError: Long,
+
+    /**
+     * Scrim behind dialogs / sheets / bottom bars. Kept pure black here; the
+     * translucency is applied at call sites via `copy(alpha)` so the token
+     * layer stays fully opaque.
+     */
+    val scrim: Long,
 ) {
     companion object {
 
@@ -95,6 +102,7 @@ data class ColorTokens(
             outline = 0xFF74777A,
             error = 0xFFBA1A1A,
             onError = 0xFFFFFFFF,
+            scrim = 0xFF000000,
         )
 
         /** Dark shell palette. Brand seeds match the previous `Theme.kt`. */
@@ -124,6 +132,7 @@ data class ColorTokens(
             outline = 0xFF8E9196,
             error = 0xFFFFB4AB,
             onError = 0xFF690005,
+            scrim = 0xFF000000,
         )
 
         /** All palettes, for parity/contrast sweeps in tests and `selfCheck`. */
@@ -244,4 +253,5 @@ fun ColorTokens.slotPairs(): List<Pair<String, Long>> = listOf(
     "outline" to outline,
     "error" to error,
     "onError" to onError,
+    "scrim" to scrim,
 )

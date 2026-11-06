@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -15,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.ui.theme.KoodoTheme
 import com.koodoreader.reader.LocalAssetServer
+import com.koodoreader.reader.R
 
 /**
  * Native shell entry (P1, dual-track: docs/android-native-migration.md §2.1).
@@ -33,6 +36,22 @@ import com.koodoreader.reader.LocalAssetServer
 class NativeShellActivity : ComponentActivity() {
 
     private val assetServer by lazy { LocalAssetServer(assets) }
+
+    /**
+     * Applies the persisted AppThemeMode before inflation. Both branches use
+     * the SAME style name: the values/-night resource qualifier does the
+     * actual dark switching from the resolved uiMode, so no duplicate style
+     * is needed. The Compose side (KoodoTheme) live-recolors afterwards.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase)
+        val mode = ShellAppearancePrefs.readAppThemeModeSync(newBase)
+        val systemDark =
+            (newBase.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        // Same style either way — kept explicit to document the intent.
+        setTheme(if (mode.darkThemeOf(systemDark)) R.style.Theme_KoodoReader else R.style.Theme_KoodoReader)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

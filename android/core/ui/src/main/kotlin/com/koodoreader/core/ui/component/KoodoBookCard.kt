@@ -3,6 +3,8 @@ package com.koodoreader.core.ui.component
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +24,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.ColorTokens
+import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.ui.theme.KoodoCoverShape
 
 /**
@@ -78,17 +85,32 @@ fun KoodoBookCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     favoriteContentDescription: String? = null,
-    menu: @Composable () -> Unit = {},
+    menu: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
+    /** True while the caller is still resolving the cover → shimmer placeholder. */
+    coverLoading: Boolean = false,
+    /** Multi-select mode is on; exposes checkbox semantics for TalkBack. */
+    selectionActive: Boolean = false,
+    /** Selection state of this tile, read by screen readers in multi-select. */
+    selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val clickableModifier = if (selectionActive) {
+        Modifier.semantics {
+            role = Role.Checkbox
+            this.selected = selected
+        }
+    } else {
+        Modifier
+    }
     Box(modifier = modifier) {
         Column(
-            modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            modifier = clickableModifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
             Box {
                 KoodoBookCover(
                     model = model,
                     cover = cover,
+                    coverLoading = coverLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(COVER_ASPECT)
@@ -121,7 +143,7 @@ fun KoodoBookCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        menu()
+        menu(this)
     }
 }
 
@@ -139,12 +161,26 @@ fun KoodoBookRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     favoriteContentDescription: String? = null,
-    menu: @Composable () -> Unit = {},
+    menu: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
+    /** True while the caller is still resolving the cover → shimmer placeholder. */
+    coverLoading: Boolean = false,
+    /** Multi-select mode is on; exposes checkbox semantics for TalkBack. */
+    selectionActive: Boolean = false,
+    /** Selection state of this row, read by screen readers in multi-select. */
+    selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val clickableModifier = if (selectionActive) {
+        Modifier.semantics {
+            role = Role.Checkbox
+            this.selected = selected
+        }
+    } else {
+        Modifier
+    }
     Box(modifier = modifier) {
         Row(
-            modifier = Modifier
+            modifier = clickableModifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
             verticalAlignment = Alignment.CenterVertically,
@@ -153,6 +189,7 @@ fun KoodoBookRow(
             KoodoBookCover(
                 model = model,
                 cover = cover,
+                coverLoading = coverLoading,
                 modifier = Modifier
                     .width(48.dp)
                     .aspectRatio(COVER_ASPECT)
@@ -181,36 +218,52 @@ fun KoodoBookRow(
                 )
             }
         }
-        menu()
+        menu(this)
     }
 }
 
-/** Cover art, or the deterministic placeholder when nothing decoded. */
+/** Cover phases: shimmer while decoding, art when decoded, else placeholder. */
+private enum class CoverPhase { LOADING, READY, FAILED }
+
+/** Cover art, shimmer while loading, or the deterministic placeholder when
+ *  nothing decoded (resolution failed / no cover at all). */
 @Composable
 private fun KoodoBookCover(
     model: BookCardModel,
     cover: Painter?,
+    coverLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    if (cover != null) {
-        Image(
-            painter = cover,
-            contentDescription = model.title,
-            modifier = modifier,
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        Box(
-            modifier = modifier.background(
-                Color(ColorTokens.coverPlaceholderFor(model.coverSeed)),
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = model.title.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+    val phase = when {
+        cover != null -> CoverPhase.READY
+        coverLoading -> CoverPhase.LOADING
+        else -> CoverPhase.FAILED
+    }
+    Crossfade(
+        targetState = phase,
+        animationSpec = tween(MotionTokens.NORMAL),
+        label = "bookCover",
+    ) { current ->
+        when (current) {
+            CoverPhase.READY -> Image(
+                painter = cover!!,
+                contentDescription = model.title,
+                modifier = modifier,
+                contentScale = ContentScale.Crop,
             )
+            CoverPhase.LOADING -> Box(modifier = modifier.shimmer())
+            CoverPhase.FAILED -> Box(
+                modifier = modifier.background(
+                    Color(ColorTokens.coverPlaceholderFor(model.coverSeed)),
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = model.title.firstOrNull()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                )
+            }
         }
     }
 }

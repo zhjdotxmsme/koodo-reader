@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,8 +113,11 @@ fun NativeTextReaderScreen(
         }
         val widthDp = (constraints.maxWidth / density).toInt()
         val tocViewModel = remember(loader) { TocViewModel(loader) }
+        // EXPANDED 侧栏改为可收起：状态提升到这里（旋转等配置变化后保持）。
+        var sidebarOpen by rememberSaveable { mutableStateOf(true) }
         AdaptiveReaderLayout(
             widthDp = widthDp,
+            sidebarOpen = sidebarOpen,
             sidebar = {
                 TocSidebar(
                     viewModel = tocViewModel,
@@ -123,6 +127,7 @@ fun NativeTextReaderScreen(
                         readerView = viewModel.readerView()
                         onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
                     },
+                    onClose = { sidebarOpen = false },
                 )
             },
         ) {

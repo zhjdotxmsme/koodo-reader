@@ -20,13 +20,16 @@ import com.koodoreader.reader.FolderEnumerator
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -82,10 +85,32 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _libraryLoading = MutableStateFlow(true)
     val libraryLoading: StateFlow<Boolean> = _libraryLoading
 
+    /** Last failure from the books stream; null when healthy. Cleared by [retryLoad]. */
+    private val _loadError = MutableStateFlow<Throwable?>(null)
+    val loadError: StateFlow<Throwable?> = _loadError
+
+    /** Re-emitted by [retryLoad] to restart the books stream after a failure. */
+    private val retryTick = MutableStateFlow(0)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     val books: StateFlow<List<BookEntity>> =
-        db.bookDao().observeAll()
-            .onEach { _libraryLoading.value = false }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        retryTick.flatMapLatest {
+            db.bookDao().observeAll()
+                .onEach {
+                    _libraryLoading.value = false
+                    _loadError.value = null
+                }
+                .catch { e ->
+                    _libraryLoading.value = false
+                    _loadError.value = e
+                }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Clear the error and re-trigger the Room query (see [books]). */
+    fun retryLoad() {
+        _loadError.value = null
+        retryTick.value++
+    }
 
     // ------------------------------------------------------------------
     // Shelf (sort / view / favorites / trash / manual order) — persisted in
@@ -108,7 +133,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     val libraryBooks: StateFlow<List<BookEntity>> =
         combine(books, _shelf) { list, s ->
             val byKey = list.associateBy { it.key }
-            val sortable = list.map { SortableBook(it.key, it.name, it.author, it.format) }
+            val sortable = list.map { SortableBook(it.key, it.name, it.author, it.format, it.size) }
             val visible = LibraryLogic.visibleKeys(sortable, s.trashed)
             var keys = LibraryLogic.sortedKeys(
                 visible,
@@ -121,7 +146,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             if (shelfKeys != null) keys = keys.filter { it in shelfKeys }
             val entities = keys.mapNotNull { byKey[it] }
             val matched = LibraryLogic.filterByQuery(
-                entities.map { SortableBook(it.key, it.name, it.author, it.format) },
+                entities.map { SortableBook(it.key, it.name, it.author, it.format, it.size) },
                 s.searchQuery,
             ).map { it.key }.toSet()
             entities.filter { it.key in matched }
@@ -158,9 +183,24 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _selection.value = _selection.value.clear()
     }
 
+    /** Keys soft-deleted but still undoable until [commitDelete] / next delete. */
+    private val pendingTrash = mutableSetOf<String>()
+
     fun deleteSelected() {
+        pendingTrash += _selection.value.selected
         _selection.value.selected.toList().forEach(::moveToTrash)
         clearSelection()
+    }
+
+    /** Undo a pending delete: restore every pending key, then drop the batch. */
+    fun undoDelete() {
+        pendingTrash.toList().forEach(::restoreFromTrash)
+        pendingTrash.clear()
+    }
+
+    /** Confirm a pending delete: the trash write is already on disk. */
+    fun commitDelete() {
+        pendingTrash.clear()
     }
 
     fun moveSelectedTo(targetDir: File) {
@@ -168,14 +208,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (keys.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val booksDir = File(getApplication<Application>().filesDir, "books")
+            val failures = ArrayList<String>()
             keys.forEach { key ->
                 val book = db.bookDao().getByKey(key) ?: return@forEach
-                runCatching {
+                val failure = runCatching {
                     BookFileMover.moveAndUpdate(book, targetDir, booksDir) { moved ->
                         kotlinx.coroutines.runBlocking { db.bookDao().upsert(moved) }
                     }
-                }
+                }.exceptionOrNull()
+                if (failure != null) failures += failure.message ?: "Cannot move book"
             }
+            if (failures.isNotEmpty()) _statusMessage.value = failures.joinToString("\n")
             clearSelection()
         }
     }
@@ -186,7 +229,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             toggleSortDirection()
             return
         }
-        updateShelf { it.copy(sort = SortSpec(field, ascending = field != SortField.ADDED)) }
+        val largestFirst = field == SortField.ADDED || field == SortField.SIZE
+        updateShelf { it.copy(sort = SortSpec(field, ascending = !largestFirst)) }
     }
 
     fun toggleSortDirection() = updateShelf {
@@ -317,6 +361,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState
+
+    private val _statusMessage = MutableStateFlow<String?>(null)
+    val statusMessage: StateFlow<String?> = _statusMessage
+
+    fun consumeStatusMessage() {
+        _statusMessage.value = null
+    }
 
     /** Import every book file found under this SAF tree (depth-capped). */
     fun importFolder(treeUri: Uri) {

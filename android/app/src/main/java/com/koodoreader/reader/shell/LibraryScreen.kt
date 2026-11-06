@@ -1,7 +1,13 @@
 package com.koodoreader.reader.shell
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -20,20 +27,25 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -44,12 +56,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -57,19 +70,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.core.ui.component.ErrorState
+import com.koodoreader.core.ui.theme.KoodoMotion
 import com.koodoreader.reader.R
+import kotlinx.coroutines.launch
 
 /**
  * Bookshelf (P1): Room-backed grid/list of `books` rows, SAF import entry,
  * sort/view/favorites/trash (desktop manager parity, [LibraryLogic]) and
  * long-press drag reorder in grid mode.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     onOpenBook: (String) -> Unit,
@@ -81,6 +99,7 @@ fun LibraryScreen(
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val libraryLoading by viewModel.libraryLoading.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
+    val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
     val metadataState by metadataViewModel.state.collectAsStateWithLifecycle()
     val treeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -104,14 +123,26 @@ fun LibraryScreen(
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
 
+    val loadError by viewModel.loadError.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var showFailureDialog by remember { mutableStateOf(false) }
+    var sortSheetOpen by remember { mutableStateOf(false) }
+    val movedToTrashText = t("Moved to trash")
+    val undoText = t("Undo")
+
+    BackHandler(enabled = selection.active) { viewModel.clearSelection() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (selection.active) {
+            AnimatedVisibility(
+                visible = selection.active,
+                enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)) +
+                    slideInVertically(tween(MotionTokens.NORMAL)) { -it / 2 },
+                exit = fadeOut(tween(MotionTokens.FAST)),
+            ) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
@@ -126,10 +157,30 @@ fun LibraryScreen(
                     actions = {
                         TextButton(onClick = viewModel::selectAllVisible) { Text(t("Select all")) }
                         TextButton(onClick = { moveDialogOpen = true }) { Text(t("Move")) }
-                        TextButton(onClick = viewModel::deleteSelected) { Text(t("Delete")) }
+                        TextButton(onClick = {
+                            viewModel.deleteSelected()
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = movedToTrashText,
+                                    actionLabel = undoText,
+                                    duration = SnackbarDuration.Long,
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    viewModel.undoDelete()
+                                } else {
+                                    viewModel.commitDelete()
+                                }
+                            }
+                        }) { Text(t("Delete")) }
                     },
                 )
-            } else {
+            }
+            AnimatedVisibility(
+                visible = !selection.active,
+                enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)) +
+                    slideInVertically(tween(MotionTokens.NORMAL)) { -it / 2 },
+                exit = fadeOut(tween(MotionTokens.FAST)),
+            ) {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -205,21 +256,10 @@ fun LibraryScreen(
                                 text = { Text(if (shelf.viewGrid) t("Switch to list view") else t("Switch to grid view")) },
                                 onClick = { viewModel.setViewGrid(!shelf.viewGrid); menuOpen = false },
                             )
-                            SortField.entries.forEach { field ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            buildString {
-                                                append(t("Sort by")).append(": ").append(t(field.labelKey))
-                                                if (shelf.sort.field == field) {
-                                                    append(if (shelf.sort.ascending) " ↑" else " ↓")
-                                                }
-                                            },
-                                        )
-                                    },
-                                    onClick = { viewModel.setSortField(field); menuOpen = false },
-                                )
-                            }
+                            DropdownMenuItem(
+                                text = { Text(t("Sort by")) },
+                                onClick = { menuOpen = false; sortSheetOpen = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text(if (shelf.favoritesOnly) t("Show all books") else t("Show favorites")) },
                                 onClick = { viewModel.setFavoritesOnly(!shelf.favoritesOnly); menuOpen = false },
@@ -291,7 +331,7 @@ fun LibraryScreen(
                     label = { Text(t("All books")) },
                     colors = ShellChrome.shelfChipColors(),
                     border = ShellChrome.shelfChipBorder(shelf.activeShelf == null),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = CircleShape,
                 )
                 shelf.shelves.keys.forEach { title ->
                     FilterChip(
@@ -300,7 +340,7 @@ fun LibraryScreen(
                         label = { Text(title) },
                         colors = ShellChrome.shelfChipColors(),
                         border = ShellChrome.shelfChipBorder(shelf.activeShelf == title),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = CircleShape,
                     )
                 }
             }
@@ -316,6 +356,11 @@ fun LibraryScreen(
             val importText = t("Import")
             val duplicateText = t("Duplicate")
             val viewDetailsText = t("View details")
+            LaunchedEffect(statusMessage) {
+                val message = statusMessage ?: return@LaunchedEffect
+                snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Long)
+                viewModel.consumeStatusMessage()
+            }
             LaunchedEffect(finished) {
                 val state = finished ?: return@LaunchedEffect
                 val message = buildString {
@@ -339,11 +384,27 @@ fun LibraryScreen(
             }
             if (libraryLoading) {
                 LibraryLoadingSkeleton()
-            } else if (books.isEmpty()) {
-                EmptyLibraryHint(
-                    favoritesOnly = shelf.favoritesOnly,
-                    onImportClick = { filesLauncher.launch(arrayOf("*/*")) },
+            } else if (loadError != null) {
+                ErrorState(
+                    message = t("Can't load library"),
+                    onRetry = viewModel::retryLoad,
+                    retryText = t("Retry"),
+                    modifier = Modifier.fillMaxSize(),
                 )
+            } else if (books.isEmpty()) {
+                when {
+                    shelf.searchQuery.isNotEmpty() ->
+                        EmptyLibraryHint(message = t("No matching books"))
+                    shelf.favoritesOnly ->
+                        EmptyLibraryHint(message = t("No favorite books"))
+                    shelf.activeShelf != null ->
+                        EmptyLibraryHint(message = t("This shelf is empty"))
+                    else -> EmptyLibraryHint(
+                        message = t("Library is empty"),
+                        showImport = true,
+                        onImportClick = { filesLauncher.launch(arrayOf("*/*")) },
+                    )
+                }
             } else if (shelf.viewGrid) {                LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 112.dp),
@@ -545,6 +606,17 @@ fun LibraryScreen(
             },
         )
     }
+    if (sortSheetOpen) {
+        SortSheet(
+            current = shelf.sort,
+            onSelectField = {
+                viewModel.setSortField(it)
+                sortSheetOpen = false
+            },
+            onToggleDirection = viewModel::toggleSortDirection,
+            onDismiss = { sortSheetOpen = false },
+        )
+    }
     if (showFailureDialog) {
         val state = importState as? ImportState.Finished
         AlertDialog(
@@ -565,8 +637,62 @@ fun LibraryScreen(
     }
 }
 
+/** Sort field picker sheet: tap the active field to flip direction, tap
+ *  another field to switch and close. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmptyLibraryHint(favoritesOnly: Boolean, onImportClick: () -> Unit) {
+private fun SortSheet(
+    current: SortSpec,
+    onSelectField: (SortField) -> Unit,
+    onToggleDirection: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        SortField.entries.forEach { field ->
+            val selected = current.field == field
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = {
+                            if (selected) onToggleDirection() else onSelectField(field)
+                        },
+                    )
+                    .padding(horizontal = SpaceTokens.lg.dp, vertical = SpaceTokens.md.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected, onClick = null)
+                Text(
+                    text = t(field.labelKey),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = SpaceTokens.md.dp),
+                )
+                if (selected) {
+                    Icon(
+                        imageVector = if (current.ascending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (current.ascending) t("Ascending") else t("Descending"),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibraryHint(
+    message: String,
+    showImport: Boolean = false,
+    onImportClick: () -> Unit = {},
+) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
@@ -576,16 +702,12 @@ private fun EmptyLibraryHint(favoritesOnly: Boolean, onImportClick: () -> Unit) 
                 modifier = Modifier.padding(bottom = SpaceTokens.md.dp),
             )
             Text(
-                text = if (favoritesOnly) {
-                    t("No favorite books")
-                } else {
-                    t("Library is empty")
-                },
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            if (!favoritesOnly) {
+            if (showImport) {
                 Button(
                     onClick = onImportClick,
                     modifier = Modifier.padding(top = SpaceTokens.md.dp),

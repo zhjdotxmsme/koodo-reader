@@ -40,7 +40,7 @@ fun TextScrollView(
     LaunchedEffect(view.location.chapterId, view.scrollTopPx) {
         if (lines.isEmpty()) return@LaunchedEffect
         val index = lines.indexOfFirst { it.y >= view.scrollTopPx - 1f }.coerceAtLeast(0)
-        listState.scrollToItem(index)
+        listState.animateScrollToItem(index)
     }
     LazyColumn(
         state = listState,

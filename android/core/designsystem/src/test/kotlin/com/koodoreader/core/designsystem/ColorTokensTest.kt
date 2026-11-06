@@ -22,9 +22,9 @@ class ColorTokensTest {
 
     @Test
     fun `slot list covers every declared property`() {
-        // 25 slots: brand (8), surfaces/text (4), elevation ramp (7),
-        // variant (2), outline (2), error (2).
-        assertEquals(25, ColorTokens.LIGHT.slotPairs().size)
+        // 26 slots: brand (8), surfaces/text (4), elevation ramp (7),
+        // variant (2), outline (2), error (2), scrim (1).
+        assertEquals(26, ColorTokens.LIGHT.slotPairs().size)
         assertEquals(
             ColorTokens.LIGHT.slotPairs().size,
             ColorTokens.LIGHT.slotPairs().map { it.first }.toSet().size,
@@ -84,10 +84,11 @@ class ColorTokensTest {
     fun `light and dark differ in every non-brand-critical slot`() {
         val light = ColorTokens.LIGHT.slotPairs().toMap()
         val dark = ColorTokens.DARK.slotPairs().toMap()
-        val identical = light.filter { (k, v) -> dark[k] == v }.keys
+        val identical = light.filter { (k, v) -> dark[k] == v && k != "scrim" }.keys
         // background/surface legitimately share a value within each palette, but
         // no slot should be identical ACROSS palettes: that would mean one side
-        // was never designed.
+        // was never designed. `scrim` is the documented exception — pure black
+        // on both sides, translucency applied at call sites via copy(alpha).
         assertEquals(emptySet<String>(), identical)
     }
 

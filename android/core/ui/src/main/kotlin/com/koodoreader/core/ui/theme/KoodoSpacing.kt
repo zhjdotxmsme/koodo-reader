@@ -1,7 +1,6 @@
 package com.koodoreader.core.ui.theme
 
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.SpaceTokens
@@ -33,9 +32,3 @@ data class KoodoSpacing(
     /** Vertical gap between cover rows. */
     val gridGapVertical: Dp = SpaceTokens.GRID_GAP_VERTICAL.dp,
 )
-
-/**
- * Static because the spacing scale never changes at runtime — it is not tied to
- * the light/dark choice, so a static local avoids needless recomposition.
- */
-val LocalKoodoSpacing = staticCompositionLocalOf { KoodoSpacing() }

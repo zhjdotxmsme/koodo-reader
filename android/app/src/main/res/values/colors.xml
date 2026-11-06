@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="window_background">#111827</color>
+    <!-- Light shell background, matches ColorTokens.LIGHT.background. -->
+    <color name="window_background">#F8F6F2</color>
     <color name="ic_launcher_background">#111827</color>
     <color name="ic_launcher_foreground">#FFFFFF</color>
-    <color name="brand_primary">#2563EB</color>
+    <color name="brand_primary">#3A6EA5</color>
 </resources>

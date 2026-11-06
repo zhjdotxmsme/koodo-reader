@@ -101,6 +101,17 @@ class ShellAppearancePrefs(context: Context) {
         const val FILE_NAME = "shell_appearance"
         const val KEY_APP_THEME_MODE = "appThemeMode"
         const val KEY_READER_THEME = "readerThemeKind"
+
+        /**
+         * One-shot synchronous read for `attachBaseContext`, which runs before
+         * any coroutine scope exists. Same file/key/tolerant parsing as the
+         * instance API; no listener, no flow.
+         */
+        fun readAppThemeModeSync(context: Context): AppThemeMode =
+            parseAppThemeMode(
+                context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+                    .getString(KEY_APP_THEME_MODE, null),
+            )
     }
 }
 
