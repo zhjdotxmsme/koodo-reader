@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merged only for `-Ptarget=native`: book VIEW/SEND intents hit
+  ExternalBookTrampolineActivity instead of MainActivity (WebView host).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity android:name=".MainActivity">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/epub+zip" />
+                <data android:scheme="content" android:mimeType="application/pdf" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+                <data android:scheme="content" android:mimeType="text/html" />
+                <data android:scheme="content" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="content" android:mimeType="text/xml" />
+                <data android:scheme="content" android:mimeType="application/xml" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:scheme="content" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="content" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="content" android:mimeType="message/rfc822" />
+                <data android:scheme="content" android:mimeType="application/x-cbz" />
+                <data android:scheme="content" android:mimeType="application/x-cbr" />
+                <data android:scheme="content" android:mimeType="application/x-cbt" />
+                <data android:scheme="content" android:mimeType="application/x-cb7" />
+                <data android:scheme="file" android:mimeType="application/epub+zip" />
+                <data android:scheme="file" android:mimeType="application/pdf" />
+                <data android:scheme="file" android:mimeType="text/plain" />
+                <data android:scheme="file" android:mimeType="text/html" />
+                <data android:scheme="file" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="file" android:mimeType="text/xml" />
+                <data android:scheme="file" android:mimeType="text/markdown" />
+                <data android:scheme="file" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="file" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="file" android:mimeType="application/x-cbz" />
+                <data android:scheme="file" android:mimeType="application/x-cbr" />
+                <data android:scheme="file" android:mimeType="application/x-cbt" />
+                <data android:scheme="file" android:mimeType="application/x-cb7" />
+            </intent-filter>
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".shell.ExternalBookTrampolineActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density"
+            android:theme="@style/Theme.KoodoReader">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/epub+zip" />
+                <data android:scheme="content" android:mimeType="application/pdf" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+                <data android:scheme="content" android:mimeType="text/html" />
+                <data android:scheme="content" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="content" android:mimeType="text/xml" />
+                <data android:scheme="content" android:mimeType="application/xml" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:scheme="content" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="content" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="content" android:mimeType="message/rfc822" />
+                <data android:scheme="content" android:mimeType="application/x-cbz" />
+                <data android:scheme="content" android:mimeType="application/x-cbr" />
+                <data android:scheme="content" android:mimeType="application/x-cbt" />
+                <data android:scheme="content" android:mimeType="application/x-cb7" />
+                <data android:scheme="file" android:mimeType="application/epub+zip" />
+                <data android:scheme="file" android:mimeType="application/pdf" />
+                <data android:scheme="file" android:mimeType="text/plain" />
+                <data android:scheme="file" android:mimeType="text/html" />
+                <data android:scheme="file" android:mimeType="application/xhtml+xml" />
+                <data android:scheme="file" android:mimeType="text/xml" />
+                <data android:scheme="file" android:mimeType="text/markdown" />
+                <data android:scheme="file" android:mimeType="application/x-mobipocket-ebook" />
+                <data android:scheme="file" android:mimeType="application/x-fictionbook+xml" />
+                <data android:scheme="file" android:mimeType="application/x-cbz" />
+                <data android:scheme="file" android:mimeType="application/x-cbr" />
+                <data android:scheme="file" android:mimeType="application/x-cbt" />
+                <data android:scheme="file" android:mimeType="application/x-cb7" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
