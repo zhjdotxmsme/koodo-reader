@@ -166,7 +166,7 @@ fun StatsScreen(
                 return@Column
             }
 
-            StatCards(state.snapshot, palette, t)
+            StatCards(state, palette, t)
             Spacer(Modifier.height(24.dp))
             ChartSection(state, palette, t, onChartTabSelected)
             Spacer(Modifier.height(24.dp))
@@ -176,7 +176,8 @@ fun StatsScreen(
 }
 
 @Composable
-private fun StatCards(snapshot: StatsSnapshot, palette: StatsPalette, t: (String) -> String) {
+private fun StatCards(state: StatsUiState, palette: StatsPalette, t: (String) -> String) {
+    val snapshot = state.snapshot
     val cards = listOf(
         snapshot.totalBooks.toString() to t("Books read"),
         StatsAggregator.formatTime(snapshot.totalSeconds) to t("Total reading time"),
@@ -197,6 +198,13 @@ private fun StatCards(snapshot: StatsSnapshot, palette: StatsPalette, t: (String
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         StatCard("${snapshot.totalWords}", t("Word count"), palette, Modifier.weight(1f))
         StatCard("${snapshot.averageProgress}%", t("Reading progress"), palette, Modifier.weight(1f))
+    }
+    if (state.todayNotesAdded > 0 || state.todayHighlightsAdded > 0) {
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatCard(state.todayNotesAdded.toString(), t("Notes"), palette, Modifier.weight(1f))
+            StatCard(state.todayHighlightsAdded.toString(), t("Highlights"), palette, Modifier.weight(1f))
+        }
     }
 }
 

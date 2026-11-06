@@ -253,6 +253,12 @@ class ReadingSessionRepository(
         store.upsertAll(rows)
     }
 
+    /** All persisted sessions (flushes buffer first). Used by stats annotation merge. */
+    suspend fun loadSessionsForStats(): List<ReadingSession> {
+        flush()
+        return store.loadAll().map { it.toSession() }
+    }
+
     /** Aggregated snapshot for the /stats screen (desktop metric parity). */
     suspend fun snapshot(
         booksRead: Int,

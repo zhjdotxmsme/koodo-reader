@@ -248,4 +248,15 @@ class StatsAggregatorTest {
         // average of a finished one down.
         assertEquals(100.0, aggregator.averageProgress(mapOf("a" to 1.0, "b" to 0.0)), 0.0001)
     }
+
+    @Test
+    fun `top books are sorted by duration then stable title`() {
+        val day = IsoDay(2024, 3, 15)
+        val sessions = listOf(
+            ReadingSession("s1", "a", day, seconds = 100, endMillis = 10),
+            ReadingSession("s2", "b", day, seconds = 200, endMillis = 20),
+        )
+        val ranked = aggregator.rankBooks(sessions, mapOf("a" to "Alpha", "b" to "Beta"))
+        assertEquals(listOf("b", "a"), ranked.map { it.bookKey })
+    }
 }

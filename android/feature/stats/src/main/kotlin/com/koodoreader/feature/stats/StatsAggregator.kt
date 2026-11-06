@@ -224,4 +224,28 @@ class StatsAggregator {
 
         private fun round2(value: Double): Double = Math.round(value * 100.0) / 100.0
     }
+
+    /** Top books by reading time; stable title tie-break (2026-11-02 stats plan). */
+    fun rankBooks(
+        sessions: List<ReadingSession>,
+        titles: Map<String, String>,
+    ): List<BookReadingRank> =
+        sessions.groupBy { it.bookKey }.map { (key, rows) ->
+            BookReadingRank(
+                bookKey = key,
+                title = titles[key].orEmpty(),
+                seconds = rows.sumOf { it.seconds.coerceAtLeast(0) },
+                lastReadMillis = rows.maxOf { it.endMillis },
+            )
+        }.sortedWith(
+            compareByDescending<BookReadingRank> { it.seconds }
+                .thenBy { it.title.lowercase() },
+        ).take(10)
 }
+
+data class BookReadingRank(
+    val bookKey: String,
+    val title: String,
+    val seconds: Long,
+    val lastReadMillis: Long,
+)

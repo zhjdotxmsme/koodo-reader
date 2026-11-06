@@ -71,5 +71,11 @@ dependencies {
     // Local JVM unit tests: the pure core (stats/*.kt) is exercised on the
     // JVM; no Android SDK needed for these.
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
 }

@@ -6,8 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.koodoreader.feature.stats.AnnotationStatsStore
 import com.koodoreader.feature.stats.IsoDay
 import com.koodoreader.feature.stats.ReadingSessionRepository
+import com.koodoreader.feature.stats.StatsDomain
 import com.koodoreader.feature.stats.StatsSnapshot
 import kotlinx.coroutines.launch
 
@@ -20,6 +22,9 @@ data class StatsUiState(
     val snapshot: StatsSnapshot = StatsSnapshot.EMPTY,
     val chartTab: ChartTab = ChartTab.BAR,
     val error: String? = null,
+    /** Today’s annotation counts ([StatsDomain.daily]). */
+    val todayNotesAdded: Int = 0,
+    val todayHighlightsAdded: Int = 0,
 )
 
 /**
@@ -34,6 +39,7 @@ class StatsViewModel(
     private val booksReadProvider: suspend () -> Int = { 0 },
     private val progressProvider: suspend () -> Map<String, Double> = { emptyMap() },
     private val todayProvider: () -> IsoDay,
+    private val annotationStats: AnnotationStatsStore = AnnotationStatsStore { emptyList() },
 ) : ViewModel() {
 
     var state by mutableStateOf(StatsUiState())
@@ -43,12 +49,22 @@ class StatsViewModel(
         state = state.copy(isLoading = true, error = null)
         viewModelScope.launch {
             state = try {
+                val today = todayProvider()
+                val sessions = repository.loadSessionsForStats()
+                val events = annotationStats.events()
+                val daily = StatsDomain.daily(today, sessions, events)
                 val snapshot = repository.snapshot(
                     booksRead = booksReadProvider(),
                     progressByBook = progressProvider(),
-                    today = todayProvider(),
+                    today = today,
                 )
-                state.copy(isLoading = false, snapshot = snapshot, error = null)
+                state.copy(
+                    isLoading = false,
+                    snapshot = snapshot,
+                    error = null,
+                    todayNotesAdded = daily.notesAddedCount,
+                    todayHighlightsAdded = daily.highlightsAddedCount,
+                )
             } catch (failure: Exception) {
                 // Desktop `loadStats` swallows database errors and shows zeroes;
                 // the native screen keeps the reason for the log instead.
