@@ -123,7 +123,11 @@ class NativeTextSessionTest {
 
         session.openAt(TextLocation("chapter-1", 40), 40f, 50f)
 
-        assertEquals(TextLocation("chapter-1", 32, 48), session.current.location)
+        // The requested anchor is preserved verbatim (CFI compatibility)…
+        assertEquals(TextLocation("chapter-1", 40), session.current.location)
+        // …while the session landed on page 32..48: previous() goes to 16..32.
+        session.previous()
+        assertEquals(TextLocation("chapter-1", 16, 32), session.current.location)
     }
 
     @Test
@@ -151,14 +155,14 @@ class NativeTextSessionTest {
     }
 
     @Test
-    fun `openAt clamps offsets beyond the chapter end`() {
+    fun `openAt preserves beyond end anchors on the last page`() {
         val loader = CountingLoader(chapters = 1)
         val session = NativeTextSession(loader, TextMeasurers.mono(), PaginatorOptions())
 
         session.openAt(TextLocation("chapter-1", 99, 120), 400f, 700f)
 
         assertEquals("chapter-1", session.current.chapterId)
-        assertEquals(5, session.current.location.end)
+        assertEquals(TextLocation("chapter-1", 99, 120), session.current.location)
         assertEquals(listOf("chapter-1"), loader.loaded)
     }
 

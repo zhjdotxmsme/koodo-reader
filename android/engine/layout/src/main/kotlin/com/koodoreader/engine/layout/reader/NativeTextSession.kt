@@ -24,9 +24,8 @@ class NativeTextSession(
         require(location.end >= location.start) {
             "Inverted range: ${location.start}..${location.end}"
         }
-        val descriptor = loader.descriptors().firstOrNull { it.id == location.chapterId }
+        loader.descriptors().firstOrNull { it.id == location.chapterId }
             ?: throw IllegalArgumentException("Unknown chapter: ${location.chapterId}")
-        val start = location.start.coerceAtMost(descriptor.charCount)
         val chapter = loader.load(location.chapterId)
         val document = EpubDocument(listOf(chapter))
         val tokens = LayoutTokens(
@@ -40,9 +39,12 @@ class NativeTextSession(
         val layout = LayoutEngine(measurer, options).layout(document, tokens)
         viewportWidthPx = width
         viewportHeightPx = height
-        current = ReaderFrame(location.chapterId, layout, location.copy(start = start))
-        pageIndex = pageIndexAt(current, start)
-        current = current.copy(location = locationAt(current, pageIndex))
+        // The requested location is preserved verbatim as the frame location:
+        // offsets address the ORIGINAL text (CFI compatibility), so a beyond-end
+        // anchor is legal and must survive repagination. Only the landing page
+        // is derived from it.
+        current = ReaderFrame(location.chapterId, layout, location)
+        pageIndex = pageIndexAt(current, location.start)
     }
 
     private fun pageIndexAt(frame: ReaderFrame, start: Int): Int {
