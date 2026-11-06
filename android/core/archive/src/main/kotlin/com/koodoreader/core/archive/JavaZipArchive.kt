@@ -16,6 +16,8 @@ internal class JavaZipArchive(
     private val zip: ZipFile,
 ) : ZipArchive {
 
+    private var closed = false
+
     /** name → ArchiveEntry, archive order. */
     private val byName: Map<String, ArchiveEntry>
     override val entries: List<ArchiveEntry>
@@ -42,6 +44,7 @@ internal class JavaZipArchive(
     }
 
     private fun zipEntryOf(name: String): ZipEntry? {
+        ensureOpen()
         // Exact first (byName keys come from the same ZipFile), then CI.
         if (byName.containsKey(name)) return zip.getEntry(name)
         val original = lowerIndex[name.lowercase()] ?: return null
@@ -55,12 +58,19 @@ internal class JavaZipArchive(
     }
 
     override fun openStream(name: String): InputStream {
+        ensureOpen()
         val e = zipEntryOf(name)
             ?: throw ArchiveEntryNotFoundException(name)
         return zip.getInputStream(e)
     }
 
     override fun close() {
+        if (closed) return
+        closed = true
         zip.close()
+    }
+
+    private fun ensureOpen() {
+        check(!closed) { "zip file closed" }
     }
 }

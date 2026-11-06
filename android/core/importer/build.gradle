@@ -25,6 +25,7 @@ dependencies {
     // R1: shared zip facade — EpubBook / ComicCover / EpubSpine read archives
     // through ZipArchive (ZipArchives.open) instead of naked java.util.zip.
     implementation project(':core:archive')
+    implementation project(':engine:layout')
     implementation project(':engine:mobi')
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
