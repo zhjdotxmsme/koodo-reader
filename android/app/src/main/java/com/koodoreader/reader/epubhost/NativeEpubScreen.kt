@@ -100,6 +100,8 @@ import com.koodoreader.reader.reader.TextSearchHit
 import com.koodoreader.reader.reader.TextReaderScreenControl
 import com.koodoreader.reader.reader.ReaderSettingsSheet
 import com.koodoreader.reader.reader.ReaderWindowController
+import com.koodoreader.reader.reader.BookAnnotationsScreen
+import com.koodoreader.reader.reader.BookAnnotationsViewModel
 import kotlinx.coroutines.flow.take
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
@@ -370,6 +372,14 @@ fun NativeEpubScreen(
     var moreMenu by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
     var showReaderSettings by remember { mutableStateOf(false) }
+    var showBookAnnotations by remember { mutableStateOf(false) }
+    val annotationScope = rememberCoroutineScope()
+    val bookAnnotations = remember(bookKey) {
+        val db = KoodoDatabaseProvider.get(context)
+        BookAnnotationsViewModel(db.noteDao(), db.bookmarkDao(), bookKey, annotationScope)
+    }
+    val annotationNotes by bookAnnotations.notes.collectAsStateWithLifecycle()
+    val annotationBookmarks by bookAnnotations.bookmarks.collectAsStateWithLifecycle()
     val readerActivity = context as? android.app.Activity
     DisposableEffect(readerActivity) {
         onDispose { readerActivity?.let(ReaderWindowController::reset) }
@@ -1345,6 +1355,13 @@ fun NativeEpubScreen(
                                     },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text(t("Notes")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        showBookAnnotations = true
+                                    },
+                                )
+                                DropdownMenuItem(
                                     text = { Text(t("Speak the text")) },
                                     onClick = {
                                         moreMenu = false
@@ -2128,6 +2145,27 @@ fun NativeEpubScreen(
         )
     }
 
+    if (showBookAnnotations) {
+        ModalBottomSheet(onDismissRequest = { showBookAnnotations = false }) {
+            BookAnnotationsScreen(
+                notes = annotationNotes,
+                bookmarks = annotationBookmarks,
+                onJump = { cfi ->
+                    showBookAnnotations = false
+                    foliateBridge?.goTo(cfi)
+                },
+                onEditNote = { note, content ->
+                    annotationScope.launch { bookAnnotations.editNote(note.key, content) }
+                },
+                onDeleteNote = { note ->
+                    annotationScope.launch { bookAnnotations.deleteNote(note.key) }
+                },
+                onDeleteBookmark = { bookmark ->
+                    annotationScope.launch { bookAnnotations.deleteBookmark(bookmark.key) }
+                },
+            )
+        }
+    }
     if (showReaderSettings) {
         ReaderSettingsSheet(
             state = features,
