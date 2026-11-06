@@ -1,0 +1,166 @@
+package com.koodoreader.reader.reader
+
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.layout.PaginatorOptions
+import com.koodoreader.engine.layout.reader.ChapterLoader
+import com.koodoreader.engine.layout.reader.ReaderFrame
+import com.koodoreader.engine.layout.reader.PageRenderMode
+import com.koodoreader.engine.layout.reader.ReaderView
+import com.koodoreader.engine.layout.reader.TextLocation
+import com.koodoreader.reader.epubhost.AndroidTextMeasurer
+
+/**
+ * Compose host for [TextReaderViewModel]: paged or scrolled native text from a [ChapterLoader].
+ */
+@Composable
+fun NativeTextReaderScreen(
+    loader: ChapterLoader,
+    initialLocation: TextLocation,
+    scrolled: Boolean,
+    modifier: Modifier = Modifier,
+    fontScale: Float = 1f,
+    layoutOptions: PaginatorOptions = PaginatorOptions(),
+    annotationStore: AnnotationStore = NoOpAnnotationStore,
+    notesForHighlights: List<NoteEntity> = emptyList(),
+    control: TextReaderScreenControl? = null,
+    onLocationChanged: (TextLocation, ReaderFrame?) -> Unit = { _, _ -> },
+    onLineSelected: () -> Unit = {},
+    onToggleChrome: () -> Unit = {},
+) {
+    val density = LocalDensity.current.density
+    val measurer = remember(density) { AndroidTextMeasurer(density) }
+    val viewModel = remember(loader, measurer) {
+        TextReaderViewModel(loader, annotationStore, measurer)
+    }
+    var readerView by remember { mutableStateOf<ReaderView?>(null) }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val heightPx = constraints.maxHeight.toFloat()
+        LaunchedEffect(widthPx, heightPx, initialLocation, scrolled, fontScale, layoutOptions) {
+            if (widthPx <= 0f || heightPx <= 0f) return@LaunchedEffect
+            viewModel.setViewport(widthPx, heightPx)
+            viewModel.setLayoutOptions(layoutOptions)
+            viewModel.setRenderMode(if (scrolled) PageRenderMode.SCROLL else PageRenderMode.PAGED)
+            viewModel.open(initialLocation)
+            if (fontScale != 1f) viewModel.setFontScale(fontScale)
+            readerView = viewModel.readerView()
+            onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
+        }
+
+        androidx.compose.runtime.DisposableEffect(viewModel) {
+            onDispose { viewModel.close() }
+        }
+
+        androidx.compose.runtime.DisposableEffect(viewModel, control, loader) {
+            fun syncAfterNav() {
+                readerView = viewModel.readerView()
+                onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
+            }
+            control?.goPrevious = { viewModel.goPrevious(); syncAfterNav() }
+            control?.goNext = { viewModel.goNext(); syncAfterNav() }
+            control?.jumpTo = { loc ->
+                viewModel.open(loc)
+                syncAfterNav()
+            }
+            control?.chapterLabel = {
+                ChapterLoaderProgress.chapterBarLabel(loader, viewModel.currentLocation.chapterId)
+            }
+            control?.currentChapterId = { viewModel.currentLocation.chapterId }
+            onDispose {
+                control?.goPrevious = {}
+                control?.goNext = {}
+                control?.jumpTo = {}
+                control?.chapterLabel = { "" }
+                control?.currentChapterId = { "" }
+                control?.selectionLocation = null
+                control?.selectionText = ""
+            }
+        }
+
+        val view = readerView
+        var pageImages by remember { mutableStateOf<Map<String, android.graphics.Bitmap?>>(emptyMap()) }
+        LaunchedEffect(view, loader) {
+            val v = view ?: run {
+                pageImages = emptyMap()
+                return@LaunchedEffect
+            }
+            val imageLines = when (v.mode) {
+                PageRenderMode.PAGED -> v.layout.lines.filter { it.page == v.page && it.imageSrc != null }
+                PageRenderMode.SCROLL -> v.layout.lines.filter { it.imageSrc != null }
+            }
+            if (imageLines.isEmpty()) {
+                pageImages = emptyMap()
+                return@LaunchedEffect
+            }
+            pageImages = withContext(Dispatchers.IO) { loader.loadInlineImages(imageLines) }
+        }
+        if (view == null) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center))
+        } else when (view.mode) {
+            PageRenderMode.PAGED -> {
+                val highlights = NativeNoteHighlights.blockColorsForPage(
+                    notesForHighlights,
+                    view.layout,
+                    view.page,
+                )
+                TextPageView(
+                    view = view,
+                    canGoNext = view.hasNextPage || viewModel.hasNextChapter(),
+                    canGoPrevious = view.hasPrevPage || viewModel.hasPreviousChapter(),
+                    highlightBlockColors = highlights,
+                    pageImages = pageImages,
+                    onLongPressLine = { line ->
+                        control?.selectionText = line.text
+                        control?.selectionLocation = TextLocation(
+                            viewModel.currentLocation.chapterId,
+                            line.start,
+                            line.end,
+                        )
+                        onLineSelected()
+                    },
+                    onPageTurn = { forward ->
+                        if (forward) viewModel.goNext() else viewModel.goPrevious()
+                        readerView = viewModel.readerView()
+                        onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
+                    },
+                    onToggleChrome = onToggleChrome,
+                )
+            }
+            PageRenderMode.SCROLL -> {
+                val scrollHighlights = NativeNoteHighlights.blockColorsForLayout(
+                    notesForHighlights,
+                    view.layout,
+                )
+                TextScrollView(
+                    view = view,
+                    highlightBlockColors = scrollHighlights,
+                    pageImages = pageImages,
+                    onLongPressLine = { line ->
+                        control?.selectionText = line.text
+                        control?.selectionLocation = TextLocation(
+                            viewModel.currentLocation.chapterId,
+                            line.start,
+                            line.end,
+                        )
+                        onLineSelected()
+                    },
+                )
+            }
+        }
+    }
+}

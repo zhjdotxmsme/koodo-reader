@@ -88,6 +88,17 @@ import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.LayoutPosition
 import com.koodoreader.engine.layout.PaginatorOptions
+import com.koodoreader.engine.layout.reader.ChapterLoader
+import com.koodoreader.engine.layout.reader.TextLocation
+import com.koodoreader.reader.reader.ChapterLoaderProgress
+import com.koodoreader.reader.reader.FormatChapterLoaders
+import com.koodoreader.reader.reader.IncrementalBookSearch
+import com.koodoreader.reader.reader.NativeTextReaderScreen
+import com.koodoreader.reader.reader.NoOpAnnotationStore
+import com.koodoreader.reader.reader.RoomNoteAnnotationStore
+import com.koodoreader.reader.reader.TextSearchHit
+import com.koodoreader.reader.reader.TextReaderScreenControl
+import kotlinx.coroutines.flow.take
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
 import com.koodoreader.reader.shell.ReaderFeatureState
@@ -217,6 +228,12 @@ fun NativeEpubScreen(
     }
     val format = book?.format?.lowercase()
     val useFoliate = ReaderEnginePolicy.useFoliate(format, BuildConfig.READER_ENGINE)
+    val useNativeTextReader = ReaderEnginePolicy.useChapterLoaderCanvas(format, BuildConfig.READER_ENGINE)
+    var chapterLoader by remember { mutableStateOf<ChapterLoader?>(null) }
+    var nativeInitialLocation by remember { mutableStateOf(TextLocation("", 0)) }
+    var nativeCurrentLocation by remember { mutableStateOf(TextLocation("", 0)) }
+    var nativeChapterBar by remember { mutableStateOf("") }
+    val textReaderControl = remember { TextReaderScreenControl() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var foliateCfi by remember { mutableStateOf("") }
     var foliateFraction by remember { mutableStateOf(0.0) }
@@ -344,8 +361,10 @@ fun NativeEpubScreen(
     // UI 线程保持响应，分页期间显示进度条，session 落地后首帧渲染页面。
     // 旧 session 在新 session 替换时关闭，避免归档句柄泄漏。
     var session by remember { mutableStateOf<ReaderSession?>(null) }
+    var epubLayoutRevision by remember { mutableIntStateOf(0) }
     var opening by remember { mutableStateOf(true) }
     var openError by remember { mutableStateOf<String?>(null) }
+    var expandingEpub by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
     // openKey 变化（翻页不触发；旋转/字号/换文件触发）→ 重新分页。
@@ -362,8 +381,14 @@ fun NativeEpubScreen(
             features.fontKey,
         ),
     )
-    LaunchedEffect(openKey) {
-        if (useFoliate) return@LaunchedEffect
+    LaunchedEffect(openKey, useNativeTextReader) {
+        if (useFoliate || useNativeTextReader) {
+            if (useNativeTextReader) {
+                session?.close()
+                session = null
+            }
+            return@LaunchedEffect
+        }
         val (f, vp, rest) = openKey
         val fmt = rest[0] as String?
         if (f == null || vp.width == 0 || vp.height == 0 || fmt == null) {
@@ -395,6 +420,7 @@ fun NativeEpubScreen(
                         marginHorizontalPx = margin,
                         marginVerticalPx = margin,
                     ),
+                    progressiveEpub = fmt.equals("epub", ignoreCase = true),
                 )
             }
         }
@@ -410,6 +436,53 @@ fun NativeEpubScreen(
             session = null
         }
         opening = false
+    }
+
+    LaunchedEffect(openKey, useNativeTextReader, initialCfi, book?.key) {
+        if (!useNativeTextReader) {
+            chapterLoader?.close()
+            chapterLoader = null
+            return@LaunchedEffect
+        }
+        val (f, vp, rest) = openKey
+        val fmt = rest[0] as String?
+        if (f == null || vp.width == 0 || vp.height == 0 || fmt == null) {
+            chapterLoader?.close()
+            chapterLoader = null
+            opening = false
+            return@LaunchedEffect
+        }
+        opening = true
+        openError = null
+        val prevLoader = chapterLoader
+        val opened = withContext(Dispatchers.IO) {
+            runCatching {
+                FormatChapterLoaders.open(fmt, f)
+            }
+        }
+        opened.exceptionOrNull()?.let { err ->
+            AppLog.e("NativeEpub", "chapter loader open failed: ${f.name}", err)
+            openError = err.message ?: err.javaClass.simpleName
+        }
+        val loader = opened.getOrNull()
+        if (loader != null) {
+            prevLoader?.close()
+            chapterLoader = loader
+            val resume = initialCfi?.takeIf { it.isNotBlank() }
+                ?: book?.key?.let { progressPrefs.cfiOf(it) }
+            nativeInitialLocation = ChapterLoaderProgress.initialLocation(loader, resume)
+            nativeChapterBar = ChapterLoaderProgress.chapterBarLabel(
+                loader,
+                nativeInitialLocation.chapterId,
+            )
+        } else {
+            chapterLoader = null
+        }
+        opening = false
+    }
+
+    DisposableEffect(chapterLoader) {
+        onDispose { chapterLoader?.close() }
     }
 
     LaunchedEffect(foliateBridge, file, format, initialCfi, useFoliate) {
@@ -455,6 +528,7 @@ fun NativeEpubScreen(
         }
         opening = false
     }
+
     DisposableEffect(foliateBridge, file) {
         onDispose {
             foliateBridge?.close()
@@ -471,13 +545,57 @@ fun NativeEpubScreen(
 
     val currentPageState = remember { mutableIntStateOf(0) }
     var currentPage by currentPageState
+
+    // Canvas EPUB：首章快开 → 后台按批补章；CFI 锚点保持当前页，并尽早恢复书签/进度 CFI。
+    LaunchedEffect(session, openKey, useFoliate, initialCfi, book?.key) {
+        if (useFoliate) return@LaunchedEffect
+        val epub = session as? EpubBookSession ?: return@LaunchedEffect
+        if (epub.isFullyLoaded) {
+            expandingEpub = false
+            return@LaunchedEffect
+        }
+        val targetCfi = initialCfi?.takeIf { it.isNotBlank() }
+            ?: book?.key?.let { progressPrefs.cfiOf(it) }
+        expandingEpub = true
+        while (!epub.isFullyLoaded) {
+            if (targetCfi != null) {
+                val jump = withContext(Dispatchers.IO) { epub.pageForCfi(targetCfi) }
+                if (jump != null) {
+                    currentPage = jump.coerceIn(0, (epub.pageCount - 1).coerceAtLeast(0))
+                }
+            }
+            val anchorCfi = withContext(Dispatchers.IO) {
+                epub.cfiForPage(currentPageState.intValue)
+            }
+            val more = withContext(Dispatchers.IO) {
+                epub.expandRemaining(batchSize = 6)
+            }
+            epubLayoutRevision = epub.layoutRevision()
+            if (anchorCfi != null) {
+                val restored = withContext(Dispatchers.IO) { epub.pageForCfi(anchorCfi) }
+                if (restored != null) {
+                    currentPage = restored.coerceIn(0, (epub.pageCount - 1).coerceAtLeast(0))
+                }
+            }
+            if (!more) break
+        }
+        if (targetCfi != null) {
+            withContext(Dispatchers.IO) { epub.pageForCfi(targetCfi) }?.let { pg ->
+                currentPage = pg.coerceIn(0, (epub.pageCount - 1).coerceAtLeast(0))
+            }
+        }
+        expandingEpub = false
+    }
+
     // 打开恢复：优先用 initialCfi（笔记跳转），否则按上次位置 CFI 落页（无进度 → 第 0 页）。
     // P9-anr (round-2): resumePage 是**扫描全书找目标 CFI → 页**，几百页的书
     // 在主线程跑会再次 ANR — 与 session.open 同理，放 IO。
-    LaunchedEffect(session) {
+    LaunchedEffect(session, epubLayoutRevision) {
+        val s = session ?: return@LaunchedEffect
+        if (s is EpubBookSession && !s.isFullyLoaded) return@LaunchedEffect
         val target = initialCfi?.takeIf { it.isNotBlank() }
             ?: book?.key?.let { progressPrefs.cfiOf(it) }
-        val pg = withContext(Dispatchers.IO) { session?.resumePage(target) } ?: 0
+        val pg = withContext(Dispatchers.IO) { s.resumePage(target) } ?: 0
         currentPage = pg
     }
     // 翻页写回进度（位置 CFI；与桌面 recordLocation 同一寻址格式）。
@@ -491,18 +609,24 @@ fun NativeEpubScreen(
         }
     }
 
-    val pageCount = session?.pageCount ?: 0
-    DisposableEffect(foliateBridge, useFoliate, pageCount) {
+    val pageCount = remember(session, epubLayoutRevision) { session?.pageCount ?: 0 }
+    DisposableEffect(foliateBridge, useFoliate, useNativeTextReader, pageCount) {
         ReaderPageTurn.bind { gesture ->
             when (gesture) {
                 ReaderPageGesture.PREV_PAGE -> {
-                    if (useFoliate) foliateBridge?.prevPage()
-                    else if (currentPageState.intValue > 0) currentPageState.intValue--
+                    when {
+                        useFoliate -> foliateBridge?.prevPage()
+                        useNativeTextReader -> textReaderControl.goPrevious()
+                        currentPageState.intValue > 0 -> currentPageState.intValue--
+                    }
                     true
                 }
                 ReaderPageGesture.NEXT_PAGE -> {
-                    if (useFoliate) foliateBridge?.nextPage()
-                    else if (currentPageState.intValue < pageCount - 1) currentPageState.intValue++
+                    when {
+                        useFoliate -> foliateBridge?.nextPage()
+                        useNativeTextReader -> textReaderControl.goNext()
+                        currentPageState.intValue < pageCount - 1 -> currentPageState.intValue++
+                    }
                     true
                 }
                 else -> false
@@ -521,6 +645,10 @@ fun NativeEpubScreen(
     // readerScope 由 Composition 持有，离开 Composition (Activity finish 或导航离开)
     // 时自动取消 —— 避免 Activity 泄漏与配置变更 (旋转/字号) 时协程错过取消时机。
     val readerScope = rememberCoroutineScope()
+    val nativeAnnotationStore = remember(chapterLoader, bookKey, readerScope) {
+        val loader = chapterLoader ?: return@remember null
+        RoomNoteAnnotationStore(bookKey, loader, db.noteDao(), readerScope)
+    }
     LaunchedEffect(pendingFootnoteHref) {
         val href = pendingFootnoteHref ?: return@LaunchedEffect
         if (href.isBlank()) return@LaunchedEffect
@@ -608,10 +736,22 @@ fun NativeEpubScreen(
     }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
+    var nativeSearchHits by remember { mutableStateOf<List<TextSearchHit>>(emptyList()) }
 
     fun doSearch() {
         val q = searchQuery.trim()
         if (q.isEmpty()) return
+        if (useNativeTextReader) {
+            val loader = chapterLoader ?: return
+            readerScope.launch {
+                nativeSearchHits = withContext(Dispatchers.Default) {
+                    val hits = mutableListOf<TextSearchHit>()
+                    IncrementalBookSearch.search(q, loader).take(30).collect { hits += it }
+                    hits
+                }
+            }
+            return
+        }
         if (useFoliate) {
             readerScope.launch {
                 foliateSearchHits = withContext(Dispatchers.IO) {
@@ -636,6 +776,12 @@ fun NativeEpubScreen(
         val target = hit.cfi.ifBlank { hit.href }
         if (target.isBlank()) return
         readerScope.launch(Dispatchers.IO) { runCatching { foliateBridge?.goTo(target) } }
+        showSearch = false
+    }
+
+    fun jumpToNativeSearchHit(hit: TextSearchHit) {
+        nativeInitialLocation = TextLocation(hit.chapterId, hit.start)
+        textReaderControl.jumpTo(nativeInitialLocation)
         showSearch = false
     }
 
@@ -688,6 +834,58 @@ fun NativeEpubScreen(
     }
 
     fun startTts() {
+        if (useNativeTextReader) {
+            val loader = chapterLoader ?: return
+            val chapterId = nativeCurrentLocation.chapterId.ifBlank { return }
+            if (connectedTtsSvc == null) {
+                context.bindService(
+                    android.content.Intent(context, ForegroundTtsService::class.java),
+                    ttsServiceConn,
+                    android.content.Context.BIND_AUTO_CREATE,
+                )
+            }
+            ttsScope.launch {
+                val chapterText = ReaderPurifiedText.plain(
+                    withContext(Dispatchers.IO) {
+                        loader.load(chapterId).blocks.joinToString("\n") { it.text }
+                    },
+                    features.textRulesJson,
+                )
+                if (chapterText.isBlank()) return@launch
+                for (i in 0 until 30) { if (connectedTtsSvc != null) break; delay(100) }
+                val svc = connectedTtsSvc ?: return@launch
+                val label = ChapterLoaderProgress.chapterBarLabel(loader, chapterId)
+                svc.setHostCommandListener { cmd ->
+                    if (cmd == TtsMediaCommand.NEXT) {
+                        readerScope.launch {
+                            delay(300)
+                            textReaderControl.goNext()
+                            val nextId = textReaderControl.currentChapterId()
+                            if (nextId.isBlank()) return@launch
+                            val nextText = ReaderPurifiedText.plain(
+                                withContext(Dispatchers.IO) {
+                                    loader.load(nextId).blocks.joinToString("\n") { it.text }
+                                },
+                                features.textRulesJson,
+                            )
+                            if (nextText.isNotBlank()) {
+                                svc.loadChapter(
+                                    bookKey,
+                                    book?.name ?: "",
+                                    ChapterLoaderProgress.chapterBarLabel(loader, nextId),
+                                    nextText,
+                                )
+                                svc.play()
+                            }
+                        }
+                    }
+                }
+                svc.loadChapter(bookKey, book?.name ?: "", label, chapterText)
+                svc.play()
+                showTtsControl = true
+            }
+            return
+        }
         val s = session ?: return
         val chapterIdx = (0 until s.chapterCount)
             .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
@@ -744,6 +942,11 @@ fun NativeEpubScreen(
 
     fun currentSelectionCfi(): String {
         if (selectionCfi.isNotBlank()) return selectionCfi
+        if (useNativeTextReader) {
+            val loc = textReaderControl.selectionLocation ?: return ""
+            val loader = chapterLoader ?: return ""
+            return ChapterLoaderProgress.cfiForLocation(loader, loc).orEmpty()
+        }
         val line = selectedLine ?: return if (useFoliate) foliateCfi else ""
         return CfiAddressing.toCfi(LayoutPosition(
             line.position.spineIndex,
@@ -752,8 +955,12 @@ fun NativeEpubScreen(
         ))
     }
 
-    fun currentSelectionText(): String =
-        selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
+    fun currentSelectionText(): String {
+        if (useNativeTextReader && textReaderControl.selectionText.isNotBlank()) {
+            return textReaderControl.selectionText
+        }
+        return selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
+    }
 
     fun highlightCss(color: Long): String = when (color) {
         0x9988FF88L -> "#88ff88"
@@ -767,6 +974,14 @@ fun NativeEpubScreen(
         if (excerpt.isEmpty()) return
         val colors = listOf(0x99FFFFL, 0x9988FF88L, 0x99FFAAFFL, 0x99AACCFFL)
         val color = if (colorIdx < colors.size) colors[colorIdx] else 0x99FFFFL
+        if (useNativeTextReader) {
+            val loc = textReaderControl.selectionLocation ?: return
+            nativeAnnotationStore?.saveHighlight(bookKey, loc, color)
+            showSelectionMenu = false
+            textReaderControl.selectionLocation = null
+            textReaderControl.selectionText = ""
+            return
+        }
         val cfi = currentSelectionCfi()
         val s = session
         val chapterIdx = if (s != null) {
@@ -809,6 +1024,10 @@ fun NativeEpubScreen(
             val notes = db.noteDao().observeForBook(bookKey).first()
             val target = notes.firstOrNull { it.cfi == cfi }
             target?.let { db.noteDao().deleteByKey(it.key) }
+            if (useNativeTextReader) {
+                textReaderControl.selectionLocation = null
+                textReaderControl.selectionText = ""
+            }
             if (useFoliate) {
                 withContext(Dispatchers.IO) {
                     runCatching { foliateBridge?.removeHighlight(cfi) }
@@ -1002,8 +1221,9 @@ fun NativeEpubScreen(
             }
         }
     }
-    val chapterInfo = remember(session, currentPage) {
-        session?.let { s ->
+    val chapterInfo = remember(session, currentPage, useNativeTextReader, nativeChapterBar) {
+        if (useNativeTextReader) nativeChapterBar
+        else session?.let { s ->
             // P9-anr (round-3): 原实现 O(chapters×log pages)（每次 currentPage
             // 变更都 lastOrNull 扫描）；现用 PagedDocumentSession.chapterOf
             // 一次 O(log chapters) binary search。
@@ -1012,6 +1232,17 @@ fun NativeEpubScreen(
                           .lastOrNull { c -> s.pageOfChapter(c) <= currentPage } ?: 0
             "c ${idx + 1}/${s.chapterCount} · ${s.chapterLabel(idx)}"
         } ?: ""
+    }
+
+    val canvasLayoutOptions = remember(features) {
+        val margin = ReaderFeatureCodec.clampedMargin(features)
+        PaginatorOptions(
+            columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
+            fontSizePx = ReaderFeatureCodec.fontSizePx(features),
+            lineHeightMultiple = ReaderFeatureCodec.clampedLineHeight(features),
+            marginHorizontalPx = margin,
+            marginVerticalPx = margin,
+        )
     }
 
     MaterialTheme(colorScheme = ThemeSpecBridge.readerScheme(readerPreset)) {
@@ -1155,7 +1386,7 @@ fun NativeEpubScreen(
             }
         },
         bottomBar = {
-            if (showChrome && (pageCount > 0 || (useFoliate && foliateReady))) {
+            if (showChrome && (pageCount > 0 || (useFoliate && foliateReady) || (useNativeTextReader && chapterLoader != null))) {
                 Surface(tonalElevation = 2.dp) {
                     Row(
                         modifier = Modifier
@@ -1167,6 +1398,8 @@ fun NativeEpubScreen(
                             val pct = (foliateFraction * 100).toInt().coerceIn(0, 100)
                             val label = foliateToc.firstOrNull { it.href.isNotBlank() }?.label.orEmpty()
                             listOf(label, "$pct%").filter { it.isNotBlank() }.joinToString(" · ")
+                        } else if (useNativeTextReader) {
+                            chapterInfo.ifBlank { t("Reading") }
                         } else {
                             "$chapterInfo · p ${currentPage + 1}/$pageCount"
                         }
@@ -1232,6 +1465,50 @@ fun NativeEpubScreen(
                         }
                     }
                 }
+                useNativeTextReader && chapterLoader != null -> {
+                    NativeTextReaderScreen(
+                        loader = chapterLoader!!,
+                        initialLocation = nativeInitialLocation,
+                        scrolled = features.scrolled,
+                        fontScale = fontScale,
+                        layoutOptions = canvasLayoutOptions,
+                        annotationStore = nativeAnnotationStore ?: NoOpAnnotationStore,
+                        notesForHighlights = bookNotes,
+                        control = textReaderControl,
+                        onLocationChanged = { loc, frame ->
+                            val loader = chapterLoader ?: return@NativeTextReaderScreen
+                            nativeCurrentLocation = loc
+                            nativeChapterBar = ChapterLoaderProgress.chapterBarLabel(loader, loc.chapterId)
+                            val key = book?.key ?: return@NativeTextReaderScreen
+                            val f = frame ?: return@NativeTextReaderScreen
+                            ChapterLoaderProgress.cfiForFrame(loader, f)?.let { cfi ->
+                                val frac = ChapterLoaderProgress.progressFraction(loader, loc.chapterId)
+                                progressPrefs.save(key, cfi, frac)
+                            }
+                        },
+                        onLineSelected = { showSelectionMenu = true },
+                        onToggleChrome = { showChrome = !showChrome },
+                    )
+                }
+                useNativeTextReader && opening && file != null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(t("Loading"), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+                useNativeTextReader && chapterLoader == null -> Text(
+                    if (file == null) {
+                        "Book file unavailable on device."
+                    } else {
+                        val detail = openError?.let { "\n($it)" } ?: ""
+                        "Could not open this book.$detail"
+                    },
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                )
                 session == null && viewport == IntSize.Zero -> Unit // 首帧：等尺寸
                 session == null && opening && file != null -> Box(
                     modifier = Modifier.fillMaxSize(),
@@ -1259,6 +1536,20 @@ fun NativeEpubScreen(
                         .padding(24.dp),
                 )
                 else -> Box(Modifier.fillMaxSize()) {
+                    if (expandingEpub) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(8.dp),
+                            tonalElevation = 2.dp,
+                        ) {
+                            Text(
+                                t("Loading"),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1743,7 +2034,28 @@ fun NativeEpubScreen(
                                 )
                             }
                         }
-                    } else if (searchResults.isEmpty()) {
+                    } else if (useNativeTextReader && nativeSearchHits.isNotEmpty()) {
+                        Text("${nativeSearchHits.size}", style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.height(4.dp))
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp),
+                        ) {
+                            items(nativeSearchHits) { hit ->
+                                Text(
+                                    hit.excerpt,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { jumpToNativeSearchHit(hit) }
+                                        .padding(vertical = 6.dp),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    } else if (searchResults.isEmpty() && nativeSearchHits.isEmpty()) {
                         Text(
                             t("Search in book"),
                             style = MaterialTheme.typography.bodySmall,

@@ -4,8 +4,9 @@ package com.koodoreader.reader.epubhost
  * Which reflow path NativeEpubScreen takes.
  *
  * Default is the visible foliate-js WebView. `-Preader=canvas` (see
- * [com.koodoreader.reader.BuildConfig.READER_ENGINE]) keeps the Canvas
- * [ReaderSessionFactory] path for tests and rollback.
+ * [com.koodoreader.reader.BuildConfig.READER_ENGINE]) uses
+ * [com.koodoreader.reader.reader.NativeTextReaderScreen] + [ChapterLoader]
+ * (legacy [ReaderSessionFactory] Canvas remains for non–chapter-loader rollback builds).
  */
 object ReaderEnginePolicy {
 
@@ -14,4 +15,12 @@ object ReaderEnginePolicy {
 
     fun useFoliate(format: String?, engine: String = FOLIATE): Boolean =
         FoliateFormats.usesHost(format) && engine != CANVAS
+
+    /** Canvas path: [ChapterLoader] + [com.koodoreader.reader.reader.NativeTextReaderScreen]. */
+    fun useChapterLoaderCanvas(format: String?, engine: String = FOLIATE): Boolean {
+        if (useFoliate(format, engine)) return false
+        if (engine != CANVAS) return false
+        val ext = format?.trim()?.lowercase() ?: return false
+        return ext in ReaderSessionFactory.formats
+    }
 }

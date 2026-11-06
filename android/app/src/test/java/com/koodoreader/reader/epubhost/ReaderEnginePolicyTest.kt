@@ -21,4 +21,11 @@ class ReaderEnginePolicyTest {
         assertFalse(ReaderEnginePolicy.useFoliate("txt", ReaderEnginePolicy.CANVAS))
         assertTrue(ReaderEnginePolicy.useFoliate("epub", ReaderEnginePolicy.FOLIATE))
     }
+
+    @Test
+    fun `canvas engine uses chapter loader path for reflowable imports`() {
+        assertTrue(ReaderEnginePolicy.useChapterLoaderCanvas("epub", ReaderEnginePolicy.CANVAS))
+        assertFalse(ReaderEnginePolicy.useChapterLoaderCanvas("epub", ReaderEnginePolicy.FOLIATE))
+        assertFalse(ReaderEnginePolicy.useChapterLoaderCanvas("pdf", ReaderEnginePolicy.CANVAS))
+    }
 }
