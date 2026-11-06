@@ -132,6 +132,49 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         recentBooks.markOpened(bookKey, System.currentTimeMillis())
     }
 
+    // ------------------------------------------------------------------
+    // Multi-select editing (domain plan T2): selection is session state,
+    // delete reuses the trash flow, move goes through BookFileMover so a
+    // failed Room write rolls the file back.
+    // ------------------------------------------------------------------
+
+    private val _selection = MutableStateFlow(LibrarySelection())
+    val selection: StateFlow<LibrarySelection> = _selection
+
+    fun toggleSelection(key: String) {
+        _selection.value = _selection.value.toggle(key)
+    }
+
+    fun selectAllVisible() {
+        _selection.value = _selection.value.selectAll(libraryBooks.value.map { it.key })
+    }
+
+    fun clearSelection() {
+        _selection.value = _selection.value.clear()
+    }
+
+    fun deleteSelected() {
+        _selection.value.selected.toList().forEach(::moveToTrash)
+        clearSelection()
+    }
+
+    fun moveSelectedTo(targetDir: File) {
+        val keys = _selection.value.selected.toList()
+        if (keys.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val booksDir = File(getApplication<Application>().filesDir, "books")
+            keys.forEach { key ->
+                val book = db.bookDao().getByKey(key) ?: return@forEach
+                runCatching {
+                    BookFileMover.moveAndUpdate(book, targetDir, booksDir) { moved ->
+                        kotlinx.coroutines.runBlocking { db.bookDao().upsert(moved) }
+                    }
+                }
+            }
+            clearSelection()
+        }
+    }
+
     fun setSortField(field: SortField) {
         val cur = _shelf.value.sort
         if (cur.field == field) {

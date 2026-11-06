@@ -78,6 +78,7 @@ fun LibraryScreen(
 ) {
     val books by viewModel.libraryBooks.collectAsStateWithLifecycle()
     val shelf by viewModel.shelf.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val metadataState by metadataViewModel.state.collectAsStateWithLifecycle()
     val treeLauncher = rememberLauncherForActivityResult(
@@ -95,6 +96,9 @@ fun LibraryScreen(
     var newShelfTitle by remember { mutableStateOf("") }
     var shelfPickKey by remember { mutableStateOf<String?>(null) }
     var metadataBookKey by remember { mutableStateOf<String?>(null) }
+    var moveDialogOpen by remember { mutableStateOf(false) }
+    var moveFolderName by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val gridState = rememberLazyGridState()
     var draggingKey by remember { mutableStateOf<String?>(null) }
@@ -106,6 +110,25 @@ fun LibraryScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            if (selection.active) {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = viewModel::clearSelection) {
+                            Icon(Icons.Default.Close, contentDescription = t("Cancel"))
+                        }
+                    },
+                    title = { Text("${selection.selected.size}") },
+                    actions = {
+                        TextButton(onClick = viewModel::selectAllVisible) { Text(t("Select all")) }
+                        TextButton(onClick = { moveDialogOpen = true }) { Text(t("Move")) }
+                        TextButton(onClick = viewModel::deleteSelected) { Text(t("Delete")) }
+                    },
+                )
+            } else {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -214,6 +237,7 @@ fun LibraryScreen(
                     }
                 },
             )
+            }
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
@@ -339,11 +363,15 @@ fun LibraryScreen(
                                 metadataViewModel.reset()
                                 metadataBookKey = book.key
                             },
+                            selectionActive = selection.active,
+                            selected = book.key in selection.selected,
+                            onToggleSelection = { viewModel.toggleSelection(book.key) },
                             onClick = {
                                 viewModel.markRecentOpened(book.key)
                                 onOpenBook(book.key)
                             },
-                            modifier = Modifier.pointerInput(book.key) {
+                            modifier = Modifier.pointerInput(book.key, selection.active) {
+                                if (selection.active) return@pointerInput
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggingKey = book.key },
                                     onDragEnd = { draggingKey = null },
@@ -388,6 +416,9 @@ fun LibraryScreen(
                                     metadataViewModel.reset()
                                     metadataBookKey = book.key
                                 },
+                                selectionActive = selection.active,
+                                selected = book.key in selection.selected,
+                                onToggleSelection = { viewModel.toggleSelection(book.key) },
                                 onClick = {
                                     viewModel.markRecentOpened(book.key)
                                     onOpenBook(book.key)
@@ -477,6 +508,37 @@ fun LibraryScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { shelfPickKey = null }) { Text(t("Cancel")) }
+            },
+        )
+    }
+    if (moveDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { moveDialogOpen = false },
+            title = { Text(t("Move to folder")) },
+            text = {
+                OutlinedTextField(
+                    value = moveFolderName,
+                    onValueChange = { moveFolderName = it },
+                    singleLine = true,
+                    label = { Text(t("Folder")) },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = moveFolderName.trim().trim('/', '\\')
+                        if (name.isNotEmpty() && !name.contains("..")) {
+                            viewModel.moveSelectedTo(
+                                java.io.File(java.io.File(context.filesDir, "books"), name),
+                            )
+                        }
+                        moveFolderName = ""
+                        moveDialogOpen = false
+                    },
+                ) { Text(t("Confirm")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { moveDialogOpen = false }) { Text(t("Cancel")) }
             },
         )
     }

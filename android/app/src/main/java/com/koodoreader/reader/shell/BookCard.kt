@@ -1,8 +1,11 @@
 package com.koodoreader.reader.shell
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,6 +19,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookEntity
 import com.koodoreader.core.ui.component.BookCardModel
 import com.koodoreader.core.ui.component.KoodoBookCard
@@ -61,14 +65,17 @@ fun BookCard(
     onMoveToTrash: () -> Unit = {},
     onAddToShelf: () -> Unit = {},
     onShowDetails: () -> Unit = {},
+    selectionActive: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     KoodoBookCard(
         model = book.toCardModel(isFavorite),
         cover = rememberCoverPainter(book.cover, book.key, coverVersion),
-        onClick = onClick,
-        onLongClick = { menuOpen = true },
+        onClick = if (selectionActive) onToggleSelection else onClick,
+        onLongClick = if (selectionActive) onToggleSelection else ({ menuOpen = true }),
         // Was the hardcoded literal "Favorite", i.e. an untranslated string
         // exposed to TalkBack. Now routed through i18n; the key is added to
         // src/assets/locales/en.json with the rest of the W6a keys.
@@ -86,6 +93,10 @@ fun BookCard(
                     onClick = { onToggleFavorite(); menuOpen = false },
                 )
                 DropdownMenuItem(
+                    text = { Text(t("Select")) },
+                    onClick = { onToggleSelection(); menuOpen = false },
+                )
+                DropdownMenuItem(
                     text = { Text(t("Move to trash")) },
                     onClick = { onMoveToTrash(); menuOpen = false },
                 )
@@ -95,7 +106,17 @@ fun BookCard(
                 )
             }
         },
-        modifier = modifier,
+        modifier = modifier.then(
+            if (selected) {
+                Modifier.border(
+                    2.dp,
+                    MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(8.dp),
+                )
+            } else {
+                Modifier
+            },
+        ),
     )
 }
 
@@ -109,6 +130,9 @@ fun BookListRow(
     onMoveToTrash: (() -> Unit)? = null,
     onAddToShelf: (() -> Unit)? = null,
     onShowDetails: (() -> Unit)? = null,
+    selectionActive: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
@@ -118,8 +142,12 @@ fun BookListRow(
     KoodoBookRow(
         model = book.toCardModel(isFavorite),
         cover = rememberCoverPainter(book.cover, book.key, coverVersion),
-        onClick = onClick,
-        onLongClick = if (hasMenu) ({ menuOpen = true }) else ({}),
+        onClick = if (selectionActive) onToggleSelection else onClick,
+        onLongClick = when {
+            selectionActive -> onToggleSelection
+            hasMenu -> ({ menuOpen = true })
+            else -> ({})
+        },
         favoriteContentDescription = t("Favorite"),
         menu = if (hasMenu) ({
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -136,6 +164,10 @@ fun BookListRow(
                     onClick = { onToggleFavorite?.invoke(); menuOpen = false },
                 )
                 DropdownMenuItem(
+                    text = { Text(t("Select")) },
+                    onClick = { onToggleSelection(); menuOpen = false },
+                )
+                DropdownMenuItem(
                     text = { Text(t("Move to trash")) },
                     onClick = { onMoveToTrash?.invoke(); menuOpen = false },
                 )
@@ -145,7 +177,17 @@ fun BookListRow(
                 )
             }
         }) else ({}),
-        modifier = modifier,
+        modifier = modifier.then(
+            if (selected) {
+                Modifier.border(
+                    2.dp,
+                    MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(8.dp),
+                )
+            } else {
+                Modifier
+            },
+        ),
     )
 }
 
