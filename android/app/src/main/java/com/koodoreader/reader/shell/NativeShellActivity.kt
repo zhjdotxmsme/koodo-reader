@@ -38,19 +38,22 @@ class NativeShellActivity : ComponentActivity() {
     private val assetServer by lazy { LocalAssetServer(assets) }
 
     /**
-     * Applies the persisted AppThemeMode before inflation. Both branches use
-     * the SAME style name: the values/-night resource qualifier does the
-     * actual dark switching from the resolved uiMode, so no duplicate style
-     * is needed. The Compose side (KoodoTheme) live-recolors afterwards.
+     * Applies the persisted AppThemeMode before the Window is created.
+     * Overrides uiMode through a configuration context (NOT Activity.setTheme,
+     * which dereferences the not-yet-created Window and crashes on some ROMs);
+     * the values/-night resource qualifier then picks the matching
+     * windowBackground. The Compose side (KoodoTheme) live-recolors afterwards.
      */
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(newBase)
         val mode = ShellAppearancePrefs.readAppThemeModeSync(newBase)
-        val systemDark =
-            (newBase.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-        // Same style either way — kept explicit to document the intent.
-        setTheme(if (mode.darkThemeOf(systemDark)) R.style.Theme_KoodoReader else R.style.Theme_KoodoReader)
+        if (mode == AppThemeMode.SYSTEM) {
+            super.attachBaseContext(newBase)
+            return
+        }
+        val cfg = Configuration(newBase.resources.configuration)
+        cfg.uiMode = (cfg.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+            if (mode == AppThemeMode.DARK) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        super.attachBaseContext(newBase.createConfigurationContext(cfg))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

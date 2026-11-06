@@ -34,6 +34,7 @@
 - `:app:compileWebviewDebugKotlin` 通过（含 :core:ui / :core:designsystem / :core:data）。
 - `:core:designsystem:test` 全绿。
 - `:app:testWebviewDebugUnitTest`：315 项中 314 通过；唯一失败 `PdfReflowHighlightsTest` 为 `org.json.JSONObject not mocked` 环境型既有失败，与本次改动无交集。
+- 真机（PKT110）：`assembleNativeHostDebug`（`-Ptarget=native -PstripIsland=true`）安装并启动，原生存书架正常。**发现并修复一个启动崩溃**：`attachBaseContext` 里 `Activity.setTheme()` 在 Window 未创建时 NPE（OPlus ROM），改为 `createConfigurationContext` 覆写 uiMode。
 - 构建环境：`JAVA_HOME=D:\jdk-17\jdk-17.0.13+11`（AGP 8.2.2 需 JDK 17）。
 
 ## 新增 i18n key（en/zh-CN 已补译并同步，其余语言回退英文）
