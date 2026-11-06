@@ -69,6 +69,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db: KoodoDatabase = KoodoDatabaseProvider.get(app)
     private val prefs = LibraryPrefs(app)
+    private val recentBooks = RecentBooks(SharedRecentPrefs(app))
+    private val progressPrefs = ReaderProgressPrefs(app)
     private val importReconciliation = viewModelScope.async(Dispatchers.IO) {
         val booksDir = File(app.filesDir, "books")
         val rows = db.bookDao().observeAll().first()
@@ -103,7 +105,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val byKey = list.associateBy { it.key }
             val sortable = list.map { SortableBook(it.key, it.name, it.author, it.format) }
             val visible = LibraryLogic.visibleKeys(sortable, s.trashed)
-            var keys = LibraryLogic.sortedKeys(visible, s.sort, s.manualOrder)
+            var keys = LibraryLogic.sortedKeys(
+                visible,
+                s.sort,
+                s.manualOrder,
+                recentBooks.recentMillis(),
+            )
             if (s.favoritesOnly) keys = keys.filter { it in s.favorites }
             val shelfKeys = s.activeShelf?.let { s.shelves[it]?.toSet() }
             if (shelfKeys != null) keys = keys.filter { it in shelfKeys }
@@ -120,6 +127,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         combine(books, _shelf) { list, s ->
             list.filter { it.key in s.trashed }.sortedByDescending { it.key }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun markRecentOpened(bookKey: String) {
+        recentBooks.markOpened(bookKey, System.currentTimeMillis())
+    }
 
     fun setSortField(field: SortField) {
         val cur = _shelf.value.sort
@@ -202,6 +213,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         if (f.name.startsWith("$k.")) f.delete()
                     }
                     runCatching { coverStore.fileFor(k)?.delete() }
+                    progressPrefs.clear(k)
+                    recentBooks.remove(k)
                 }
             }
             updateShelf {

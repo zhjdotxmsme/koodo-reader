@@ -61,6 +61,7 @@ fun StatsRoute(
                     todayProvider = {
                         ReadingSessionWiring.localToday(System.currentTimeMillis())
                     },
+                    annotationStats = RoomAnnotationStatsStore(db.noteDao()),
                 )
             }
         }

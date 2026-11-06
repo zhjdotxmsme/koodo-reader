@@ -27,6 +27,8 @@ import com.koodoreader.reader.shell.ExternalBookOpener
 import com.koodoreader.reader.shell.ExternalOpenState
 import com.koodoreader.reader.shell.IntentRoutePolicy
 import com.koodoreader.reader.shell.NativeShellActivity
+import com.koodoreader.reader.shell.RecentBooks
+import com.koodoreader.reader.shell.SharedRecentPrefs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -346,10 +348,18 @@ class MainActivity : Activity() {
                 when (state) {
                     ExternalOpenState.Importing ->
                         AppLog.i(TAG, "importing external book: $uri")
-                    is ExternalOpenState.Open -> startActivity(
-                        Intent(this@MainActivity, NativeShellActivity::class.java)
-                            .putExtra(NativeShellActivity.EXTRA_BOOK_KEY, state.bookKey),
-                    )
+                    is ExternalOpenState.Open -> {
+                        RecentBooks(SharedRecentPrefs(application)).markOpened(
+                            state.bookKey,
+                            System.currentTimeMillis(),
+                        )
+                        startActivity(
+                            Intent(this@MainActivity, NativeShellActivity::class.java)
+                                .putExtra(NativeShellActivity.EXTRA_BOOK_KEY, state.bookKey)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                        )
+                        if (BuildConfig.NATIVE_SHELL) finish()
+                    }
                     is ExternalOpenState.Failed -> {
                         AppLog.w(TAG, "external import failed: ${state.message}")
                         toast(state.message)

@@ -99,7 +99,7 @@ fun BackupScreen(
 
         // ===================================================== per-type data
         Text(
-            t("Data export / import (CSV / JSON)"),
+            t("Data export / import (CSV / JSON / MD)"),
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
@@ -188,6 +188,11 @@ private fun DataExportRow(
             onClick = { onExport(BackupDataExportFormat.JSON) },
             enabled = enabled,
             label = { Text("JSON") },
+        )
+        AssistChip(
+            onClick = { onExport(BackupDataExportFormat.MD) },
+            enabled = enabled,
+            label = { Text("MD") },
         )
     }
 }

@@ -136,9 +136,8 @@
           launcher activity only for `-Ptarget=native` builds — the launcher
           entry is the activity-alias below whose target is selected by the
           `nativeLauncher` manifest placeholder (see app/build.gradle).
-          VIEW/SEND intent filters stay on MainActivity for now: opening books
-          from other apps still lands in the WebView track until the native
-          import pipeline (P1) and reader (P2) land.
+          External VIEW/SEND: webview track keeps filters on MainActivity; native
+          track merges src/native/AndroidManifest.xml → ExternalBookTrampolineActivity.
         -->
         <activity
             android:name=".shell.NativeShellActivity"

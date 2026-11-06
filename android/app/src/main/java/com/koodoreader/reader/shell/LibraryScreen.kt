@@ -339,7 +339,10 @@ fun LibraryScreen(
                                 metadataViewModel.reset()
                                 metadataBookKey = book.key
                             },
-                            onClick = { onOpenBook(book.key) },
+                            onClick = {
+                                viewModel.markRecentOpened(book.key)
+                                onOpenBook(book.key)
+                            },
                             modifier = Modifier.pointerInput(book.key) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggingKey = book.key },
@@ -385,7 +388,10 @@ fun LibraryScreen(
                                     metadataViewModel.reset()
                                     metadataBookKey = book.key
                                 },
-                                onClick = { onOpenBook(book.key) },
+                                onClick = {
+                                    viewModel.markRecentOpened(book.key)
+                                    onOpenBook(book.key)
+                                },
                                 modifier = Modifier.padding(
                                     horizontal = SpaceTokens.md.dp,
                                     vertical = SpaceTokens.sm.dp,

@@ -24,6 +24,7 @@ enum class SortField(val labelKey: String) {
     AUTHOR("Author"),
     FORMAT("Format"),
     ADDED("Sort by Date"),
+    LAST_READ("Recently read"),
 }
 
 data class SortSpec(val field: SortField, val ascending: Boolean) {
@@ -52,6 +53,7 @@ object LibraryLogic {
         books: List<SortableBook>,
         spec: SortSpec,
         manualOrder: List<String> = emptyList(),
+        recentMillis: Map<String, Long> = emptyMap(),
     ): List<String> {
         val base = books.asSortingBase()
         return when (spec.field) {
@@ -71,6 +73,12 @@ object LibraryLogic {
                 val c = compareBy<SortableBook> { it.key }
                 val sorted = if (spec.ascending) base.sortedWith(c) else base.sortedWith(c.reversed())
                 sorted.map { b -> b.key }
+            }
+            SortField.LAST_READ -> {
+                val c = compareByDescending<SortableBook> { recentMillis[it.key] ?: Long.MIN_VALUE }
+                    .thenBy { it.key }
+                val sorted = if (spec.ascending) base.sortedWith(c.reversed()) else base.sortedWith(c)
+                sorted.map { it.key }
             }
         }
     }
