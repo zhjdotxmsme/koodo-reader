@@ -37,6 +37,15 @@ data class ReaderFeatureState(
     val pdfCropMarginPx: Float = 0f,
     /** PDF text reflow (html from getTextContent) instead of bitmap pages. */
     val pdfReflow: Boolean = false,
+    /** Extra spacing between paragraphs in px (0 = default). */
+    val paragraphSpacingPx: Float = 0f,
+    /** Screen brightness 0..1; negative = follow the system setting. */
+    val brightness: Float = -1f,
+    val keepScreenOn: Boolean = false,
+    /** "system" | "portrait" | "landscape". */
+    val orientation: String = "system",
+    /** Custom page background ARGB; null = theme default. */
+    val customBackgroundArgb: Int? = null,
 )
 
 object ReaderFeatureCodec {
@@ -60,6 +69,17 @@ object ReaderFeatureCodec {
     const val KEY_PERF_TIER = "perfTier"
     const val KEY_PDF_CROP = "pdfCropMarginPx"
     const val KEY_PDF_REFLOW = "pdfReflow"
+    const val KEY_PARAGRAPH_SPACING = "paragraphSpacingPx"
+    const val KEY_BRIGHTNESS = "brightness"
+    const val KEY_KEEP_SCREEN_ON = "keepScreenOn"
+    const val KEY_ORIENTATION = "orientation"
+    const val KEY_CUSTOM_BACKGROUND = "customBackgroundArgb"
+
+    const val ORIENTATION_SYSTEM = "system"
+    const val ORIENTATION_PORTRAIT = "portrait"
+    const val ORIENTATION_LANDSCAPE = "landscape"
+    const val PARAGRAPH_SPACING_MIN = 0f
+    const val PARAGRAPH_SPACING_MAX = 48f
 
     const val FONT_SIZE_DEFAULT = 17f
     const val PDF_CROP_MIN = 0f
@@ -95,6 +115,13 @@ object ReaderFeatureCodec {
             ?: ReaderPerformancePolicy.TIER_NORMAL,
         pdfCropMarginPx = floatOf(map[KEY_PDF_CROP], 0f),
         pdfReflow = boolOf(map[KEY_PDF_REFLOW]),
+        paragraphSpacingPx = floatOf(map[KEY_PARAGRAPH_SPACING], 0f),
+        brightness = floatOf(map[KEY_BRIGHTNESS], -1f),
+        keepScreenOn = boolOf(map[KEY_KEEP_SCREEN_ON]),
+        orientation = map[KEY_ORIENTATION]?.takeIf {
+            it == ORIENTATION_PORTRAIT || it == ORIENTATION_LANDSCAPE
+        } ?: ORIENTATION_SYSTEM,
+        customBackgroundArgb = map[KEY_CUSTOM_BACKGROUND]?.toIntOrNull(),
     )
 
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
@@ -117,6 +144,11 @@ object ReaderFeatureCodec {
         KEY_PERF_TIER to state.perfTier,
         KEY_PDF_CROP to clampedPdfCrop(state).toString(),
         KEY_PDF_REFLOW to state.pdfReflow.toString(),
+        KEY_PARAGRAPH_SPACING to clampedParagraphSpacing(state).toString(),
+        KEY_BRIGHTNESS to state.brightness.toString(),
+        KEY_KEEP_SCREEN_ON to state.keepScreenOn.toString(),
+        KEY_ORIENTATION to state.orientation,
+        KEY_CUSTOM_BACKGROUND to state.customBackgroundArgb?.toString().orEmpty(),
     )
 
     fun userStylesheet(state: ReaderFeatureState): String =
@@ -139,6 +171,9 @@ object ReaderFeatureCodec {
 
     fun clampedPdfCrop(state: ReaderFeatureState): Float =
         state.pdfCropMarginPx.coerceIn(PDF_CROP_MIN, PDF_CROP_MAX)
+
+    fun clampedParagraphSpacing(state: ReaderFeatureState): Float =
+        state.paragraphSpacingPx.coerceIn(PARAGRAPH_SPACING_MIN, PARAGRAPH_SPACING_MAX)
 
     private fun floatOf(raw: String?, default: Float): Float =
         raw?.toFloatOrNull() ?: default

@@ -98,6 +98,8 @@ import com.koodoreader.reader.reader.NoOpAnnotationStore
 import com.koodoreader.reader.reader.RoomNoteAnnotationStore
 import com.koodoreader.reader.reader.TextSearchHit
 import com.koodoreader.reader.reader.TextReaderScreenControl
+import com.koodoreader.reader.reader.ReaderSettingsSheet
+import com.koodoreader.reader.reader.ReaderWindowController
 import kotlinx.coroutines.flow.take
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
@@ -367,6 +369,14 @@ fun NativeEpubScreen(
     var expandingEpub by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
+    var showReaderSettings by remember { mutableStateOf(false) }
+    val readerActivity = context as? android.app.Activity
+    DisposableEffect(readerActivity) {
+        onDispose { readerActivity?.let(ReaderWindowController::reset) }
+    }
+    LaunchedEffect(features.brightness, features.keepScreenOn, features.orientation) {
+        readerActivity?.let { ReaderWindowController.apply(it, features) }
+    }
     // openKey 变化（翻页不触发；旋转/字号/换文件触发）→ 重新分页。
     val openKey = Triple(
         file,
@@ -1313,6 +1323,13 @@ fun NativeEpubScreen(
                                     )
                                 }
                                 DropdownMenuItem(
+                                    text = { Text(t("Settings")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        showReaderSettings = true
+                                    },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("A−  ${(fontScale * 100).toInt()}%") },
                                     onClick = { setFontScale(fontScale - 0.1f) },
                                 )
@@ -2111,6 +2128,13 @@ fun NativeEpubScreen(
         )
     }
 
+    if (showReaderSettings) {
+        ReaderSettingsSheet(
+            state = features,
+            onChange = { commitFeatures(it) },
+            onDismiss = { showReaderSettings = false },
+        )
+    }
     if (showAppearance) {
         ReaderAppearanceSheet(
             selected = readerThemeKind,

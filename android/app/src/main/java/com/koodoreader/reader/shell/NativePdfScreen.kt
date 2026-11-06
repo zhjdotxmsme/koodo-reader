@@ -46,6 +46,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import com.koodoreader.reader.reader.ReaderWindowController
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,14 @@ fun NativePdfScreen(
     val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
     val featurePrefs = remember(context) { ReaderFeaturePrefs(context) }
     var features by remember { mutableStateOf(featurePrefs.load()) }
+
+    val readerActivity = context as? android.app.Activity
+    DisposableEffect(readerActivity) {
+        onDispose { readerActivity?.let(ReaderWindowController::reset) }
+    }
+    LaunchedEffect(features.brightness, features.keepScreenOn, features.orientation) {
+        readerActivity?.let { ReaderWindowController.apply(it, features) }
+    }
 
     // Books live in filesDir/books/<key>.<ext> (ReaderFiles.resolveBookFile);
     // Room's recorded path is authoritative when present.

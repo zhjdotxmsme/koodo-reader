@@ -127,4 +127,42 @@ class ReaderFeatureStateTest {
         assertEquals(2, ReaderFeatureCodec.clampedColumns(ReaderFeatureState(columnsPerPage = 2)))
         assertEquals(8, ReaderFeatureCodec.clampedColumns(ReaderFeatureState(columnsPerPage = 99)))
     }
+
+    @Test
+    fun `new reader settings survive codec round trip`() {
+        val state = ReaderFeatureState(
+            paragraphSpacingPx = 12f,
+            brightness = 0.4f,
+            keepScreenOn = true,
+            orientation = "landscape",
+            customBackgroundArgb = 0xFF223344.toInt(),
+        )
+        assertEquals(state, ReaderFeatureCodec.fromMap(ReaderFeatureCodec.toMap(state)))
+    }
+
+    @Test
+    fun `presentation defaults follow the system`() {
+        val state = ReaderFeatureCodec.fromMap(emptyMap())
+        assertEquals(-1f, state.brightness)
+        assertEquals(false, state.keepScreenOn)
+        assertEquals(ReaderFeatureCodec.ORIENTATION_SYSTEM, state.orientation)
+        assertEquals(null, state.customBackgroundArgb)
+        assertEquals(0f, state.paragraphSpacingPx)
+    }
+
+    @Test
+    fun `invalid orientation falls back to system`() {
+        val map = ReaderFeatureCodec.toMap(ReaderFeatureState()).toMutableMap()
+        map[ReaderFeatureCodec.KEY_ORIENTATION] = "diagonal"
+        assertEquals(
+            ReaderFeatureCodec.ORIENTATION_SYSTEM,
+            ReaderFeatureCodec.fromMap(map).orientation,
+        )
+    }
+
+    @Test
+    fun `paragraph spacing is clamped to its range`() {
+        assertEquals(0f, ReaderFeatureCodec.clampedParagraphSpacing(ReaderFeatureState(paragraphSpacingPx = -3f)))
+        assertEquals(48f, ReaderFeatureCodec.clampedParagraphSpacing(ReaderFeatureState(paragraphSpacingPx = 99f)))
+    }
 }
