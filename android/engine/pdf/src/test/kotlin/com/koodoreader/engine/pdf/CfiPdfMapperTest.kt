@@ -75,4 +75,22 @@ class CfiPdfMapperTest {
         val r = CfiPdfMapper.PdfRange(fingerprint = "ff", page = 5)
         assertEquals("/page(5)", CfiPdfMapper.pageStepCfi(r))
     }
+
+    @Test
+    fun reflowDocumentCoordSpaceRoundTrip() {
+        val r = CfiPdfMapper.PdfRange(
+            fingerprint = "ff",
+            page = 3,
+            x = 12f,
+            y = 88f,
+            width = 140f,
+            height = 22f,
+            reflowDocument = true,
+        )
+        val json = CfiPdfMapper.serialise(r)
+        assertTrue("\"coordSpace\":\"reflowDocument\"" in json, "got $json")
+        val parsed = CfiPdfMapper.parse(json)!!
+        assertTrue(parsed.reflowDocument)
+        assertEquals(r.y, parsed.y)
+    }
 }

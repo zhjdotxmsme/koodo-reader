@@ -27,6 +27,10 @@ data class StatsSummary(
     val todaySeconds: Long,
     val weekSeconds: Long,
     val monthSeconds: Long,
+    /** Monday-start calendar week through [today], not the rolling 7-day window. */
+    val calendarWeekSeconds: Long = 0,
+    /** 1st of the month through [today], not the rolling 30-day window. */
+    val calendarMonthSeconds: Long = 0,
 )
 
 /** One slice of the per-format reading-time ring chart. */
@@ -63,7 +67,18 @@ object StatsDomain {
         todaySeconds = sessions.filter { it.day == today }.sumOf { it.seconds.coerceAtLeast(0) },
         weekSeconds = inRange(sessions, StatsRange.SEVEN_DAYS, today).sumOf { it.seconds.coerceAtLeast(0) },
         monthSeconds = inRange(sessions, StatsRange.THIRTY_DAYS, today).sumOf { it.seconds.coerceAtLeast(0) },
+        calendarWeekSeconds = between(sessions, calendarWeekStart(today), today),
+        calendarMonthSeconds = between(sessions, IsoDay(today.year, today.month, 1), today),
     )
+
+    /** Monday through [today]. [IsoDay.dayOfWeek] is Sunday-first (0 = Sunday). */
+    fun calendarWeekStart(today: IsoDay): IsoDay {
+        val sinceMonday = if (today.dayOfWeek == 0) 6 else today.dayOfWeek - 1
+        return today.plusDays(-sinceMonday.toLong())
+    }
+
+    private fun between(sessions: List<ReadingSession>, from: IsoDay, to: IsoDay): Long =
+        sessions.filter { it.day >= from && it.day <= to }.sumOf { it.seconds.coerceAtLeast(0) }
 
     /** Inclusive window ending at [today] (7/30 days) or everything. */
     fun inRange(sessions: List<ReadingSession>, range: StatsRange, today: IsoDay): List<ReadingSession> {

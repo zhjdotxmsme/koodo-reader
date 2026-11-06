@@ -104,6 +104,14 @@ class FormatDetectorTest {
     }
 
     @Test
+    fun `azw3 extension keeps AZW3 when the PalmDB header is BOOKMOBI`() {
+        val mobi = ByteArray(68)
+        "BOOKMOBI".toByteArray().copyInto(mobi, destinationOffset = 60)
+        val detected = BookFormat.detect("book.azw3", null) { mobi.inputStream() }
+        assertEquals(FormatDetection.Supported(BookFormat.AZW3), detected)
+    }
+
+    @Test
     fun `detects mobi from the PalmDB header`() {
         val mobi = ByteArray(68)
         "BOOKMOBI".toByteArray().copyInto(mobi, destinationOffset = 60)

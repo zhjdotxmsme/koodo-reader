@@ -35,6 +35,14 @@ class StatsDistributionTest {
     }
 
     @Test
+    fun `summary includes calendar week and month buckets`() {
+        val sessions = listOf(session("a", 0, 90))
+        val summary = StatsDomain.summary(sessions, today)
+        assertEquals(90L, summary.calendarWeekSeconds)
+        assertEquals(90L, summary.calendarMonthSeconds)
+    }
+
+    @Test
     fun `range windows are inclusive and exclude future days`() {
         val sessions = listOf(
             session("a", 6, 10),

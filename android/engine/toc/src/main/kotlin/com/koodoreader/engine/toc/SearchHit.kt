@@ -17,6 +17,7 @@ package com.koodoreader.engine.toc
  *   empty string when the match is at the end of the chapter.
  * @property rank 0-based ordinal of this hit within the full result set returned
  *   by [SearchIndex.search].
+ * @property chapterTitle spine chapter label when known (from OPF/NCX).
  */
 data class SearchHit(
     val bookKey: String,
@@ -26,4 +27,5 @@ data class SearchHit(
     val matchedText: String,
     val contextAfter: String,
     val rank: Int,
+    val chapterTitle: String = "",
 )

@@ -35,6 +35,7 @@ class NativeTextSession(
             marginVerticalPx = options.marginVerticalPx,
             fontSizePx = options.fontSizePx,
             lineHeightMultiple = options.lineHeightMultiple,
+            paraSpacingPx = options.paraSpacingPx,
         )
         val layout = LayoutEngine(measurer, options).layout(document, tokens)
         viewportWidthPx = width

@@ -15,6 +15,7 @@ data class SortableBook(
     val name: String?,
     val author: String?,
     val format: String?,
+    val size: Long? = null,
 )
 
 /** [labelKey] is the desktop i18n key (react-i18next parity, see en.json). */
@@ -25,6 +26,7 @@ enum class SortField(val labelKey: String) {
     FORMAT("Format"),
     ADDED("Sort by Date"),
     LAST_READ("Recently read"),
+    SIZE("File size"),
 }
 
 data class SortSpec(val field: SortField, val ascending: Boolean) {
@@ -80,6 +82,7 @@ object LibraryLogic {
                 val sorted = if (spec.ascending) base.sortedWith(c.reversed()) else base.sortedWith(c)
                 sorted.map { it.key }
             }
+            SortField.SIZE -> base.sortedWith(longComparator(spec.ascending) { it.size }).map { it.key }
         }
     }
 
@@ -168,6 +171,21 @@ object LibraryLogic {
 
     private fun List<SortableBook>.asSortingBase(): List<SortableBook> =
         sortedBy { it.key } // stable chronological base for every comparator
+
+    /** Numeric field compare with nulls LAST in both directions. */
+    private inline fun longComparator(
+        ascending: Boolean,
+        crossinline selector: (SortableBook) -> Long?,
+    ): Comparator<SortableBook> = Comparator { a, b ->
+        val va = selector(a)
+        val vb = selector(b)
+        when {
+            va == null && vb == null -> 0
+            va == null -> 1
+            vb == null -> -1
+            else -> if (ascending) va.compareTo(vb) else vb.compareTo(va)
+        }
+    }
 
     /** Text field compare with nulls LAST in both directions; direction inside. */
     private inline fun textComparator(

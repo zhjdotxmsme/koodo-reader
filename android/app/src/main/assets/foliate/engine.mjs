@@ -429,6 +429,9 @@ export function createFoliateEngine(options) {
                     cfi: detail.cfi || '',
                     fraction: typeof detail.fraction === 'number' ? detail.fraction : 0,
                     label: (detail.tocItem && detail.tocItem.label) || '',
+                    pageLabel: (detail.pageItem && detail.pageItem.label) || '',
+                    locCurrent: detail.location && typeof detail.location.current === 'number' ? detail.location.current : -1,
+                    locTotal: detail.location && typeof detail.location.total === 'number' ? detail.location.total : 0,
                 };
                 try { host && host.onEvent('relocate', JSON.stringify(payload)); } catch (e) {}
             });

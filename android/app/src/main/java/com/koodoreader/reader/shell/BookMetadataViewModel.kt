@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.withContext
 
 sealed interface BookMetadataUiState {
@@ -32,7 +34,8 @@ class BookMetadataViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    saveBookMetadata(bookDao, bookKey, draft)
+                    val booksDir = File(getApplication<Application>().filesDir, "books")
+                    saveBookMetadata(bookDao, bookKey, draft, booksDir)
                 }
                 _state.value = BookMetadataUiState.Saved
             } catch (e: CancellationException) {
@@ -52,9 +55,29 @@ internal suspend fun saveBookMetadata(
     bookDao: BookDao,
     bookKey: String,
     draft: BookMetadata,
+    booksDir: File? = null,
 ): BookEntity {
     val latest = requireNotNull(bookDao.getByKey(bookKey)) { "Book not found" }
     val edited = BookMetadataEditor.validate(latest, draft)
-    bookDao.upsert(edited)
-    return edited
+    val renamed = if (booksDir != null && edited.name != latest.name) {
+        BookFileMover.renameFile(edited, edited.name.orEmpty(), booksDir)
+    } else {
+        edited
+    }
+    try {
+        bookDao.upsert(renamed)
+    } catch (t: Throwable) {
+        val newPath = renamed.path
+        val oldPath = latest.path
+        if (newPath != null && oldPath != null && newPath != oldPath) {
+            File(newPath).let { dest ->
+                val source = File(oldPath)
+                if (dest.isFile && !source.exists() && !dest.renameTo(source)) {
+                    t.addSuppressed(IOException("Cannot roll back rename to $oldPath"))
+                }
+            }
+        }
+        throw t
+    }
+    return renamed
 }

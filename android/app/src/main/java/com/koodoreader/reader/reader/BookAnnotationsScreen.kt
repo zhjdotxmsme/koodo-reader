@@ -1,9 +1,13 @@
 package com.koodoreader.reader.reader
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -18,9 +22,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.annotate.HighlightColor
+import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.reader.shell.t
 
 /**
@@ -36,12 +43,24 @@ fun BookAnnotationsScreen(
     error: String? = null,
     onRetry: () -> Unit = {},
     onJump: (cfi: String) -> Unit = {},
+    onRecolor: (NoteEntity, Long) -> Unit = { _, _ -> },
+    onAddNote: (String) -> Unit = {},
     onEditNote: (NoteEntity, String) -> Unit = { _, _ -> },
     onDeleteNote: (NoteEntity) -> Unit = {},
     onDeleteBookmark: (BookmarkEntity) -> Unit = {},
 ) {
     var editing by remember { mutableStateOf<NoteEntity?>(null) }
     var draft by remember { mutableStateOf("") }
+    var addingNote by remember { mutableStateOf(false) }
+    var newNoteDraft by remember { mutableStateOf("") }
+    val recolorPalette = remember {
+        listOf(
+            HighlightColor.YELLOW,
+            HighlightColor.GREEN,
+            HighlightColor.PINK,
+            HighlightColor.BLUE,
+        )
+    }
 
     when {
         loading -> CircularProgressIndicator(modifier = Modifier.padding(16.dp))
@@ -54,7 +73,13 @@ fun BookAnnotationsScreen(
             modifier = Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        else -> LazyColumn {
+        else -> Column {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                TextButton(onClick = { addingNote = true; newNoteDraft = "" }) {
+                    Text(t("Note"))
+                }
+            }
+            LazyColumn {
             items(notes, key = { it.key }) { note ->
                 Column(
                     modifier = Modifier
@@ -87,6 +112,25 @@ fun BookAnnotationsScreen(
                             TextButton(onClick = { onJump(cfi) }) { Text(t("Jump")) }
                         }
                     }
+                    if (note.color != null || note.text?.isNotBlank() == true) {
+                        Row(modifier = Modifier.padding(top = 4.dp)) {
+                            recolorPalette.forEach { swatch ->
+                                val code = swatch.code.toLong()
+                                val argb = HighlightPalette.paintArgb(code)
+                                val rgb = (argb and 0xFFFFFF).toInt()
+                                TextButton(
+                                    onClick = { onRecolor(note, code) },
+                                    modifier = Modifier.padding(end = 4.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .background(Color(rgb), CircleShape),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             items(bookmarks, key = { it.key }) { bookmark ->
@@ -102,7 +146,31 @@ fun BookAnnotationsScreen(
                     TextButton(onClick = { onDeleteBookmark(bookmark) }) { Text(t("Delete")) }
                 }
             }
+            }
         }
+    }
+
+    if (addingNote) {
+        AlertDialog(
+            onDismissRequest = { addingNote = false },
+            title = { Text(t("Note")) },
+            text = {
+                OutlinedTextField(
+                    value = newNoteDraft,
+                    onValueChange = { newNoteDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onAddNote(newNoteDraft.trim())
+                    addingNote = false
+                }) { Text(t("Confirm")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { addingNote = false }) { Text(t("Cancel")) }
+            },
+        )
     }
 
     editing?.let { note ->

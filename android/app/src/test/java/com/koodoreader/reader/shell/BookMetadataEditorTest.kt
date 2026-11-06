@@ -7,8 +7,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.File
 
 class BookMetadataEditorTest {
 
@@ -29,6 +32,19 @@ class BookMetadataEditorTest {
         assertThrows(IllegalArgumentException::class.java) {
             BookMetadataEditor.validate(book(), BookMetadata(" ", null, null, null))
         }
+    }
+
+    @Test
+    fun `save with booksDir renames file on disk`(@TempDir dir: File) = runBlocking {
+        val booksDir = File(dir, "books").apply { mkdirs() }
+        val file = File(booksDir, "book-1.epub").apply { writeText("x") }
+        val latest = book().copy(name = "Old", path = file.path)
+        val dao = FakeBookDao(latest)
+        saveBookMetadata(dao, latest.key, BookMetadata("New Title", null, null, null), booksDir)
+        val saved = dao.saved!!
+        assertEquals("New Title", saved.name)
+        assertEquals(File(booksDir, "New Title.epub").path, saved.path)
+        assertFalse(file.exists())
     }
 
     @Test

@@ -26,15 +26,25 @@ object ReadestViewSettings {
         val maxInlineSizePx: Int = 720,
     )
 
-    fun from(kind: ThemeKind, features: ReaderFeatureState): Snapshot {
+    fun from(
+        kind: ThemeKind,
+        features: ReaderFeatureState,
+        foliateFontFamily: String? = null,
+        extraUserStylesheet: String = "",
+    ): Snapshot {
         val preset = kind.builtInPreset()
         val dark = kind == ThemeKind.NIGHT
         val fontSizePx = ReaderFeatureCodec.fontSizePx(features).toDouble()
         val font = features.fontKey.lowercase()
-        val defaultFont = when (font) {
-            "sans-serif", "serif", "monospace" -> font
+        val defaultFont = when {
+            font in setOf("sans-serif", "serif", "monospace") -> font
+            !foliateFontFamily.isNullOrBlank() -> foliateFontFamily
             else -> "serif"
         }
+        val userCss = listOf(
+            ReaderFeatureCodec.userStylesheet(features),
+            extraUserStylesheet.trim(),
+        ).filter { it.isNotEmpty() }.joinToString("\n")
         return Snapshot(
             bg = preset.backgroundColor,
             fg = preset.foregroundColor,
@@ -48,7 +58,7 @@ object ReadestViewSettings {
             isDarkMode = dark,
             colorScheme = if (dark) "dark" else "light",
             defaultFont = defaultFont,
-            userStylesheet = ReaderFeatureCodec.userStylesheet(features),
+            userStylesheet = userCss,
             textRulesJson = features.textRulesJson,
         )
     }

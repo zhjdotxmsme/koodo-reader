@@ -210,6 +210,7 @@ class PagedDocumentSession private constructor(
                 lineHeightMultiple = options.lineHeightMultiple,
                 marginHorizontalPx = options.marginHorizontalPx,
                 marginVerticalPx = options.marginVerticalPx,
+                paraSpacingPx = options.paraSpacingPx,
             )
             val result = LayoutEngine(measurer, options).layout(document, tokens)
             // P9-anr (round-3): 预计算 chapterStartPages（monotonic）

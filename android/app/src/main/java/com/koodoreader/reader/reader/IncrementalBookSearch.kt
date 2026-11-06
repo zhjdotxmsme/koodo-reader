@@ -11,6 +11,7 @@ data class TextSearchHit(
     val start: Int,
     val length: Int,
     val excerpt: String,
+    val title: String = "",
 )
 
 object IncrementalBookSearch {
@@ -30,6 +31,7 @@ object IncrementalBookSearch {
                         start = offset,
                         length = query.length,
                         excerpt = text.substring(excerptStart, excerptEnd),
+                        title = chapter.title?.takeIf { it.isNotBlank() } ?: chapter.id,
                     ),
                 )
                 offset = text.indexOf(query, offset + query.length, ignoreCase = true)

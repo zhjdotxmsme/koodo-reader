@@ -7,8 +7,13 @@ import org.junit.Test
 
 class LibraryLogicTest {
 
-    private fun b(key: String, name: String? = null, author: String? = null, format: String? = null) =
-        SortableBook(key, name, author, format)
+    private fun b(
+        key: String,
+        name: String? = null,
+        author: String? = null,
+        format: String? = null,
+        size: Long? = null,
+    ) = SortableBook(key, name, author, format, size)
 
     // ------------------------------------------------------------ sorting
 
@@ -46,6 +51,20 @@ class LibraryLogicTest {
         assertEquals(listOf("k3", "k1", "k2"), byAuthor)
         val byFormatDesc = LibraryLogic.sortedKeys(books, SortSpec(SortField.FORMAT, ascending = false))
         assertEquals(listOf("k1", "k3", "k2"), byFormatDesc)
+    }
+
+    @Test
+    fun `size sort orders by bytes with nulls last`() {
+        val books = listOf(
+            b("k1", size = 100L),
+            b("k2", size = null),
+            b("k3", size = 50L),
+            b("k4", size = 200L),
+        )
+        val asc = LibraryLogic.sortedKeys(books, SortSpec(SortField.SIZE, ascending = true))
+        assertEquals(listOf("k3", "k1", "k4", "k2"), asc)
+        val desc = LibraryLogic.sortedKeys(books, SortSpec(SortField.SIZE, ascending = false))
+        assertEquals(listOf("k4", "k1", "k3", "k2"), desc)
     }
 
     @Test

@@ -187,6 +187,7 @@ dependencies {
     implementation project(':core:data')
     implementation project(':core:importer')
     implementation project(':core:dbio')
+    implementation project(':core:sync')
     implementation project(':core:common')
     implementation project(':core:reader')
 

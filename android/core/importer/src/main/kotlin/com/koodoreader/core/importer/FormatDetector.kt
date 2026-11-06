@@ -20,9 +20,8 @@ internal object FormatDetector {
 
     fun detect(name: String?, mime: String?, openStream: () -> InputStream): FormatDetection {
         val header = openStream().use { it.readNBytes(8192) }
-        detectContent(header, openStream)?.let { return it }
-
         val ext = name?.substringAfterLast('.', "")?.lowercase(Locale.ROOT).orEmpty()
+        detectContent(header, openStream, ext)?.let { return it }
         val normalizedMime = mime?.substringBefore(';')?.trim()
         if (ext == "cbr" || normalizedMime.equals("application/x-cbr", true)) {
             return FormatDetection.Unsupported("CBR")
@@ -38,7 +37,7 @@ internal object FormatDetector {
         return (byName ?: byMime)?.let(FormatDetection::Supported) ?: FormatDetection.Unknown
     }
 
-    private fun detectContent(header: ByteArray, openStream: () -> InputStream): FormatDetection? {
+    private fun detectContent(header: ByteArray, openStream: () -> InputStream, ext: String): FormatDetection? {
         if (header.startsWith(byteArrayOf('R'.code.toByte(), 'a'.code.toByte(), 'r'.code.toByte(), '!'.code.toByte()))) {
             return FormatDetection.Unsupported("CBR")
         }
@@ -46,7 +45,14 @@ internal object FormatDetector {
         if (header.startsWith(byteArrayOf(0x50, 0x4B))) {
             detectZip(openStream)?.let { return FormatDetection.Supported(it) }
         }
-        if (header.hasAsciiAt(60, "BOOKMOBI")) return FormatDetection.Supported(BookFormat.MOBI)
+        if (header.hasAsciiAt(60, "BOOKMOBI")) {
+            val format = when (ext) {
+                "azw3" -> BookFormat.AZW3
+                "azw" -> BookFormat.AZW
+                else -> BookFormat.MOBI
+            }
+            return FormatDetection.Supported(format)
+        }
 
         val text = decodeText(header)
         return when {

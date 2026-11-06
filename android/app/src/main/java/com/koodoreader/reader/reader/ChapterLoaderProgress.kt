@@ -66,11 +66,33 @@ object ChapterLoaderProgress {
         return "c ${index + 1}/${descriptors.size} · $title"
     }
 
-    fun progressFraction(loader: ChapterLoader, chapterId: String): Double {
+    fun progressFraction(loader: ChapterLoader, chapterId: String): Double =
+        progressFraction(loader, TextLocation(chapterId, 0))
+
+    /** Chapter index plus the offset inside that chapter, over the chapter count. */
+    fun progressFraction(loader: ChapterLoader, location: TextLocation): Double {
         val descriptors = loader.descriptors()
-        val index = descriptors.indexOfFirst { it.id == chapterId }
-        if (index < 0 || descriptors.isEmpty()) return 0.0
-        return (index + 1).toDouble() / descriptors.size.toDouble()
+        if (descriptors.isEmpty()) return 0.0
+        val index = descriptors.indexOfFirst { it.id == location.chapterId }
+        if (index < 0) return 0.0
+        val length = runCatching {
+            loader.load(location.chapterId).blocks.sumOf { it.text.length }
+        }.getOrDefault(0).coerceAtLeast(1)
+        val within = location.start.coerceIn(0, length).toDouble() / length.toDouble()
+        return (index + within) / descriptors.size.toDouble()
+    }
+
+    fun pageLabel(frame: ReaderFrame): String {
+        val pages = frame.layout.pages
+        if (pages.isEmpty()) return ""
+        val index = pages.indices.lastOrNull { pageIndex ->
+            val lines = pages[pageIndex].lines
+            if (lines.isEmpty()) return@lastOrNull false
+            val last = lines.last()
+            val block = frame.layout.blocks.getOrNull(last.blockIndex) ?: return@lastOrNull false
+            frame.location.start < block.globalStart + last.end
+        } ?: pages.lastIndex
+        return "p ${index + 1}/${pages.size}"
     }
 
     private fun chapterIdForSpineIndex(loader: ChapterLoader, spineIndex: Int): String? {

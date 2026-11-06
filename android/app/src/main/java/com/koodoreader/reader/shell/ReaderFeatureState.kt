@@ -151,8 +151,12 @@ object ReaderFeatureCodec {
         KEY_CUSTOM_BACKGROUND to state.customBackgroundArgb?.toString().orEmpty(),
     )
 
-    fun userStylesheet(state: ReaderFeatureState): String =
-        if (state.customBookCssEnabled) state.customBookCss.trim() else ""
+    fun userStylesheet(state: ReaderFeatureState): String {
+        val custom = if (state.customBookCssEnabled) state.customBookCss.trim() else ""
+        val gap = clampedParagraphSpacing(state)
+        val para = if (gap > 0f) "p{margin-bottom:${gap.toInt()}px;}" else ""
+        return listOf(para, custom).filter { it.isNotEmpty() }.joinToString("\n")
+    }
 
     fun fontSizePx(state: ReaderFeatureState): Float =
         FONT_SIZE_DEFAULT * state.fontScale.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)

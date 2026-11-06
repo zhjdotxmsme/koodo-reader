@@ -127,6 +127,7 @@ class SearchIndex private constructor(
                         matchedText = matchedText,
                         contextAfter = contextAfter,
                         rank = rank++,
+                        chapterTitle = ch.title.orEmpty(),
                     ),
                 )
 

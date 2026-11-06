@@ -8,6 +8,7 @@ import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.dbio.DataExport
 import com.koodoreader.core.dbio.DataImport
+import com.koodoreader.core.sync.SyncCoordinator
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,9 +33,59 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
     private val fontsDir = File(app.filesDir, "fonts")
     private val backupDir = File(app.cacheDir, "backup")
     private val exportDir = File(app.cacheDir, "data-export")
+    private val syncPrefs = SyncPrefs(app)
+    private val progressPrefs = ReaderProgressPrefs(app)
 
     private val _state = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
     val state: StateFlow<BackupUiState> = _state
+
+    /** Push a JSON sync snapshot to the configured [SyncPrefs] target. */
+    fun syncPush() {
+        if (_state.value is BackupUiState.Running) return
+        viewModelScope.launch {
+            _state.value = BackupUiState.Running("Uploading sync snapshot…")
+            val report = runCatching {
+                withContext(Dispatchers.IO) {
+                    val target = SyncTransportFactory.target(syncPrefs)
+                        ?: error("Sync target is not configured")
+                    val featureState = ReaderFeaturePrefs(getApplication()).load()
+                    val snapshot = SyncSnapshotBuilder.build(
+                        db,
+                        progressPrefs,
+                        ReaderFeatureCodec.toMap(featureState),
+                    )
+                    SyncCoordinator.export(target, SyncSnapshotBuilder.encode(snapshot))
+                }
+            }
+            _state.value = report.fold(
+                onSuccess = { BackupUiState.Finished("Sync snapshot uploaded") },
+                onFailure = { BackupUiState.Errored(it.message ?: "sync push failed") },
+            )
+        }
+    }
+
+    /** Pull a remote snapshot and merge notes/bookmarks/progress. */
+    fun syncPull() {
+        if (_state.value is BackupUiState.Running) return
+        viewModelScope.launch {
+            _state.value = BackupUiState.Running("Downloading sync snapshot…")
+            val report = runCatching {
+                withContext(Dispatchers.IO) {
+                    val target = SyncTransportFactory.target(syncPrefs)
+                        ?: error("Sync target is not configured")
+                    val bytes = SyncCoordinator.import(target)
+                        ?: error("Remote snapshot missing")
+                    SyncSnapshotBuilder.decodeAndApply(db, bytes, progressPrefs)
+                }
+            }
+            _state.value = report.fold(
+                onSuccess = { BackupUiState.Finished("Sync snapshot applied") },
+                onFailure = { BackupUiState.Errored(it.message ?: "sync pull failed") },
+            )
+        }
+    }
+
+    fun syncPrefs(): SyncPrefs = syncPrefs
 
     /** Import desktop → native from a SAF-picked zip (or unpacked tree uri). */
     fun importBackup(uri: Uri) {

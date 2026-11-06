@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.koodoreader.feature.stats.AnnotationEventKind
 import com.koodoreader.feature.stats.AnnotationStatsStore
 import com.koodoreader.feature.stats.BookReadingRank
 import com.koodoreader.feature.stats.FormatShare
@@ -32,8 +33,10 @@ data class StatsUiState(
     /** Today’s annotation counts ([StatsDomain.daily]). */
     val todayNotesAdded: Int = 0,
     val todayHighlightsAdded: Int = 0,
+    val totalNotes: Int = 0,
+    val totalHighlights: Int = 0,
     /** Range for the distribution/ranking sections (summary cards are fixed). */
-    val range: StatsRange = StatsRange.SEVEN_DAYS,
+    val range: StatsRange = StatsRange.ALL,
     val summary: StatsSummary = StatsSummary(0, 0, 0),
     val formatShares: List<FormatShare> = emptyList(),
     val hourBuckets: List<Long> = List(24) { 0L },
@@ -113,6 +116,8 @@ class StatsViewModel(
                     error = null,
                     todayNotesAdded = daily.notesAddedCount,
                     todayHighlightsAdded = daily.highlightsAddedCount,
+                    totalNotes = events.count { it.kind == AnnotationEventKind.NOTE },
+                    totalHighlights = events.count { it.kind == AnnotationEventKind.HIGHLIGHT },
                     summary = StatsDomain.summary(sessions, today),
                     formatShares = derived.formatShares,
                     hourBuckets = derived.hourBuckets,

@@ -22,6 +22,8 @@ data class PaginatorOptions(
     /** Desktop `margin` in px (signed, −40…80). Applied on all four sides. */
     val marginHorizontalPx: Float = DesktopReaderConfig.MARGIN_DEFAULT,
     val marginVerticalPx: Float = DesktopReaderConfig.MARGIN_DEFAULT,
+    /** Extra gap between paragraphs, in px. 0 keeps the book's own spacing. */
+    val paraSpacingPx: Float = 0f,
 ) {
     init {
         require(columnsPerPage in 1..8) { "columnsPerPage must be 1..8 (was $columnsPerPage)" }

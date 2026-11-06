@@ -205,12 +205,10 @@ private fun StatCards(state: StatsUiState, palette: StatsPalette, t: (String) ->
         StatCard("${snapshot.totalWords}", t("Word count"), palette, Modifier.weight(1f))
         StatCard("${snapshot.averageProgress}%", t("Reading progress"), palette, Modifier.weight(1f))
     }
-    if (state.todayNotesAdded > 0 || state.todayHighlightsAdded > 0) {
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard(state.todayNotesAdded.toString(), t("Notes"), palette, Modifier.weight(1f))
-            StatCard(state.todayHighlightsAdded.toString(), t("Highlights"), palette, Modifier.weight(1f))
-        }
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        StatCard(state.totalNotes.toString(), t("Notes"), palette, Modifier.weight(1f))
+        StatCard(state.totalHighlights.toString(), t("Highlights"), palette, Modifier.weight(1f))
     }
 }
 
@@ -450,8 +448,14 @@ fun heatmapCellTooltip(cell: HeatmapCell): String =
 private fun SummaryRow(state: StatsUiState, palette: StatsPalette, t: (String) -> String) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         StatCard(StatsAggregator.formatTime(state.summary.todaySeconds), t("Today"), palette, Modifier.weight(1f))
+        StatCard(StatsAggregator.formatTime(state.summary.calendarWeekSeconds), t("This week"), palette, Modifier.weight(1f))
+        StatCard(StatsAggregator.formatTime(state.summary.calendarMonthSeconds), t("This month"), palette, Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         StatCard(StatsAggregator.formatTime(state.summary.weekSeconds), t("7 Days"), palette, Modifier.weight(1f))
         StatCard(StatsAggregator.formatTime(state.summary.monthSeconds), t("30 Days"), palette, Modifier.weight(1f))
+        StatCard(StatsAggregator.formatTime(state.snapshot.totalSeconds), t("Total reading time"), palette, Modifier.weight(1f))
     }
 }
 

@@ -47,6 +47,7 @@ class SearchIndexTest {
         val results = index.search(SearchQuery("book-x", "language"))
         assertEquals(1, results.size)
         assertEquals(0, results[0].spineIndex)
+        assertEquals("Introduction", results[0].chapterTitle)
     }
 
     // --- Case sensitivity ---

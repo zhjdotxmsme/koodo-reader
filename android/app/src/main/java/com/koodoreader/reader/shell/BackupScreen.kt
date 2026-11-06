@@ -16,10 +16,14 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -38,7 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
  *    history (mirrors `src/utils/file/export.ts`), accepting a CSV/JSON
  *    SAF pick on the import side (mirrors `src/utils/file/importData.ts`).
  *
- * No cloud / WebDAV / S3: per ADR-006 the product keeps local backups only.
+ * Optional sync snapshot (local dir / WebDAV / presigned S3) via `:core:sync`.
  */
 @Composable
 fun BackupScreen(
@@ -46,6 +50,14 @@ fun BackupScreen(
     viewModel: BackupViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val syncPrefs = remember { viewModel.syncPrefs() }
+    var syncKind by remember { mutableStateOf(syncPrefs.kind) }
+    var localPath by remember { mutableStateOf(syncPrefs.localSnapshotPath) }
+    var webDavUrl by remember { mutableStateOf(syncPrefs.webDavUrl) }
+    var webDavUser by remember { mutableStateOf(syncPrefs.webDavUser) }
+    var webDavPass by remember { mutableStateOf(syncPrefs.webDavPassword) }
+    var s3Url by remember { mutableStateOf(syncPrefs.s3Url) }
+    var s3Headers by remember { mutableStateOf(syncPrefs.s3HeadersJson) }
     val importZipLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(viewModel::importBackup) }
@@ -63,7 +75,7 @@ fun BackupScreen(
     ) {
         Text(t("Backup / restore"), style = MaterialTheme.typography.titleLarge)
         Text(
-            t("Local backup only — no cloud sync."),
+            t("Local zip backups; optional sync snapshot to a folder or remote URL."),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -93,6 +105,104 @@ fun BackupScreen(
                 enabled = state !is BackupUiState.Running,
                 modifier = Modifier.weight(1f),
             ) { Text(t("Export zip")) }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(t("Sync snapshot"), style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { syncKind = SyncPrefs.TargetKind.LOCAL },
+                label = { Text(t("Local")) },
+            )
+            AssistChip(
+                onClick = { syncKind = SyncPrefs.TargetKind.WEBDAV },
+                label = { Text("WebDAV") },
+            )
+            AssistChip(
+                onClick = { syncKind = SyncPrefs.TargetKind.S3 },
+                label = { Text("S3") },
+            )
+        }
+        when (syncKind) {
+            SyncPrefs.TargetKind.LOCAL -> OutlinedTextField(
+                value = localPath,
+                onValueChange = { localPath = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(t("Snapshot directory")) },
+                singleLine = true,
+            )
+            SyncPrefs.TargetKind.WEBDAV -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = webDavUrl,
+                    onValueChange = { webDavUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("WebDAV URL") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = webDavUser,
+                    onValueChange = { webDavUser = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(t("Username")) },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = webDavPass,
+                    onValueChange = { webDavPass = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(t("Password")) },
+                    singleLine = true,
+                )
+            }
+            SyncPrefs.TargetKind.S3 -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = s3Url,
+                    onValueChange = { s3Url = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("S3 / presigned URL") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = s3Headers,
+                    onValueChange = { s3Headers = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Headers JSON") },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    syncPrefs.kind = syncKind
+                    syncPrefs.localSnapshotPath = localPath
+                    syncPrefs.webDavUrl = webDavUrl
+                    syncPrefs.webDavUser = webDavUser
+                    syncPrefs.webDavPassword = webDavPass
+                    syncPrefs.s3Url = s3Url
+                    syncPrefs.s3HeadersJson = s3Headers
+                    viewModel.syncPull()
+                },
+                enabled = state !is BackupUiState.Running,
+                modifier = Modifier.weight(1f),
+            ) { Text(t("Pull")) }
+            Button(
+                onClick = {
+                    syncPrefs.kind = syncKind
+                    syncPrefs.localSnapshotPath = localPath
+                    syncPrefs.webDavUrl = webDavUrl
+                    syncPrefs.webDavUser = webDavUser
+                    syncPrefs.webDavPassword = webDavPass
+                    syncPrefs.s3Url = s3Url
+                    syncPrefs.s3HeadersJson = s3Headers
+                    viewModel.syncPush()
+                },
+                enabled = state !is BackupUiState.Running,
+                modifier = Modifier.weight(1f),
+            ) { Text(t("Push")) }
         }
 
         Spacer(modifier = Modifier.height(8.dp))

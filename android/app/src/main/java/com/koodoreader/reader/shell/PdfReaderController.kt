@@ -51,6 +51,8 @@ data class PdfReaderUiState(
     val passwordError: Boolean = false,
     val exporting: Boolean = false,
     val reflowHtml: String? = null,
+    val pageWidthPt: Float = 612f,
+    val pageHeightPt: Float = 792f,
     val error: String? = null,
 ) {
     val zoomPercent: Int get() = Math.round(zoom * 100)
@@ -127,7 +129,14 @@ class PdfReaderController(
                 }
             }
             result.onSuccess { info ->
-                state = state.copy(opening = false, pageCount = info.pageCount, page = 1, error = null)
+                state = state.copy(
+                    opening = false,
+                    pageCount = info.pageCount,
+                    page = 1,
+                    pageWidthPt = info.pageWidthPt,
+                    pageHeightPt = info.pageHeightPt,
+                    error = null,
+                )
                 loadOutline()
                 requestRender(force = true)
             }.onFailure { e ->

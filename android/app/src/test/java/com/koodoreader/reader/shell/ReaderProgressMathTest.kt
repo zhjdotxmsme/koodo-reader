@@ -20,4 +20,10 @@ class ReaderProgressMathTest {
         assertEquals(12, ReaderProgressMath.pageFromPdfCfi("pdf:12"))
         assertNull(ReaderProgressMath.pageFromPdfCfi("epubcfi(/6/4)"))
     }
+
+    @Test
+    fun `pageFromStoredCfi accepts pdf progress token and rejects epub cfi`() {
+        assertEquals(3, ReaderProgressMath.pageFromStoredCfi("pdf:3"))
+        assertNull(ReaderProgressMath.pageFromStoredCfi("epubcfi(/6/4)"))
+    }
 }

@@ -132,6 +132,37 @@ object FontManager {
                 ?.also { lru[file.absolutePath] = it }
     }
 
+    private val GENERIC_CSS = setOf("sans-serif", "serif", "monospace", "sans-serif-condensed")
+
+    /**
+     * Foliate `@font-face` + family name for bundled/custom fonts; null when
+     * [fontKey] is blank or a CSS generic (handled by [ReadestViewSettings]).
+     */
+    fun foliateFontDeclaration(context: Context, fontKey: String?): FoliateFont? {
+        val key = fontKey?.trim().orEmpty()
+        if (key.isEmpty() || key.lowercase() in GENERIC_CSS) return null
+        val family = "koodo-${key.hashCode().and(0x7FFFFFFF)}"
+        val file = when {
+            key.startsWith("bundled:") -> null
+            else -> File(context.filesDir, NativeFontKeys.FONT_DIR)
+                .listFiles()
+                ?.firstOrNull { it.nameWithoutExtension == key }
+        }
+        val css = if (file != null && file.isFile) {
+            val quoted = "file://${file.absolutePath.replace("'", "\\'")}"
+            "@font-face{font-family:'$family';src:url('$quoted');}" +
+                "body, p { font-family: '$family', serif !important; }"
+        } else if (key.startsWith("bundled:")) {
+            // Bundled fonts are native-only; Foliate keeps serif fallback.
+            return null
+        } else {
+            return null
+        }
+        return FoliateFont(family, css)
+    }
+
+    data class FoliateFont(val family: String, val css: String)
+
     private fun displayName(context: Context, uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, null, null, null, null)?.use { c ->
             if (!c.moveToFirst()) return@use null

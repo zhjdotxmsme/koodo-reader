@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.engine.pdf.CfiPdfMapper
+
 /**
  * Progress arithmetic shared by EPUB/PDF/comic readers and the /stats screen.
  *
@@ -21,5 +23,11 @@ object ReaderProgressMath {
         val raw = cfi.trim()
         if (!raw.startsWith("pdf:", ignoreCase = true)) return null
         return raw.substring(4).toIntOrNull()?.takeIf { it > 0 }
+    }
+
+    /** Annotation bookmark CFI (desktop JSON) or progress token (`pdf:N`). */
+    fun pageFromStoredCfi(cfi: String): Int? {
+        CfiPdfMapper.parse(cfi.trim())?.page?.takeIf { it > 0 }?.let { return it }
+        return pageFromPdfCfi(cfi)
     }
 }

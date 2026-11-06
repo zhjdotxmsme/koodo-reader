@@ -64,6 +64,17 @@ class BookFileMoverTest {
     }
 
     @Test
+    fun `renameFile updates path when title changes`() {
+        val booksDir = File(temp, "books").apply { mkdirs() }
+        val old = File(booksDir, "k.epub").apply { writeText("book-bytes") }
+        val entity = book("k", old)
+        val renamed = BookFileMover.renameFile(entity, "New Title", booksDir)
+        assertEquals(File(booksDir, "New Title.epub").path, renamed.path)
+        assertFalse(old.exists())
+        assertEquals("book-bytes", File(renamed.path!!).readText())
+    }
+
+    @Test
     fun `saf content uris are rejected without touching files`() {
         val entity = BookEntity(key = "k", format = "epub", path = "content://books/1")
         assertThrows(IllegalArgumentException::class.java) {

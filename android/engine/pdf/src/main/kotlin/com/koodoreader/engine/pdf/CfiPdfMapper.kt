@@ -51,6 +51,8 @@ object CfiPdfMapper {
         val y: Float = 0f,
         val width: Float = 0f,
         val height: Float = 0f,
+        /** Bbox is in reflow HTML document pixels (top-left origin), not PDF points. */
+        val reflowDocument: Boolean = false,
     ) {
         val isPageLevel: Boolean
             get() = width <= 0f || height <= 0f
@@ -76,6 +78,7 @@ object CfiPdfMapper {
                 y = o.optDouble("y", 0.0).toFloat(),
                 width = o.optDouble("width", 0.0).toFloat(),
                 height = o.optDouble("height", 0.0).toFloat(),
+                reflowDocument = o.optString("coordSpace") == "reflowDocument",
             )
         } catch (e: Exception) {
             null
@@ -105,6 +108,7 @@ object CfiPdfMapper {
             o.put("width", range.width.toDouble())
             o.put("height", range.height.toDouble())
         }
+        if (range.reflowDocument) o.put("coordSpace", "reflowDocument")
         o.put("cfi", pageStepCfi(range))
         return o.toString()
     }

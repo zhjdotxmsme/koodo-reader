@@ -113,6 +113,21 @@ class ReaderFeatureStateTest {
     }
 
     @Test
+    fun `paragraph spacing appends p margin rule to user stylesheet`() {
+        val s = ReaderFeatureState(paragraphSpacingPx = 12f)
+        assertEquals("p{margin-bottom:12px;}", ReaderFeatureCodec.userStylesheet(s))
+        val both = ReaderFeatureState(
+            paragraphSpacingPx = 8f,
+            customBookCss = "body{color:red}",
+            customBookCssEnabled = true,
+        )
+        assertEquals(
+            "p{margin-bottom:8px;}\nbody{color:red}",
+            ReaderFeatureCodec.userStylesheet(both),
+        )
+    }
+
+    @Test
     fun `prefs load whitelist includes every codec toMap key`() {
         val codecKeys = ReaderFeatureCodec.toMap(ReaderFeatureState()).keys
         assertTrue(codecKeys.contains(ReaderFeatureCodec.KEY_SCROLLED))
