@@ -58,6 +58,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
 
     /** Flatten markup to blocks (no spine wrapper). */
     fun blocks(html: String): List<TextBlock> {
+        val cssRules = com.koodoreader.engine.layout.css.CssParser.parse(extractEmbeddedCss(html))
         val out = ArrayList<TextBlock>()
         val tokenizer = HtmlTokenizer(html)
 
@@ -69,6 +70,8 @@ class DefaultHtmlFlattener : HtmlFlattener {
         var lastId: String? = null
         var lastStyle = ParagraphStyle.DEFAULT
         var currentLinkHref: String? = null
+        val tagStack = ArrayList<String>(16)
+        var hidingBlock: String? = null
 
         fun flush() {
             val pending = open ?: return
@@ -106,7 +109,7 @@ class DefaultHtmlFlattener : HtmlFlattener {
         while (tokenizer.hasNext()) {
             when (val token = tokenizer.next()) {
                 is HtmlTokenizer.Token.Text -> {
-                    if (skipping != null) continue
+                    if (skipping != null || hidingBlock != null) continue
                     val pending = open
                     if (pending != null) {
                         pending.raw.append(HtmlTokenizer.decodeEntities(token.raw))
@@ -166,8 +169,34 @@ class DefaultHtmlFlattener : HtmlFlattener {
                     }
 
                     if (name in BLOCK_ELEMENTS) {
-                        val style = styleFor(name)
                         val id = token.attrs["id"]
+                        val classNames = token.attrs["class"]
+                            ?.split(Regex("""\s+"""))
+                            ?.filter { it.isNotEmpty() }
+                            ?.toSet()
+                            ?: emptySet()
+                        val style = if (cssRules.isEmpty()) {
+                            styleFor(name)
+                        } else {
+                            val element = com.koodoreader.engine.layout.css.CssElement(
+                                tag = name,
+                                id = id,
+                                classes = classNames,
+                                inline = token.attrs["style"],
+                                parentTags = tagStack.toList(),
+                            )
+                            val cascaded = com.koodoreader.engine.layout.css.CssCascade.styleFor(element, cssRules)
+                            if (cascaded.displayNone) {
+                                hidingBlock = name
+                                depth--
+                                continue
+                            }
+                            com.koodoreader.engine.layout.css.CssCascade.paragraphStyleFor(
+                                element,
+                                cssRules,
+                                tagPreset = styleFor(name),
+                            )
+                        }
                         startBlock(siblingIndex, id, style)
                         lastIndex = siblingIndex
                         lastId = id
@@ -179,14 +208,24 @@ class DefaultHtmlFlattener : HtmlFlattener {
                     }
                     // Inline / container elements: keep scanning; their text
                     // lands in the current (or next) block.
+                    if (!token.selfClosing && name !in VOID_ELEMENTS) {
+                        tagStack.add(name)
+                    }
                     if (token.selfClosing) depth-- // <div/> — no scope held
                 }
 
                 is HtmlTokenizer.Token.Close -> {
                     val name = token.name
+                    if (hidingBlock == name) {
+                        hidingBlock = null
+                        continue
+                    }
                     if (skipping != null) {
                         if (name == skipping) skipping = null
                         continue
+                    }
+                    if (tagStack.lastOrNull() == name) {
+                        tagStack.removeAt(tagStack.size - 1)
                     }
                     if (name == "a") currentLinkHref = null
                     if (name in BLOCK_ELEMENTS || name in CONTAINER_ELEMENTS) {
@@ -243,6 +282,14 @@ class DefaultHtmlFlattener : HtmlFlattener {
          * Paragraph-style presets per block tag — the same approximations the
          * desktop stylesheet applies for a paginated view.
          */
+        private fun extractEmbeddedCss(html: String): String {
+            val out = StringBuilder()
+            Regex("""(?is)<style\b[^>]*>(.*?)</style>""").findAll(html).forEach { match ->
+                out.append(match.groupValues[1]).append('\n')
+            }
+            return out.toString()
+        }
+
         private fun styleFor(tag: String): ParagraphStyle = when (tag) {
             "h1" -> ParagraphStyle(fontSizeScale = 1.5f, spaceBeforePx = 12f, spaceAfterPx = 8f)
             "h2" -> ParagraphStyle(fontSizeScale = 1.35f, spaceBeforePx = 10f, spaceAfterPx = 6f)
