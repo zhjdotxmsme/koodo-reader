@@ -423,11 +423,18 @@ function getArtifactPath(config, buildType, abi, target = "webview") {
     .replace(/\\/g, "/")
     .replace(/\/+$/, "")
     .toLowerCase();
-  const suffix = target === "native" ? "-native" : "";
+  const flavor = target === "native" ? "nativehost" : "webview";
+  const flavorSegment = target === "native" ? "nativehost" : "webview";
   if (abi) {
-    return `${base}/${buildType}/${abi}/app-${buildType}-${abi}${suffix}.apk`.toLowerCase();
+    return `${base}/${flavorSegment}/${buildType}/${abi}/app-${flavor}-${buildType}-${abi}.apk`.toLowerCase();
   }
-  return `${base}/${buildType}/app-${buildType}${suffix}.apk`.toLowerCase();
+  return `${base}/${flavorSegment}/${buildType}/app-${flavor}-${buildType}.apk`.toLowerCase();
+}
+
+function gradleAssembleTask(target, buildType) {
+  const flavor = target === "native" ? "NativeHost" : "Webview";
+  const cap = buildType.charAt(0).toUpperCase() + buildType.slice(1);
+  return `:app:assemble${flavor}${cap}`;
 }
 
 /**
@@ -477,7 +484,7 @@ function buildBuildPlan(config, options = {}) {
           { buildType }
         );
       }
-      const task = `:app:assemble${capitalize(buildType)}`;
+      const task = gradleAssembleTask(target, buildType);
       const signingArgs = collectSigningArgs(config, buildType);
       const versionArgs = [
         `-PversionCode=${config.versionCode}`,

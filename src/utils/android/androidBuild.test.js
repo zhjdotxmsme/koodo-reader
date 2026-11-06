@@ -240,10 +240,10 @@ describe("buildBuildPlan", () => {
     plan.forEach((s) => {
       expect(s.buildType).toBe("release");
       expect(s.command).toBe("./gradlew");
-      expect(s.args).toContain(":app:assembleRelease");
+      expect(s.args).toContain(":app:assembleWebviewRelease");
       expect(s.args).toContain(`-PabiFilters=${s.abi}`);
-      expect(s.artifact).toMatch(new RegExp(`-${s.abi}\\.apk$`));
-      expect(s.artifact).toContain("release");
+      expect(s.artifact).toMatch(new RegExp(`app-webview-release-${s.abi}\\.apk$`));
+      expect(s.artifact).toContain("webview/release");
     });
   });
 
@@ -253,7 +253,7 @@ describe("buildBuildPlan", () => {
     expect(plan).toHaveLength(1);
     expect(plan[0].abi).toBeNull();
     expect(plan[0].args).not.toContain(expect.stringContaining("abiFilters"));
-    expect(plan[0].artifact).toMatch(/app-release\.apk$/);
+    expect(plan[0].artifact).toMatch(/app-webview-release\.apk$/);
   });
 
   it("includes signing args for a signed release build", () => {
@@ -286,7 +286,7 @@ describe("buildBuildPlan", () => {
     const plan = buildBuildPlan(cfg);
     plan.forEach((s) => {
       expect(s.buildType).toBe("debug");
-      expect(s.args).toContain(":app:assembleDebug");
+      expect(s.args).toContain(":app:assembleWebviewDebug");
       expect(s.args).not.toContain(expect.stringContaining("keystore"));
     });
   });
@@ -309,7 +309,7 @@ describe("buildBuildPlan", () => {
     plan.forEach((s) => {
       expect(s.target).toBe("webview");
       expect(s.args).toContain("-Ptarget=webview");
-      expect(s.artifact).not.toMatch(/-native\.apk$/);
+      expect(s.artifact).toMatch(/webview\/release\//);
     });
   });
 
@@ -328,7 +328,8 @@ describe("buildBuildPlan", () => {
       .filter((s) => s.target === "native")
       .forEach((s) => {
         expect(s.args).toContain("-Ptarget=native");
-        expect(s.artifact).toMatch(/-native\.apk$/);
+        expect(s.artifact).toMatch(/nativehost\/release\//);
+        expect(s.args).toContain(":app:assembleNativeHostRelease");
       });
   });
 
@@ -348,26 +349,28 @@ describe("getArtifactPath", () => {
 
   it("returns a per-ABI path when an abi is given", () => {
     const p = getArtifactPath(cfg, "release", "arm64-v8a");
-    expect(p).toMatch(/android\/app\/build\/outputs\/apk\/release\/arm64-v8a\/app-release-arm64-v8a\.apk/);
+    expect(p).toMatch(
+      /android\/app\/build\/outputs\/apk\/webview\/release\/arm64-v8a\/app-webview-release-arm64-v8a\.apk/
+    );
   });
 
   it("returns a universal path when abi is null", () => {
     const p = getArtifactPath(cfg, "release", null);
-    expect(p).toMatch(/android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+    expect(p).toMatch(/android\/app\/build\/outputs\/apk\/webview\/release\/app-webview-release\.apk/);
   });
 
-  it("keeps historical names for the webview target", () => {
+  it("uses webview flavor paths for the webview target", () => {
     expect(getArtifactPath(cfg, "release", "arm64-v8a", "webview")).toMatch(
-      /app-release-arm64-v8a\.apk$/
+      /webview\/release\/arm64-v8a\/app-webview-release-arm64-v8a\.apk$/
     );
-    expect(getArtifactPath(cfg, "release", null, "webview")).toMatch(/app-release\.apk$/);
+    expect(getArtifactPath(cfg, "release", null, "webview")).toMatch(/app-webview-release\.apk$/);
   });
 
-  it("suffixes native-target artifacts with -native", () => {
+  it("uses nativeHost flavor paths for the native target", () => {
     expect(getArtifactPath(cfg, "release", "arm64-v8a", "native")).toMatch(
-      /app-release-arm64-v8a-native\.apk$/
+      /nativehost\/release\/arm64-v8a\/app-nativehost-release-arm64-v8a\.apk$/
     );
-    expect(getArtifactPath(cfg, "debug", null, "native")).toMatch(/app-debug-native\.apk$/);
+    expect(getArtifactPath(cfg, "debug", null, "native")).toMatch(/app-nativehost-debug\.apk$/);
   });
 
   it("rejects an unknown target", () => {

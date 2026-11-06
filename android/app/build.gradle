@@ -43,9 +43,9 @@ android {
         versionCode Math.max(1, Integer.parseInt((project.findProperty("versionCode") ?: "1").toString()))
         versionName (project.findProperty("versionName") ?: "0.0.0").toString()
 
-        // Launcher activity-alias target (see AndroidManifest.xml).
+        // Launcher activity-alias target (see AndroidManifest.xml); flavors override.
         manifestPlaceholders = [
-            nativeLauncher: nativeShell ? ".shell.NativeShellActivity" : ".MainActivity",
+            nativeLauncher: ".MainActivity",
         ]
         buildConfigField "boolean", "NATIVE_SHELL", nativeShell.toString()
         // Reflow reader: default foliate-js WebView; `-Preader=canvas` rolls
@@ -146,6 +146,28 @@ android {
         kotlinCompilerExtensionVersion '1.5.14'
     }
 
+    flavorDimensions += "host"
+    productFlavors {
+        webview {
+            dimension "host"
+            manifestPlaceholders = [nativeLauncher: ".MainActivity"]
+        }
+        nativeHost {
+            dimension "host"
+            manifestPlaceholders = [nativeLauncher: ".shell.NativeShellActivity"]
+        }
+    }
+
+    variantFilter { variant ->
+        def host = variant.flavors.find { it.dimension == "host" }?.name
+        if (buildTarget == "native" && host == "webview") {
+            setIgnore(true)
+        }
+        if (buildTarget == "webview" && host == "nativeHost") {
+            setIgnore(true)
+        }
+    }
+
     // P8 fallback-island decommission (opt-in, see -PstripIsland above).
     // scripts/build-android.js stages the web build into src/main/assets/webapp
     // for the webview target and leaves it on disk (the directory is gitignored),
@@ -166,6 +188,7 @@ dependencies {
     implementation project(':core:importer')
     implementation project(':core:dbio')
     implementation project(':core:common')
+    implementation project(':core:reader')
 
     // Compose design system for the shell (android UI/UX sub-project ①). Brings
     // the token values (:core:designsystem, re-exported via `api`) and the shared
@@ -263,6 +286,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // `runBlocking` for the suspend import pipeline (import → read E2E test).
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1'
 }
 
 tasks.withType(Test).configureEach {
