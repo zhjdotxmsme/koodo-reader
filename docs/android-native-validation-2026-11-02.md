@@ -7,8 +7,18 @@
 
 ```bat
 node scripts/build-android.js --target native --release
-REM Optional canvas-only smoke: add -Preader=canvas (default for native target)
+REM Optional canvas-only smoke: add -Preader=canvas (foliate remains the default)
 ```
+
+## Automated results (2026-11-03, no device)
+
+- `node scripts/check-elf-16kb.js app-nativeHost-release-unsigned.apk`: PASS — 4 `.so`, all 16 KB aligned, no pdfium.
+- JVM suites green: `engine:layout`, `engine:text` (incl. new `StreamingTextIndexTest`), `core:importer`, `core:reader`, `core:sync`, `engine:mobi/fb2/docx/htmlbook/annotate/toc`, `feature:stats`, `core:dbio`, app `testNativeHostDebugUnitTest`.
+- Desktop `npx jest src/utils/android/androidBuild.test.js`: 880/880.
+- `check-room-schema`: OK (5 tables aligned).
+- EPUB default engine reverted to foliate after the canvas-default regression (open crash + missing selection menu); canvas stays opt-in via `-Preader=canvas`.
+
+All device rows below remain NOT RUN.
 
 ## Device matrix (record PASS/FAIL + device model / API)
 
