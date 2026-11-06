@@ -1,8 +1,8 @@
 package com.koodoreader.reader.epubhost
 
+import com.koodoreader.core.importer.EpubChapterLoader
+import com.koodoreader.core.importer.EpubResourceLoader
 import com.koodoreader.core.importer.EpubSpine
-import com.koodoreader.core.importer.EpubToc
-import com.koodoreader.engine.layout.HtmlFlattener
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.PaginatorOptions
 import com.koodoreader.engine.layout.TextMeasurer
@@ -11,111 +11,137 @@ import java.io.File
 /**
  * EPUB → 分页结果 的集成会话（EPUB 原生阅读屏 步骤②，多格式重构后）。
  *
- * 打开时一次性完成：[EpubSpine] 逐章 XHTML → [HtmlFlattener] 扁平化为
- * [TextBlock] → [PagedDocumentSession]（LayoutEngine 自绘分页 + CFI 读写）。
- * 全部分页/CFI 能力委托给 [paged]，本类只负责「EPUB spine 生命周期」
- * （[close] 释放归档句柄）与「章节标签」。
+ * 打开时经 [EpubChapterLoader] 按需读取各章 XHTML → [PagedDocumentSession]。
+ * [expandRemaining] 在首章快开后继续加载剩余章节并重建分页（Canvas 渐进打开）。
  *
  * 纯 JVM：measurer 由构造方注入——真机传 TextPaint 实现（AndroidTextMeasurer），
  * JVM 测试传 engine/layout 自带的确定性 measurer。
  */
 class EpubBookSession private constructor(
-    val spine: EpubSpine,
-    val paged: PagedDocumentSession,
+    private val loader: EpubChapterLoader,
+    private var pagedSession: PagedDocumentSession,
+    private val layoutWidth: Float,
+    private val layoutHeight: Float,
+    private val measurer: TextMeasurer,
+    private val layoutOptions: PaginatorOptions,
+    private val chapterDescriptors: List<ChapterDesc>,
+    private val loadedChapters: MutableList<PagedDocumentSession.Chapter>,
 ) : ReaderSession {
 
-    override val pageCount: Int get() = paged.pageCount
-    override val chapterCount: Int get() = paged.chapterCount
+    private var layoutGeneration: Int = 0
 
-    /** 某页的全部已排版行（宿主逐行绘制；行含 x/y/baseline/字号/对齐）。 */
-    override fun pageLines(page: Int): List<LayoutLine> = paged.pageLines(page)
+    val spine: EpubSpine get() = loader.epubSpine
 
-    /**
-     * 该页第一个已排版行的位置 CFI —— 翻页时写阅读进度用
-     * （`epubcfi(/6/<spine>!<chain>/<element>/<offsetStep>:<char>)`）。
-     */
-    override fun cfiForPage(page: Int): String? = paged.cfiForPage(page)
+    /** Spine 条目总数（含尚未分页的章）。 */
+    val totalChapterCount: Int get() = chapterDescriptors.size
 
-    /** 把一个位置 CFI 解析回分页位置并落到对应页（标注/书签打开用）。 */
-    override fun pageForCfi(cfi: String): Int? = paged.pageForCfi(cfi)
+    /** 已加载并参与分页的章数。 */
+    val loadedChapterCount: Int get() = loadedChapters.size
 
-    /** 章节边界：第 [chapterOrder] 章（0 基）所在的页号。 */
-    override fun pageOfChapter(chapterOrder: Int): Int = paged.pageOfChapter(chapterOrder)
+    val isFullyLoaded: Boolean get() = loadedChapterCount >= chapterDescriptors.size
 
-    /** 章节显示标签（进度条；EPUB 用 OPF 里的章节文件名）。 */
-    override fun chapterLabel(chapterOrder: Int): String = paged.chapterLabel(chapterOrder)
+    /** Compose 用：每次 [expandRemaining] 重建分页后递增。 */
+    fun layoutRevision(): Int = layoutGeneration
 
-    override fun chapterText(chapterOrder: Int): String = paged.chapterText(chapterOrder)
+    override val pageCount: Int get() = pagedSession.pageCount
+    override val chapterCount: Int get() = pagedSession.chapterCount
 
-    override fun layoutResult() = paged.layoutResult()
+    override fun pageLines(page: Int): List<LayoutLine> = pagedSession.pageLines(page)
+
+    override fun cfiForPage(page: Int): String? = pagedSession.cfiForPage(page)
+
+    override fun pageForCfi(cfi: String): Int? = pagedSession.pageForCfi(cfi)
+
+    override fun pageOfChapter(chapterOrder: Int): Int = pagedSession.pageOfChapter(chapterOrder)
+
+    override fun chapterLabel(chapterOrder: Int): String = pagedSession.chapterLabel(chapterOrder)
+
+    override fun chapterText(chapterOrder: Int): String = pagedSession.chapterText(chapterOrder)
+
+    override fun layoutResult() = pagedSession.layoutResult()
 
     override fun close() {
-        spine.close()
+        loader.close()
     }
 
-    /** zip-internal path of chapter [index] (for resolving relative `<img src>`). */
     override fun chapterHref(index: Int): String =
         spine.chapters.getOrNull(index)?.href ?: ""
 
-    /**
-     * Read image bytes from the EPUB archive.
-     *
-     * [src] is the `<img>` src attribute (relative to the chapter's directory).
-     * Resolution: chapter dir + src → zip entry → bytes.
-     * Example: chapterHref = "OEBPS/chap/ch01.xhtml", src = "images/cover.png"
-     *  → resolved "OEBPS/chap/images/cover.png" → zip.entry() → bytes.
-     */
     override fun readImage(baseHref: String, src: String): ByteArray? {
         if (baseHref.isBlank() || src.isBlank()) return null
         val srcClean = src.trim()
         if (srcClean.startsWith("data:")) {
-            // data:image/png;base64,... — decode inline (rare in EPUBs)
             val base64 = srcClean.substringAfter("base64=", "").trim()
             return runCatching { java.util.Base64.getDecoder().decode(base64) }.getOrNull()
         }
-        val baseDir = baseHref.substringBeforeLast('/').ifEmpty { "" }
-        val resolved = if (baseDir.isEmpty()) srcClean
-                       else "$baseDir/${srcClean.trimStart('/')}"
+        val resolved = EpubResourceLoader.resolve(baseHref, srcClean) ?: return null
         return spine.readResource(resolved)
     }
 
+    /**
+     * 加载下一批章节并重建分页。
+     *
+     * @return `true` 表示仍有章节未加载；`false` 表示已全部加载或无需再加载。
+     */
+    @Synchronized
+    fun expandRemaining(batchSize: Int = Int.MAX_VALUE): Boolean {
+        if (isFullyLoaded) return false
+        val batch = batchSize.coerceAtLeast(1)
+        val remaining = chapterDescriptors.size - loadedChapterCount
+        val toLoad = minOf(batch, remaining)
+        val end = loadedChapterCount + toLoad
+        for (i in loadedChapterCount until end) {
+            loadedChapters.add(loadChapter(chapterDescriptors[i]))
+        }
+        rebuildPaged()
+        return !isFullyLoaded
+    }
+
+    private fun loadChapter(desc: ChapterDesc): PagedDocumentSession.Chapter {
+        val item = loader.load(desc.id)
+        return PagedDocumentSession.Chapter(
+            index = item.index,
+            label = desc.title ?: item.href.substringAfterLast('/'),
+            blocks = item.blocks,
+        )
+    }
+
+    private fun rebuildPaged() {
+        pagedSession = PagedDocumentSession.create(
+            chapters = loadedChapters.toList(),
+            viewportWidthPx = layoutWidth,
+            viewportHeightPx = layoutHeight,
+            measurer = measurer,
+            options = layoutOptions,
+        )
+        layoutGeneration++
+    }
+
+    private data class ChapterDesc(val id: String, val title: String?)
+
     companion object {
 
-        /**
-         * 打开并分页整本 EPUB。
-         *
-         * @param file the .epub 文件
-         * @param viewportWidthPx / viewportHeightPx 屏幕内容区像素
-         * @param measurer 文字测量（真机 TextPaint / 测试 Monospaced）
-         */
         fun open(
             file: File,
             viewportWidthPx: Float,
             viewportHeightPx: Float,
             measurer: TextMeasurer,
             options: PaginatorOptions = PaginatorOptions(),
+            chapterLimit: Int? = null,
         ): EpubBookSession {
-            val spine = EpubSpine.open(file)
-            try {
-                // 章节标签：书自带目录（EPUB3 NAV / EPUB2 NCX，EpubToc）优先；
-                // 没有 TOC 的降级回 spine 文件名（旧行为）。解析失败返回空，
-                // 永不抛异常（容错优先，与 EpubSpine 同族约定）。调用一次，
-                // 后面按 href 键查表，O(1)/章。
-                val labels = EpubToc.chapterLabels(spine)
-                val chapters = spine.chapters.mapIndexed { order, chapter ->
-                    // readChapter 按【过滤后 chapters 列表的位置】取（内部
-                    // chapters.getOrNull(index)），必须传 order 而不是
-                    // chapter.index（OPF 原始 spine 位）——spine 含
-                    // linear="no" 条目时两者错位，会读错章节甚至越界拿空。
-                    val html = spine.readChapter(order).orEmpty()
-                    PagedDocumentSession.Chapter(
-                        index = order,
-                        label = labels[chapter.href.lowercase()] ?: chapter.href.substringAfterLast('/'),
-                        blocks = HtmlFlattener.DEFAULT.flatten(
-                            html = html,
-                            spineIndex = order + 1, // CFI spine 步是 1 基
-                            href = chapter.href,
-                        ).blocks,
+            val loader = EpubChapterLoader.open(file)
+            return try {
+                val descriptors = loader.descriptors().map { ChapterDesc(it.id, it.title) }
+                val take = chapterLimit?.coerceIn(1, descriptors.size) ?: descriptors.size
+                val chapters = ArrayList<PagedDocumentSession.Chapter>(take)
+                for (i in 0 until take) {
+                    val item = loader.load(descriptors[i].id)
+                    chapters.add(
+                        PagedDocumentSession.Chapter(
+                            index = item.index,
+                            label = descriptors[i].title ?: item.href.substringAfterLast('/'),
+                            blocks = item.blocks,
+                        ),
                     )
                 }
                 val paged = PagedDocumentSession.create(
@@ -125,9 +151,18 @@ class EpubBookSession private constructor(
                     measurer = measurer,
                     options = options,
                 )
-                return EpubBookSession(spine, paged)
+                EpubBookSession(
+                    loader = loader,
+                    pagedSession = paged,
+                    layoutWidth = viewportWidthPx,
+                    layoutHeight = viewportHeightPx,
+                    measurer = measurer,
+                    layoutOptions = options,
+                    chapterDescriptors = descriptors,
+                    loadedChapters = chapters.toMutableList(),
+                )
             } catch (t: Throwable) {
-                spine.close()
+                loader.close()
                 throw t
             }
         }

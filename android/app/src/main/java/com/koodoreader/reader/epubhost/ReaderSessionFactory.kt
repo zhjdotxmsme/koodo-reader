@@ -49,12 +49,21 @@ object ReaderSessionFactory {
         viewportHeightPx: Float,
         measurer: TextMeasurer,
         options: PaginatorOptions = PaginatorOptions(),
+        /** EPUB only: paginate the first chapter first; call [EpubBookSession.expandRemaining] for the rest. */
+        progressiveEpub: Boolean = false,
     ): ReaderSession? = when (kindOf(format)) {
         // Let parse/paginate failures throw. NativeEpubScreen already wraps
         // this in runCatching and surfaces `openError` — swallowing here made
         // packaged-APK open failures look like a blank "could not paginate"
         // with no cause.
-        Kind.EPUB -> EpubBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
+        Kind.EPUB -> EpubBookSession.open(
+            file,
+            viewportWidthPx,
+            viewportHeightPx,
+            measurer,
+            options,
+            chapterLimit = if (progressiveEpub) 1 else null,
+        )
         Kind.TEXT -> TextBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
         Kind.MOBI -> MobiBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
         Kind.WEB -> WebBookSession.open(file, viewportWidthPx, viewportHeightPx, measurer, options)
