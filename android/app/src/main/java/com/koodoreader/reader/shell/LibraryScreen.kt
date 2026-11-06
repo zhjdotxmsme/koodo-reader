@@ -79,6 +79,7 @@ fun LibraryScreen(
     val books by viewModel.libraryBooks.collectAsStateWithLifecycle()
     val shelf by viewModel.shelf.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val libraryLoading by viewModel.libraryLoading.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val metadataState by metadataViewModel.state.collectAsStateWithLifecycle()
     val treeLauncher = rememberLauncherForActivityResult(
@@ -336,7 +337,9 @@ fun LibraryScreen(
                     showFailureDialog = true
                 }
             }
-            if (books.isEmpty()) {
+            if (libraryLoading) {
+                LibraryLoadingSkeleton()
+            } else if (books.isEmpty()) {
                 EmptyLibraryHint(
                     favoritesOnly = shelf.favoritesOnly,
                     onImportClick = { filesLauncher.launch(arrayOf("*/*")) },

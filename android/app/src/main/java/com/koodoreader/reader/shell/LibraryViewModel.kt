@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
@@ -78,8 +79,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         AtomicBookStore(booksDir).reconcile(ownedPaths)
     }
 
+    private val _libraryLoading = MutableStateFlow(true)
+    val libraryLoading: StateFlow<Boolean> = _libraryLoading
+
     val books: StateFlow<List<BookEntity>> =
         db.bookDao().observeAll()
+            .onEach { _libraryLoading.value = false }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ------------------------------------------------------------------

@@ -1,6 +1,7 @@
 package com.koodoreader.reader.reader
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -109,8 +110,26 @@ fun NativeTextReaderScreen(
             }
             pageImages = withContext(Dispatchers.IO) { loader.loadInlineImages(imageLines) }
         }
+        val widthDp = (constraints.maxWidth / density).toInt()
+        val tocViewModel = remember(loader) { TocViewModel(loader) }
+        AdaptiveReaderLayout(
+            widthDp = widthDp,
+            sidebar = {
+                TocSidebar(
+                    viewModel = tocViewModel,
+                    currentChapterId = viewModel.currentLocation.chapterId,
+                    onJump = { id ->
+                        viewModel.open(TextLocation(id, 0))
+                        readerView = viewModel.readerView()
+                        onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
+                    },
+                )
+            },
+        ) {
         if (view == null) {
-            CircularProgressIndicator(Modifier.align(Alignment.Center))
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
         } else when (view.mode) {
             PageRenderMode.PAGED -> {
                 val highlights = NativeNoteHighlights.blockColorsForPage(
@@ -161,6 +180,7 @@ fun NativeTextReaderScreen(
                     },
                 )
             }
+        }
         }
     }
 }
