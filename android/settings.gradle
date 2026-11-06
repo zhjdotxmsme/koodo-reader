@@ -25,6 +25,10 @@ include ':core:importer'
 // "桌面 .db 双向可读" — see the P1 Room migration card).
 include ':core:dbio'
 
+// Versioned cross-device sync snapshot DTOs + transport boundary (2026-11-02 plan).
+include ':core:sync'
+include ':core:reader'
+
 // Pure JVM shared utilities: desktop-parity i18n (keys identical to the
 // desktop react-i18next catalogs; locale subset synced by
 // scripts/sync-locales-android.js, see ADR-004).
