@@ -58,6 +58,7 @@ import com.koodoreader.core.ui.theme.LocalKoodoChartColors
 import com.koodoreader.feature.stats.DayPoint
 import com.koodoreader.feature.stats.HeatmapCell
 import com.koodoreader.feature.stats.StatsAggregator
+import com.koodoreader.feature.stats.StatsRange
 import com.koodoreader.feature.stats.StatsSnapshot
 import java.text.DateFormatSymbols
 
@@ -123,6 +124,7 @@ fun StatsScreen(
     t: (String) -> String = { it },
     onClose: () -> Unit = {},
     onChartTabSelected: (ChartTab) -> Unit = {},
+    onRangeSelected: (StatsRange) -> Unit = {},
     /**
      * False when this screen is mounted as a TOP-LEVEL tab (the shell's bottom
      * bar already provides navigation). A close affordance there would be a
@@ -167,8 +169,12 @@ fun StatsScreen(
             }
 
             StatCards(state, palette, t)
+            Spacer(Modifier.height(12.dp))
+            SummaryRow(state, palette, t)
             Spacer(Modifier.height(24.dp))
             ChartSection(state, palette, t, onChartTabSelected)
+            Spacer(Modifier.height(24.dp))
+            DistributionSection(state, palette, t, onRangeSelected)
             Spacer(Modifier.height(24.dp))
             HeatmapSection(state.snapshot, palette, t)
         }
@@ -438,3 +444,62 @@ private fun HeatmapSection(snapshot: StatsSnapshot, palette: StatsPalette, t: (S
 /** Desktop `formatTime` tooltip text of one heatmap cell. */
 fun heatmapCellTooltip(cell: HeatmapCell): String =
     "${cell.day}: ${StatsAggregator.formatTime(cell.seconds)}"
+
+
+@Composable
+private fun SummaryRow(state: StatsUiState, palette: StatsPalette, t: (String) -> String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        StatCard(StatsAggregator.formatTime(state.summary.todaySeconds), t("Today"), palette, Modifier.weight(1f))
+        StatCard(StatsAggregator.formatTime(state.summary.weekSeconds), t("7 Days"), palette, Modifier.weight(1f))
+        StatCard(StatsAggregator.formatTime(state.summary.monthSeconds), t("30 Days"), palette, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun DistributionSection(
+    state: StatsUiState,
+    palette: StatsPalette,
+    t: (String) -> String,
+    onRangeSelected: (StatsRange) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(palette.card, KoodoCardShape)
+            .padding(16.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                StatsRange.SEVEN_DAYS to t("7 Days"),
+                StatsRange.THIRTY_DAYS to t("30 Days"),
+                StatsRange.ALL to t("All"),
+            ).forEach { (range, label) ->
+                val selected = state.range == range
+                TextButton(
+                    onClick = { onRangeSelected(range) },
+                    modifier = Modifier.background(
+                        if (selected) palette.tabActiveBackground else palette.tabInactiveBackground,
+                        KoodoCardShape,
+                    ),
+                ) {
+                    Text(label, color = if (selected) palette.tabActiveText else palette.tabInactiveText)
+                }
+            }
+        }
+        if (state.formatShares.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(t("By format"), color = palette.text, fontWeight = FontWeight.Bold)
+            FormatRingChart(state.formatShares)
+        }
+        if (state.hourBuckets.any { it > 0 }) {
+            Spacer(Modifier.height(12.dp))
+            Text(t("By hour"), color = palette.text, fontWeight = FontWeight.Bold)
+            HourBarChart(state.hourBuckets)
+        }
+        if (state.ranking.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(t("Top books"), color = palette.text, fontWeight = FontWeight.Bold)
+            BookRankingList(state.ranking)
+        }
+    }
+}

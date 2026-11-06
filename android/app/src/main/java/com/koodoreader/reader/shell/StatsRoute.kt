@@ -13,6 +13,7 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.feature.stats.platform.ReadingSessionWiring
 import com.koodoreader.feature.stats.ui.StatsScreen
 import com.koodoreader.feature.stats.ui.StatsViewModel
+import kotlinx.coroutines.flow.first
 
 /**
  * Host of the P6 reading-stats screen (desktop `/stats`).
@@ -62,6 +63,17 @@ fun StatsRoute(
                         ReadingSessionWiring.localToday(System.currentTimeMillis())
                     },
                     annotationStats = RoomAnnotationStatsStore(db.noteDao()),
+                    bookInfoProvider = {
+                        db.bookDao().observeAll().first().associate { book ->
+                            book.key to com.koodoreader.feature.stats.StatsBookInfo(
+                                title = book.name.orEmpty(),
+                                format = book.format.orEmpty(),
+                            )
+                        }
+                    },
+                    zoneOffsetProvider = {
+                        java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000
+                    },
                 )
             }
         }
@@ -74,6 +86,7 @@ fun StatsRoute(
         t = { key -> i18n.localization.t(key) },
         onClose = onBack,
         onChartTabSelected = viewModel::selectChartTab,
+        onRangeSelected = viewModel::selectRange,
         showClose = showClose,
     )
 }
