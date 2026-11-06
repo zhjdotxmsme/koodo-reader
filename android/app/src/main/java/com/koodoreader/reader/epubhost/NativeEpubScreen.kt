@@ -153,6 +153,8 @@ import com.koodoreader.reader.shell.ReaderGestureCodec
 import com.koodoreader.reader.shell.ReaderGestureRuntime
 import com.koodoreader.reader.shell.ReaderPageGestures
 import com.koodoreader.reader.shell.ReaderPageTurn
+import com.koodoreader.reader.shell.ReaderFirstRunGuide
+import com.koodoreader.reader.shell.rememberReaderFirstRunGuide
 import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
 import com.koodoreader.reader.shell.ReaderTapKind
@@ -173,12 +175,16 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -1822,6 +1828,32 @@ fun NativeEpubScreen(
                             )
                         }
                     }
+                    // 翻页过渡：200ms 轻微位移+淡入淡出，页码比较定方向。
+                    // 出场帧按自己的页码取行与高亮；手势始终作用在实时页码上。
+                    AnimatedContent(
+                        targetState = currentPage,
+                        transitionSpec = {
+                            val dir = if (targetState > initialState) 1 else -1
+                            (slideInHorizontally(tween(MotionTokens.NORMAL)) { it / 4 * dir } +
+                                fadeIn(tween(MotionTokens.NORMAL)))
+                                .togetherWith(
+                                    slideOutHorizontally(tween(MotionTokens.NORMAL)) { -it / 4 * dir } +
+                                        fadeOut(tween(MotionTokens.NORMAL)),
+                                )
+                        },
+                        label = "pageTurn",
+                    ) { page ->
+                    val pageLines = session?.pageLines(page) ?: emptyList()
+                    val pageHighlights: Map<Int, Long> = remember(bookNotes, session, page) {
+                        val s = session ?: return@remember emptyMap()
+                        val layout = s.layoutResult() ?: return@remember emptyMap()
+                        bookNotes.mapNotNull { note ->
+                            val cfi = note.cfi ?: return@mapNotNull null
+                            val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+                            val line = layout.lineAt(pos) ?: return@mapNotNull null
+                            if (line.page == page) line.blockIndex to HighlightPalette.paintArgb(note.color) else null
+                        }.toMap()
+                    }
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1935,12 +1967,12 @@ fun NativeEpubScreen(
                         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                         paint.color = fgColor.toArgb()
                         paint.typeface = FontManager.typefaceFor(context, features.fontKey.ifBlank { null })
-                        for (line in lines) {
+                        for (line in pageLines) {
                             drawLayoutLine(
                                 line,
                                 paint,
                                 pageImages,
-                                highlightBlockColors,
+                                pageHighlights,
                                 bionic = features.bionic,
                             )
                         }
@@ -1950,7 +1982,7 @@ fun NativeEpubScreen(
                                 viewportHeight = size.height,
                                 config = ReadingRulerConfig(
                                     lineHeight = features.rulerLineHeight,
-                                    lineHeightPx = lines.firstOrNull()?.height ?: 24f,
+                                    lineHeightPx = pageLines.firstOrNull()?.height ?: 24f,
                                     followFinger = false,
                                 ),
                             )
@@ -1960,6 +1992,7 @@ fun NativeEpubScreen(
                                 size = Size(size.width, area.height),
                             )
                         }
+                    }
                     }
                     if (features.paragraphMode && session != null) {
                         ParagraphModeLayer(
@@ -2031,6 +2064,14 @@ fun NativeEpubScreen(
             )
         }
     }
+
+    // ── 首次进入阅读页引导：一次性、点任意处可跳过 ──
+    val (guideVisible, dismissGuide) = rememberReaderFirstRunGuide()
+    ReaderFirstRunGuide(
+        visible = guideVisible,
+        onDismiss = dismissGuide,
+        modifier = Modifier.fillMaxSize(),
+    )
 
     // ── 选中行菜单（叠在阅读页底部，不能作为 Scaffold 的兄弟节点
     // 被 NavHost 顶到屏幕外） ───────────────────────────────────────────────

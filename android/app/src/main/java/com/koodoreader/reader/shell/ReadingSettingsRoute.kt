@@ -164,7 +164,8 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 value = state.fontScale,
                 onValueChange = { commit(state.copy(fontScale = it)) },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-                steps = 27,
+                // 与阅读内 ReaderAppearanceSheet 一致：0.1 步长（0.7..2.5 → 17 steps）。
+                steps = 17,
             )
 
             Text(t("Font"), style = MaterialTheme.typography.titleMedium)

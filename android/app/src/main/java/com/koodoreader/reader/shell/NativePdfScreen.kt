@@ -844,6 +844,14 @@ fun NativePdfScreen(
         modifier = Modifier.align(Alignment.TopCenter),
         onReveal = { showChrome = true },
     )
+
+    // 首次进入阅读页引导：一次性、点任意处可跳过。
+    val (guideVisible, dismissGuide) = rememberReaderFirstRunGuide()
+    ReaderFirstRunGuide(
+        visible = guideVisible,
+        onDismiss = dismissGuide,
+        modifier = Modifier.fillMaxSize(),
+    )
     }
 
     fun jumpToAnnotationCfi(cfi: String) {

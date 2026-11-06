@@ -36,11 +36,16 @@
 - `:app:testWebviewDebugUnitTest`：315 项中 314 通过；唯一失败 `PdfReflowHighlightsTest` 为 `org.json.JSONObject not mocked` 环境型既有失败，与本次改动无交集。
 - 构建环境：`JAVA_HOME=D:\jdk-17\jdk-17.0.13+11`（AGP 8.2.2 需 JDK 17）。
 
-## 新增 i18n key（t() 缺失回退英文 key，桌面 parity 约定）
-`Can't load library`、`Retry`、`Moved to trash`、`Undo`、`More options`、`No matching books`、`This shelf is empty`、`Ascending`、`Descending`、`Highlight saved`、`Note saved`、`Press back again to exit`、`White background`、`Paper background`、`Dark gray background`、`Black background`。
+## 新增 i18n key（en/zh-CN 已补译并同步，其余语言回退英文）
+`Can't load library`、`Retry`、`Moved to trash`、`Undo`、`More options`、`No matching books`、`This shelf is empty`、`Ascending`、`Descending`、`Highlight saved`、`Note saved`、`Press back again to exit`、`White background`、`Paper background`、`Dark gray background`、`Black background`、`Tap left or right to turn pages`、`Tap the center to toggle the toolbar`、`Got it`，以及打开失败/引擎不可用提示若干。
+
+## 追加完成（同日第二轮）
+- 翻页过渡：`AnimatedContent` 200ms 轻微位移+淡入淡出，方向感知。原生文本轨（`NativeTextReaderScreen`，`ReaderView` 作 targetState，出场帧渲染旧页）+ EPUB 旧 Canvas 轨（页码比较定方向，行/高亮按页码分别计算）。**PDF 轨不加**：缩放/连续滚动模型下双帧位图成本高、收益低。
+- `TextPageView` 横滑翻页：复用 `ReaderPageGestures.onHorizontalSwipe` 纯函数，与 EPUB/PDF 同判定（累计 48f 阈值）。
+- 首次阅读引导：`ReaderFirstRunGuide`（点按分区两条提示 + 点任意处/「Got it」跳过），SharedPreferences 一次性标志，EPUB/PDF 入口共用。
+- 字号滑杆步进统一：设置页 27→17（0.1 步长，与阅读内 sheet 一致）。
+- 新 i18n key 已补 en/zh-CN 并经 `scripts/sync-locales-android.js` 同步（`--check` 通过）。
 
 ## 未做（后续）
-- 翻页 AnimatedContent 过渡包裹层、TextPageView 横滑翻页（ReaderPageGestures 纯函数可复用）。
-- 系统栏显隐动画、首次进入阅读页引导（P2）。
+- 系统栏显隐动画（`WindowInsetsAnimationControllerCompat` 需真机验证，列 P2 暂缓）。
 - Canvas 正文 TalkBack 语义（引擎级改造）。
-- 新 i18n key 的中文翻译（随桌面 catalogs 同步流程补齐）。

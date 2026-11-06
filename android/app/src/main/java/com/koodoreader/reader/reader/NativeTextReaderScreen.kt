@@ -1,5 +1,14 @@
 package com.koodoreader.reader.reader
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import com.koodoreader.core.designsystem.MotionTokens
+
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -137,33 +146,51 @@ fun NativeTextReaderScreen(
             }
         } else when (view.mode) {
             PageRenderMode.PAGED -> {
-                val highlights = NativeNoteHighlights.blockColorsForPage(
-                    notesForHighlights,
-                    view.layout,
-                    view.page,
-                )
-                TextPageView(
-                    view = view,
-                    canGoNext = view.hasNextPage || viewModel.hasNextChapter(),
-                    canGoPrevious = view.hasPrevPage || viewModel.hasPreviousChapter(),
-                    highlightBlockColors = highlights,
-                    pageImages = pageImages,
-                    onLongPressLine = { line ->
-                        control?.selectionText = line.text
-                        control?.selectionLocation = TextLocation(
-                            viewModel.currentLocation.chapterId,
-                            line.start,
-                            line.end,
-                        )
-                        onLineSelected()
+                // 翻页过渡：200ms 轻微位移+淡入淡出，方向跟随前进/后退。
+                // 自绘分页排版属引擎层，不引入 Pager；targetState 直接取
+                // ReaderView，出场帧仍渲染旧页内容。
+                var turnForward by remember { mutableStateOf(true) }
+                AnimatedContent(
+                    targetState = view,
+                    transitionSpec = {
+                        val dir = if (turnForward) 1 else -1
+                        (slideInHorizontally(tween(MotionTokens.NORMAL)) { it / 4 * dir } +
+                            fadeIn(tween(MotionTokens.NORMAL)))
+                            .togetherWith(
+                                slideOutHorizontally(tween(MotionTokens.NORMAL)) { -it / 4 * dir } +
+                                    fadeOut(tween(MotionTokens.NORMAL)),
+                            )
                     },
-                    onPageTurn = { forward ->
-                        if (forward) viewModel.goNext() else viewModel.goPrevious()
-                        readerView = viewModel.readerView()
-                        onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
-                    },
-                    onToggleChrome = onToggleChrome,
-                )
+                    label = "pageTurn",
+                ) { pageView ->
+                    TextPageView(
+                        view = pageView,
+                        canGoNext = view.hasNextPage || viewModel.hasNextChapter(),
+                        canGoPrevious = view.hasPrevPage || viewModel.hasPreviousChapter(),
+                        highlightBlockColors = NativeNoteHighlights.blockColorsForPage(
+                            notesForHighlights,
+                            pageView.layout,
+                            pageView.page,
+                        ),
+                        pageImages = pageImages,
+                        onLongPressLine = { line ->
+                            control?.selectionText = line.text
+                            control?.selectionLocation = TextLocation(
+                                viewModel.currentLocation.chapterId,
+                                line.start,
+                                line.end,
+                            )
+                            onLineSelected()
+                        },
+                        onPageTurn = { forward ->
+                            turnForward = forward
+                            if (forward) viewModel.goNext() else viewModel.goPrevious()
+                            readerView = viewModel.readerView()
+                            onLocationChanged(viewModel.currentLocation, viewModel.currentFrame)
+                        },
+                        onToggleChrome = onToggleChrome,
+                    )
+                }
             }
             PageRenderMode.SCROLL -> {
                 val scrollHighlights = NativeNoteHighlights.blockColorsForLayout(

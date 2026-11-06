@@ -1,6 +1,7 @@
 package com.koodoreader.reader.reader
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,32 @@ fun TextPageView(
                         ReaderPageGesture.SELECT -> Unit
                     }
                 }
+            }
+            // 横滑翻页：与 EPUB Canvas / PDF 轨共用 ReaderPageGestures 的判定
+            // （累计位移 48f 阈值，垂直分量大则让位滚动/揭示）。
+            .pointerInput(view.page, canGoNext, canGoPrevious) {
+                var dx = 0f
+                var dy = 0f
+                detectDragGestures(
+                    onDragStart = { dx = 0f; dy = 0f },
+                    onDragEnd = {
+                        when (
+                            ReaderPageGestures.onHorizontalSwipe(
+                                dx,
+                                dy,
+                                enabled = ReaderGestureRuntime.config.swipePageTurn,
+                            )
+                        ) {
+                            ReaderPageGesture.PREV_PAGE -> if (canGoPrevious) onPageTurn(false)
+                            ReaderPageGesture.NEXT_PAGE -> if (canGoNext) onPageTurn(true)
+                            else -> Unit
+                        }
+                    },
+                    onDrag = { _, amount ->
+                        dx += amount.x
+                        dy += amount.y
+                    },
+                )
             },
     ) {
         drawRect(backgroundColor)
