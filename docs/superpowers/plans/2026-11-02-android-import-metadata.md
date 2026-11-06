@@ -108,7 +108,7 @@ private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
 
 在后续实现同一任务的 ZIP 分支中，用 fresh stream 读取条目名：`mimetype=application/epub+zip` → EPUB，`[Content_Types].xml` + `word/document.xml` → DOCX，只有图片条目 → CBZ；MOBI 检查 PalmDB 头，FB2/HTML/MHTML 检查解码后的根结构。探针流每次调用都必须重新打开。
 
-- [ ] **Step 4: 补齐 ZIP、PalmDB 和文本根结构测试并运行**
+- [x] **Step 4: 补齐 ZIP、PalmDB 和文本根结构测试并运行**
 
 Run: `./gradlew :core:importer:test --tests '*FormatDetectorTest'`
 Expected: PASS；至少包含 EPUB、DOCX、CBZ、PDF、RAR、MOBI、FB2、HTML、TXT 和无扩展名用例。
@@ -186,7 +186,7 @@ class AtomicBookStore(private val booksDir: File) {
 
 `ImportPipeline` 在检测到 `Unsupported/Unknown` 时不得调用 `copy`。重复判断发生在 `copy` 返回后；重复时删除新文件并返回数据库已有记录。空间预检使用 `BookSource.size` 与 `booksDir.usableSpace`，未知大小仍依赖流式异常清理。
 
-- [ ] **Step 4: 验证成功、重复、异常和空间不足**
+- [x] **Step 4: 验证成功、重复、异常和空间不足**
 
 Run: `./gradlew :core:importer:test --tests '*AtomicImportTest' --tests '*ImportPipelineTest'`
 Expected: PASS；测试中重复导入后原 `BookRecord.name` 保持编辑值。
@@ -258,7 +258,7 @@ object MetadataParsers {
 
 各解析器只读取所需 ZIP 条目或文本头部；复用 `EpubBook`、`MobiParser`、`ZipArchives` 和现有 XML/HTML 工具，不新增解析依赖。`core:importer` 增加对 `:engine:mobi` 的依赖。导入管线仅在所有非空字段中填值，缺失字段继续使用文件名等原默认值。
 
-- [ ] **Step 4: 运行全部导入与元数据测试**
+- [x] **Step 4: 运行全部导入与元数据测试**
 
 Run: `./gradlew :core:importer:test :engine:mobi:test`
 Expected: PASS；损坏元数据不会使 `ImportResult.failures` 增加。
@@ -326,7 +326,7 @@ object BookMetadataEditor {
 
 `BookMetadataViewModel.save` 在 `viewModelScope` 中读取最新行、调用 `validate` 并 `upsert`。书卡长按菜单增加“书籍详情”；对话框展示只读格式/大小/页数/MD5和四个可编辑字段，保存成功关闭，校验错误显示在对话框内。不重载文件、不更新 MD5。
 
-- [ ] **Step 4: 验证编辑、重启读取和备份字段**
+- [x] **Step 4: 验证编辑、重启读取和备份字段**
 
 Run: `./gradlew :app:testDebugUnitTest :core:dbio:test`
 Expected: PASS；备份 round-trip 后编辑值不变。
@@ -394,7 +394,7 @@ object ExternalBookOpener {
 
 `MainActivity` 删除立即 `startActivity` 的旧行为，收集状态后携带 `extra_book_key` 启动原生壳；失败只显示错误。`NativeShellActivity` 在 NavHost 就绪后消费一次性 extra。`IntentRoutePolicy` 不再把 CBR 标为可导入路径，格式守卫使用 `SUPPORTED - EXPLICITLY_UNSUPPORTED` 规则。
 
-- [ ] **Step 4: 跑外部路由、格式守卫和全量相关测试**
+- [x] **Step 4: 跑外部路由、格式守卫和全量相关测试**
 
 Run: `./gradlew :app:testDebugUnitTest :core:importer:test && node scripts/check-import-rules.js`
 Expected: PASS；测试确认 CBR 无 Room 写入，外部新书和重复书均产生同一阅读路由。

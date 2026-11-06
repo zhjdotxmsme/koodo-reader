@@ -2,164 +2,92 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 用 PDFium 替换 pdf.js 主阅读链路，提供直接位图渲染、文本选择、高亮、笔记、搜索、目录、密码、OCR 和重排，并满足 ABI/16 KB 要求。
+**Goal:** ~~用 PDFium 替换 pdf.js~~ **（2026-11-03 修订）** 按 [`docs/android-pdf-poc.md`](../../android-pdf-poc.md) 验收 **pdf.js WebView 主路径**（PdfRenderer 仅快照/打印）；PDFium 因 16KB 页对齐与维护状态 **不纳入** 本仓库。功能目标仍为：文本选择、高亮、笔记、搜索、目录、密码、OCR、重排与 ABI 门禁。
 
-**Architecture:** 纯 JVM `PdfEngine` 定义文档、页面、文本和搜索模型；Android `PdfiumEngine` 适配 `io.legere:pdfiumandroid`。Compose 通过有界缓存消费 Bitmap 和页面文本，标注继续使用桌面兼容的 `CfiPdfMapper` JSON。
+**Architecture:** 主阅读在 **引擎 WebView** 内运行 vendored **pdf.js**（`assets/pdfengine/`，与桌面同源）；`PdfReaderController` / `NativePdfScreen` 为宿主壳。`engine:pdf` 的 `CfiPdfMapper` 继续负责 Room 标注 JSON；**PdfRenderer** 仅可选快照/打印，不替代主渲染。
 
-**Tech Stack:** Kotlin、PDFium、`io.legere:pdfiumandroid:2.0.3`、Compose、Room、ML Kit OCR、JUnit/Android instrumentation。
+**Tech Stack:** Kotlin、Compose、pdf.js（Apache-2.0）、现有 loopback `LocalAssetServer`、Room、ML Kit OCR（可选）、JUnit/Android instrumentation。
 
 ## Global Constraints
 
-- 书籍正文不使用 WebView，不经过 PNG/Base64/JavaScript 桥。
-- PDFium 所有目标 ABI 和 16 KB 对齐必须通过；失败时不得静默退回 pdf.js。
+- 主路径 **允许** 专用 PDF WebView；禁止再引入 Pdfium / 新 .so（16KB 页风险，见 POC）。
+- 不得静默切到未验收的原生 PDF 后端；PdfRenderer 失败不得冒充主阅读器。
 - 保留目录、搜索、密码、裁边、双页、OCR、重排和快照。
 - PDF 标注使用指纹、1 基页号、归一化矩形及文本引用，能从笔记跳回原选区。
 - 1000 页 PDF 打开 ≤ 1.5 秒；没有设备结果不算最终完成。
 
 ## File Map
 
-- `android/engine/pdf/src/main/kotlin/com/koodoreader/engine/pdf/PdfEngine.kt`：原生引擎中性接口和模型。
-- `android/engine/pdf/src/main/kotlin/com/koodoreader/engine/pdf/PdfPageCache.kt`：按字节预算的通用缓存策略。
-- `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfiumEngine.kt`：PDFium Android 适配器。
-- `android/app/src/main/java/com/koodoreader/reader/shell/PdfReaderController.kt`：直接位图渲染、取消和状态。
-- `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfSelectionModel.kt`：字符选择、坐标转换和文本引用。
-- `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfSelectionOverlay.kt`：Compose 选择和高亮层。
+- `android/app/src/main/assets/pdfengine/`：pdf.js + worker + `engine.mjs`（Apache-2.0，与桌面同源）。
+- `android/app/src/main/java/com/koodoreader/reader/LocalAssetServer.kt`：loopback 提供 pdfengine 与书籍 URI。
+- `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfJsHostBridge.kt`：WebView ↔ pdf.js 桥（打开/渲染/文本/搜索）。
+- `android/app/src/main/java/com/koodoreader/reader/shell/NativePdfScreen.kt` + `PdfReaderController.kt`：Compose 壳与状态。
+- `android/engine/pdf/`：`CfiPdfMapper`、搜索/视口/标注 JVM 模型（**不**新增 Pdfium 适配层）。
 
 ---
 
-### Task 1: PDFium 依赖、ABI 与文本能力验收构建
+### Task 1: pdf.js 资产、loopback 与无 .so 门禁
 
 **Files:**
-- Modify: `android/app/build.gradle:162-240`
-- Create: `android/app/src/androidTest/java/com/koodoreader/reader/pdfhost/PdfiumCapabilityTest.kt`
-- Create: `android/app/src/androidTest/assets/reader/text-page.pdf`
-- Modify: `scripts/check-elf-16kb.js`（仅在发现新库过滤规则误报时）
-- Modify: `docs/android-pdf-poc.md`
+- Verify: `android/app/src/main/assets/pdfengine/`（`pdf.mjs`、`pdf.worker.mjs`、`engine.mjs`、`index.html`）
+- Verify: `android/app/src/main/java/com/koodoreader/reader/LocalAssetServer.kt`
+- Test: `android/app/src/test/java/com/koodoreader/reader/pdfhost/PdfEngineReadyLatchTest.kt`
+- Modify: `docs/android-pdf-poc.md`（结论与 Goal 一致）
+- Run: `scripts/check-elf-16kb.js` on native release APK
 
 **Interfaces:**
-- Produces: 可供 Task 2 使用的 `PdfiumCoreKt`、`PdfDocumentKt`、`PdfPageKt`、`PdfTextPageKt` 依赖。
-- Produces: 设备上可验证的 `open → page → text → charBox/rects → bitmap` 链路。
+- Produces: loopback URL 可加载 pdfengine；release APK **不**因 PDF 阅读新增 `.so`。
+- 设备验收（非 JVM）：`PdfJsHostBridge` 打开样例 PDF → 文本层可选 → 搜索命中（见 Task 2）。
 
-- [ ] **Step 1: 先加入固定依赖和失败能力测试**
+- [x] **Step 1: 资产与 JVM 就绪测试**
 
-```gradle
-implementation 'io.legere:pdfiumandroid:2.0.3'
-```
+Run: `./gradlew :engine:pdf:test :app:testDebugUnitTest --tests com.koodoreader.reader.pdfhost.PdfEngineReadyLatchTest`
+Expected: PASS（pdf.js 路径不依赖 Pdfium）。
 
-```kotlin
-@Test
-fun pdfiumReadsTextAndCoordinates() = runTest {
-    val file = AssetCopies.copy(context, "reader/text-page.pdf")
-    val core = PdfiumCoreKt(context, Dispatchers.IO)
-    val document = core.openDocument(file)
-    val page = document.openPage(0)!!
-    val text = page.openTextPage()
-    assertTrue(text.textPageGetText(0, text.textPageCountChars())!!.contains("Native PDF"))
-    assertNotNull(text.textPageGetCharBox(0))
-    assertTrue(text.textPageCountRects(0, 1) > 0)
-    text.close(); page.close(); document.close()
-}
-```
+- [ ] **Step 2: 组装 native release 并检查 ELF**
 
-如果库的 suspend 包装名与上述不同，使用同版本普通 `PdfiumCore` API，但测试断言保持不变；不得删除文本坐标断言。
+Run: `node scripts/build-android.js --target native --release --no-split`
+Run: `node scripts/check-elf-16kb.js <apk>`
+Expected: PASS；无新增 pdfium `.so`。
 
-- [ ] **Step 2: 运行依赖解析、构建和设备测试**
+- [ ] **Step 3: 设备 smoke（pdf.js）**
 
-Run: `./gradlew :app:assembleDebug :app:assembleRelease`
-Expected: PASS 且 Maven 固定到 2.0.3。
-Run: `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.koodoreader.reader.pdfhost.PdfiumCapabilityTest`
-Expected: PASS；若文本 API 或原生加载失败，本任务阻断后续 PDF 任务。
+在真机打开 ≥100 页 PDF：首屏可见、目录非空、划词有选区；记录到 `docs/android-native-validation-2026-11-02.md`。
 
-- [ ] **Step 3: 检查所有 ABI 和 16 KB 页对齐**
-
-Run: `node scripts/check-elf-16kb.js <path-to-apk>`
-Expected: PASS，输出每个新 `.so` 的对齐结果。至少构建 `arm64-v8a`、`armeabi-v7a`、`x86_64`；缺任一目标 ABI 即失败。
-
-- [ ] **Step 4: 更新 PDF POC 结论**
-
-记录选择 2.0.3 的文本 API 证据、PDFium 版本、包体积增量和 ABI 结果；将旧“pdf.js 主路径”结论标为被 2026-11-02 原生设计替代。
-
-- [ ] **Step 5: 提交**
+- [ ] **Step 4: 提交**
 
 ```bash
-git add android/app scripts/check-elf-16kb.js docs/android-pdf-poc.md && git commit -m "build(android): validate native pdfium engine"
+git add docs/android-pdf-poc.md docs/android-native-validation-2026-11-02.md && git commit -m "docs(android): pdf.js acceptance gates for native pdf"
 ```
 
-### Task 2: 引擎中性模型与 PDFium 文本适配
+### Task 2: CFI 标注、搜索与 PdfReaderController 契约
 
 **Files:**
-- Create: `android/engine/pdf/src/main/kotlin/com/koodoreader/engine/pdf/PdfEngine.kt`
-- Modify: `android/engine/pdf/src/main/kotlin/com/koodoreader/engine/pdf/PdfHostBridge.kt`
-- Create: `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfiumEngine.kt`
-- Create: `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfiumTextMapper.kt`
-- Test: `android/engine/pdf/src/test/kotlin/com/koodoreader/engine/pdf/PdfEngineContractTest.kt`
-- Modify: `android/app/src/androidTest/java/com/koodoreader/reader/pdfhost/PdfiumCapabilityTest.kt`
+- `android/engine/pdf/src/test/kotlin/com/koodoreader/engine/pdf/CfiPdfMapperTest.kt`（已有）
+- `android/engine/pdf/src/test/kotlin/com/koodoreader/engine/pdf/PdfSearchEngineTest.kt`（已有）
+- `android/app/src/main/java/com/koodoreader/reader/shell/PdfReaderController.kt`
+- `android/app/src/main/java/com/koodoreader/reader/pdfhost/PdfJsHostBridge.kt`
 
 **Interfaces:**
-- Produces: `PdfEngine.open(file: File, password: String?)`、`render(page: Int, spec: RenderSpec): Bitmap`、`text(page: Int): PdfTextPageModel`、`outline()`、`metadata()`、`close()`。
-- `PdfTextPageModel(page, chars: List<PdfCharModel>)`；`PdfCharModel(char, left, top, right, bottom)` 使用归一化 `0..1` 页面坐标。
-- `PdfHostBridge` 的旧 JS 方法不再新增调用方；旧实现暂时保留至最终删除计划。
+- Room `range` JSON 继续经 `CfiPdfMapper`（指纹、1 基页、归一化矩形）。
+- 搜索/翻页/密码错误经 `PdfReaderController` + bridge，不得新增 Pdfium 调用方。
 
-- [ ] **Step 1: 写模型边界和坐标测试**
+- [x] **Step 1: JVM 回归**
 
-```kotlin
-@Test
-fun `text model normalises coordinates and preserves character order`() {
-    val model = PdfiumTextMapper.map(page = 7, pageWidth = 200f, pageHeight = 400f, chars = listOf(
-        NativeChar("A", 20f, 40f, 30f, 60f),
-    ))
-    assertEquals(7, model.page)
-    assertEquals(0.1f, model.chars[0].left)
-    assertEquals(0.1f, model.chars[0].top)
-    assertEquals("A", model.chars[0].char)
-}
-```
+Run: `./gradlew :engine:pdf:test`
+Expected: PASS（`CfiPdfMapperTest`、`PdfSearchEngineTest` 等）。
 
-增加空文本页、CJK 代理对、负坐标 clamp、密码错误和关闭后调用失败测试。
+- [ ] **Step 2: 设备 — 选择 → 高亮 → 笔记 → 跳回**
 
-- [ ] **Step 2: 确认模型测试失败**
+在 `NativePdfScreen` 完成一轮并记入 validation 清单。
 
-Run: `./gradlew :engine:pdf:test --tests '*PdfEngineContractTest'`
-Expected: FAIL，模型和 mapper 不存在。
-
-- [ ] **Step 3: 实现中性接口与坐标转换**
-
-```kotlin
-data class PdfCharModel(
-    val char: String, val left: Float, val top: Float, val right: Float, val bottom: Float,
-)
-data class PdfTextPageModel(val page: Int, val chars: List<PdfCharModel>) {
-    val text: String get() = chars.joinToString("") { it.char }
-}
-
-data class NativeChar(
-    val char: String, val left: Float, val top: Float, val right: Float, val bottom: Float,
-)
-
-object PdfiumTextMapper {
-    fun map(page: Int, pageWidth: Float, pageHeight: Float, chars: List<NativeChar>): PdfTextPageModel {
-        require(pageWidth > 0f && pageHeight > 0f)
-        return PdfTextPageModel(page, chars.map {
-            PdfCharModel(it.char,
-                (it.left / pageWidth).coerceIn(0f, 1f), (it.top / pageHeight).coerceIn(0f, 1f),
-                (it.right / pageWidth).coerceIn(0f, 1f), (it.bottom / pageHeight).coerceIn(0f, 1f))
-        })
-    }
-}
-```
-
-`NativeChar` 和 mapper 放在 app 的 `PdfiumTextMapper.kt`，JVM 坐标算法可单独测试且不引用 Android `RectF`。`PdfiumEngine.text` 使用 `openTextPage()`、`textPageGetUnicode`、`textPageGetCharBox`，在 `finally` 关闭文本页；`render` 使用 `renderPageBitmap` 直接写 ARGB_8888。
-
-- [ ] **Step 4: 运行 JVM 和设备契约测试**
-
-Run: `./gradlew :engine:pdf:test && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.koodoreader.reader.pdfhost.PdfiumCapabilityTest`
-Expected: PASS；设备断言文字、坐标和 Bitmap 均非空。
-
-- [ ] **Step 5: 提交**
+- [ ] **Step 3: 提交**
 
 ```bash
-git add android/engine/pdf android/app && git commit -m "feat(android): adapt pdfium to native reader model"
+git add android/engine/pdf android/app && git commit -m "test(android): pdf cfi and search regression"
 ```
+
+> **Note:** 下文 Task 3–5 仍为 **Pdfium 草稿**（位图缓存 / PdfiumEngine）。在 pdf.js 主路径下 **不要实现**；后续迭代应改写为 WebView 缓存与 `PdfJsHostBridge` 行为，或整段删除。
 
 ### Task 3: 直接渲染、有界缓存与现有 PDF 状态迁移
 

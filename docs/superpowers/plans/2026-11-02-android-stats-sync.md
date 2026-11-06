@@ -39,7 +39,7 @@
 - Produces: `AnnotationStatsStore.events(): List<AnnotationEvent>`，由 app Room DAO 适配。
 - 保留 `ReadingSessionRepository.DEFAULT_FLUSH_INTERVAL_MILLIS = 30_000L`。
 
-- [ ] **Step 1: 写失败统计测试**
+- [x] **Step 1: 写失败统计测试**
 
 ```kotlin
 @Test
@@ -88,7 +88,7 @@ object StatsDomain {
 
 `ReadingSessionView` 从现有 Entity 映射 bookKey/start/end/seconds，并用 CFI 提供章节/页信息；不改表结构。`ReadingSessionClock` 只调用 repository 的 begin/tick/end，不另设计时器。
 
-- [ ] **Step 4: 运行统计全量回归**
+- [x] **Step 4: 运行统计全量回归**
 
 Run: `./gradlew :feature:stats:test :app:testDebugUnitTest --tests '*ReadingSession*'`
 Expected: PASS；30 秒、后台和跨午夜语义保持不变。
@@ -113,7 +113,7 @@ git add android/feature/stats android/app && git commit -m "feat(android): exten
 - Consumes: Task 1 的会话/标注聚合和现有 `StatsUiState`。
 - Produces: `StatsSnapshot.todaySeconds/weekSeconds/monthSeconds`、`formatDistribution`、`hourDistribution`、`bookRanking` 和范围选择。
 
-- [ ] **Step 1: 写失败聚合与排行测试**
+- [x] **Step 1: 写失败聚合与排行测试**
 
 ```kotlin
 @Test
@@ -144,7 +144,7 @@ fun StatsAggregator.rankBooks(
 
 UI 使用现有设计 token 和 Canvas 绘制折线/柱状/环形图，新增范围 SegmentedButton 和排行卡片；所有数据来自 StateFlow，Loading 时不展示旧值为新结果。
 
-- [ ] **Step 4: 运行统计测试和 Compose 构建**
+- [x] **Step 4: 运行统计测试和 Compose 构建**
 
 Run: `./gradlew :feature:stats:test :app:compileDebugKotlin`
 Expected: PASS；所有统计屏状态有数据/空态。
@@ -170,7 +170,7 @@ git add android/feature/stats android/app && git commit -m "feat(android): add r
 - Produces: `SyncSnapshotCodec.encode/decode`，支持 WebDAV/本地文件夹/S3/MinIO 的传输仅依赖 `SyncTarget`。
 - 快照只含 DTO，不含 Room/Android/WebDAV/S3 类型。
 
-- [ ] **Step 1: 写失败 round-trip 与版本测试**
+- [x] **Step 1: 写失败 round-trip 与版本测试**
 
 ```kotlin
 @Test
@@ -214,7 +214,7 @@ object SyncSnapshotCodec {
 
 `SyncJson` 复用项目现有无依赖 JSON 编码风格并处理所有 DTO 字段；`BackupBundle` 的桌面适配器负责 DTO 与现有五表/私有偏好映射。`SyncTarget` 只读写字节快照，仍不加入应用运行时依赖或 UI。
 
-- [ ] **Step 4: 运行同步、备份和统计回归**
+- [x] **Step 4: 运行同步、备份和统计回归**
 
 Run: `./gradlew :core:sync:test :core:dbio:test :feature:stats:test`
 Expected: PASS；快照往返后元数据、位置、设置和统计完全一致。

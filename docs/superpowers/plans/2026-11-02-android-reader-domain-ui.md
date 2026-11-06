@@ -42,7 +42,7 @@
 - Produces: `BookParser`、`ChapterLoader`、`TextExtractor`、`PageRenderer`、`AnnotationMapper`。
 - Produces: `ReaderMappers.toBook(BookEntity)`、`toBookEntity(Book)`；身份始终为 `bookKey`。
 
-- [ ] **Step 1: 写失败 mapper 测试**
+- [x] **Step 1: 写失败 mapper 测试**
 
 ```kotlin
 @Test

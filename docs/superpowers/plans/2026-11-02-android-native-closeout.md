@@ -42,7 +42,7 @@
 - Consumes: 原生文本/PDF/漫画的统一打开入口。
 - 重命名使用导入计划 Task 4 的元数据编辑器。
 
-- [ ] **Step 1: 写最近阅读和进度清理测试**
+- [x] **Step 1: 写最近阅读和进度清理测试**
 
 ```kotlin
 @Test
@@ -111,7 +111,7 @@ git add android/app android/core/dbio && git commit -m "feat(android): unify rec
 - Produces: `SyncCoordinator.export(target, snapshot)` 和 `import(target): ByteArray?`；不包含网络、Room、Context 或冲突策略。
 - JSON/Markdown 导出使用现有 `DataExport.NoteRow`，包含 `bookKey`、章节、CFI/range、文本、笔记和颜色。
 
-- [ ] **Step 1: 写失败导出与同步契约测试**
+- [x] **Step 1: 写失败导出与同步契约测试**
 
 ```kotlin
 @Test
@@ -150,7 +150,7 @@ object SyncCoordinator {
 
 `BackupScreen` 的 Notes 和 Highlights 行各增加 MD 按钮，调用现有 `exportData` 并传 `BackupDataExportFormat.MD`。直接使用已有 `BackupDataExportFormat.MD`，其 `toCore()` 已映射到 `DataExport.Format.MD`。同步模块只被测试引用，不加入应用依赖，不出现 WebDAV 设置项。
 
-- [ ] **Step 4: 验证 JSON/MD round-trip 和同步隔离**
+- [x] **Step 4: 验证 JSON/MD round-trip 和同步隔离**
 
 Run: `./gradlew :core:dbio:test :core:sync:test :app:testDebugUnitTest`
 Expected: PASS；导出记录可由 `DataImport` 重新关联到原书位置，APK 不含同步实现依赖。
@@ -162,6 +162,8 @@ git add android/core/dbio android/core/sync android/app android/settings.gradle 
 ```
 
 ### Task 3: 删除 React/Foliate/pdf.js 与唯一原生构建
+
+> **2026-11-03 阻塞说明：** [`android-pdf-poc.md`](../../android-pdf-poc.md) 选定 **pdf.js** 主路径；Task 3 中删除 `assets/pdfengine/` / `PdfJsHostBridge` 与 PDF 计划冲突。当前仅可删 **React 岛**（`-PstripIsland` + `check-native-apk-assets.js`）；Foliate 在 `READER_ENGINE=canvas` 时仍可能使用，全删待文本/PDF 最终架构签字。
 
 **Files:**
 - Delete: `android/app/src/main/java/com/koodoreader/reader/MainActivity.kt`
