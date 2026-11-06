@@ -499,7 +499,8 @@ fun NativePdfScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                // Chrome overlays the content; Scaffold padding would resize
+                // the page on every toggle and leave large blank bands.
                 .background(MaterialTheme.colorScheme.background)
                 // Tap zones: the outer quarters page back/forward. The middle is
                 // deliberately inert so the P2 gesture layer can take it.

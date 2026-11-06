@@ -1451,7 +1451,10 @@ fun NativeEpubScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                // Chrome overlays the content instead of resizing it: applying
+                // Scaffold padding here would shrink the foliate viewport and
+                // force a full re-pagination every time the bars toggle, which
+                // showed up as large blank bands above/below the text.
                 .background(MaterialTheme.colorScheme.background)
                 // 视口尺寸必须在这里捕获：session 的创建依赖 viewport 非零，而
                 // Canvas（原来唯一设置 viewport 的地方）只在 session 非空时才
