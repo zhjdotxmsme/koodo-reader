@@ -104,6 +104,9 @@ object ShellNav {
      */
     fun hidesBottomBar(route: String?): Boolean = isReader(route)
 
+    /** Reader screens handle their own insets; other screens use the shell padding. */
+    fun usesOuterContentPadding(route: String?): Boolean = !isReader(route)
+
     /** True when [route] is one of the four tabs. */
     fun isTopLevel(route: String?): Boolean = ShellTab.fromRoute(route) != null
 

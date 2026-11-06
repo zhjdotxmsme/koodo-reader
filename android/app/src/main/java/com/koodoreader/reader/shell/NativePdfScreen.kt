@@ -491,6 +491,12 @@ fun NativePdfScreen(
                             )
                         }
                     }
+                    IconButton(onClick = { showChrome = false }) {
+                        Icon(
+                            painterResource(R.drawable.ic_close),
+                            contentDescription = t("Close"),
+                        )
+                    }
                 },
             )
             }

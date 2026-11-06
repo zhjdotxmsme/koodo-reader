@@ -84,7 +84,11 @@ fun ShellScaffold(
             navController = navController,
             assets = assets,
             initialBookKey = initialBookKey,
-            modifier = Modifier.padding(padding),
+            modifier = if (ShellNav.usesOuterContentPadding(route)) {
+                Modifier.padding(padding)
+            } else {
+                Modifier
+            },
         )
     }
 }

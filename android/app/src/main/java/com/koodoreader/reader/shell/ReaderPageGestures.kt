@@ -20,11 +20,12 @@ enum class ReaderChromeAction {
     BOOKMARK,
     FONT,
     TTS,
+    CLOSE,
     ;
 
     companion object {
         /** Always visible on the reading TopAppBar. */
-        val PRIMARY: List<ReaderChromeAction> = listOf(TOC, SEARCH)
+        val PRIMARY: List<ReaderChromeAction> = listOf(TOC, SEARCH, CLOSE)
 
         /** Overflow ("more") menu — must not hide [PRIMARY]. */
         val OVERFLOW: List<ReaderChromeAction> = listOf(FONT, BOOKMARK, TTS)

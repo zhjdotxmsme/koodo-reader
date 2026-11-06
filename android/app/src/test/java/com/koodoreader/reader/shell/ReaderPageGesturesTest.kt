@@ -30,9 +30,9 @@ class ReaderPageGesturesTest {
     }
 
     @Test
-    fun `toolbar keeps toc as a primary action so it cannot overflow off-screen`() {
+    fun `toolbar keeps navigation and close as primary actions`() {
         assertEquals(
-            listOf(ReaderChromeAction.TOC, ReaderChromeAction.SEARCH),
+            listOf(ReaderChromeAction.TOC, ReaderChromeAction.SEARCH, ReaderChromeAction.CLOSE),
             ReaderChromeAction.PRIMARY,
         )
         org.junit.Assert.assertTrue(

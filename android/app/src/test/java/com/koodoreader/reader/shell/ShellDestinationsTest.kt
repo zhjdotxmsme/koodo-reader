@@ -79,6 +79,16 @@ class ShellDestinationsTest {
     }
 
     @Test
+    fun `reader owns its insets instead of applying outer padding twice`() {
+        assertFalse(ShellNav.usesOuterContentPadding(ShellNav.READER_PATTERN))
+        assertFalse(ShellNav.usesOuterContentPadding(ShellNav.READER_WITH_CFI_PATTERN))
+        assertFalse(ShellNav.usesOuterContentPadding("reader/abc123"))
+        for (tab in ShellTab.barOrder()) {
+            assertTrue(ShellNav.usesOuterContentPadding(tab.route))
+        }
+    }
+
+    @Test
     fun `the CFI reader variant also hides the bottom bar`() {
         assertTrue(ShellNav.hidesBottomBar(ShellNav.READER_WITH_CFI_PATTERN))
         assertTrue(ShellNav.hidesBottomBar("reader/abc?cfi=epubcfi(/6/2!)"))

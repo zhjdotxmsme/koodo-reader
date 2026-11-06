@@ -1415,6 +1415,14 @@ fun NativeEpubScreen(
                                 )
                             }
                         }
+                        if (ReaderChromeAction.CLOSE in ReaderChromeAction.PRIMARY) {
+                            IconButton(onClick = { showChrome = false }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_close),
+                                    contentDescription = t("Close"),
+                                )
+                            }
+                        }
                     },
                 )
             }
