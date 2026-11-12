@@ -1074,7 +1074,7 @@ fun NativeEpubScreen(
         return selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
     }
 
-    fun highlightCss(color: Long): String = HighlightPalette.css(color)
+    fun highlightCss(color: Long): String = HighlightPalette.readerCss(color)
 
     fun saveHighlight(colorIdx: Int = 0) {
         val excerpt = currentSelectionText().trim()
@@ -2393,7 +2393,7 @@ fun NativeEpubScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { jumpToFoliateHit(hit) }
-                                        .padding(vertical = 6.dp),
+                                        .padding(horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp, vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -2414,7 +2414,7 @@ fun NativeEpubScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { jumpToNativeSearchHit(hit) }
-                                        .padding(vertical = 6.dp),
+                                        .padding(horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp, vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -2439,7 +2439,7 @@ fun NativeEpubScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { jumpToHit(hit) }
-                                        .padding(vertical = 6.dp),
+                                        .padding(horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp, vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp),
                                 ) {
                                     Row {
                                         Text(
@@ -2456,6 +2456,7 @@ fun NativeEpubScreen(
                                             style = MaterialTheme.typography.bodySmall,
                                         )
                                     }
+                                    Spacer(Modifier.height(SpaceTokens.xs.dp))
                                     Text(
                                         hit.chapterTitle.ifBlank {
                                             session?.chapterLabel(hit.spineIndex).orEmpty()
@@ -2493,7 +2494,7 @@ fun NativeEpubScreen(
                         val cfi = note.cfi
                         if (useFoliate && !cfi.isNullOrBlank()) {
                             withContext(Dispatchers.IO) {
-                                runCatching { foliateBridge?.addHighlight(cfi, HighlightPalette.css(color)) }
+                                runCatching { foliateBridge?.addHighlight(cfi, HighlightPalette.readerCss(color)) }
                             }
                         }
                     }

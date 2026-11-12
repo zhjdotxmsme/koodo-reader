@@ -28,6 +28,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -103,6 +104,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
+import com.koodoreader.core.designsystem.SpaceTokens
 import androidx.compose.runtime.mutableIntStateOf
 import com.koodoreader.core.ui.component.ErrorState
 import com.koodoreader.core.ui.component.koodoPressScale
@@ -1268,6 +1270,10 @@ private fun SearchDialog(
                                 TextButton(
                                     onClick = { onJump(index) },
                                     modifier = Modifier.fillMaxWidth().koodoPressScale(),
+                                    contentPadding = PaddingValues(
+                                        horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                                        vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+                                    ),
                                 ) {
                                     Text(
                                         text = "[${hit.pageNumber}] ${hit.snippet}",

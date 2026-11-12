@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import com.koodoreader.core.designsystem.MotionTokens
+import com.koodoreader.core.ui.theme.KoodoMotion
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -146,7 +147,7 @@ fun NativeTextReaderScreen(
             }
         } else when (view.mode) {
             PageRenderMode.PAGED -> {
-                // 翻页过渡：200ms 轻微位移+淡入淡出，方向跟随前进/后退。
+                // 翻页过渡：250ms 轻微位移+淡入淡出，方向跟随前进/后退。
                 // 自绘分页排版属引擎层，不引入 Pager；targetState 直接取
                 // ReaderView，出场帧仍渲染旧页内容。
                 var turnForward by remember { mutableStateOf(true) }
@@ -154,11 +155,11 @@ fun NativeTextReaderScreen(
                     targetState = view,
                     transitionSpec = {
                         val dir = if (turnForward) 1 else -1
-                        (slideInHorizontally(tween(MotionTokens.NORMAL)) { it / 4 * dir } +
-                            fadeIn(tween(MotionTokens.NORMAL)))
+                        (slideInHorizontally(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)) { it / 4 * dir } +
+                            fadeIn(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)))
                             .togetherWith(
-                                slideOutHorizontally(tween(MotionTokens.NORMAL)) { -it / 4 * dir } +
-                                    fadeOut(tween(MotionTokens.NORMAL)),
+                                slideOutHorizontally(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)) { -it / 4 * dir } +
+                                    fadeOut(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)),
                             )
                     },
                     label = "pageTurn",

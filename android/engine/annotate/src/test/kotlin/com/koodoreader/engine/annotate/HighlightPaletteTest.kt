@@ -22,9 +22,16 @@ class HighlightPaletteTest {
     }
 
     @Test
-    fun `packed colors with alpha are kept`() {
+    fun `packed colors keep their rgb for reader paint`() {
         val green = 0x9988FF88L
-        assertEquals(green, HighlightPalette.paintArgb(green))
+        assertEquals(0x4D88FF88L, HighlightPalette.paintArgb(green))
         assertEquals("#88FF88", HighlightPalette.css(green))
+    }
+
+    @Test
+    fun `reader paint always uses thirty percent alpha`() {
+        val paint = HighlightPalette.paintArgb(0x9988FF88L)
+        assertEquals(0x4D88FF88L, paint)
+        assertEquals("rgba(136,255,136,0.3)", HighlightPalette.readerCss(0x9988FF88L))
     }
 }

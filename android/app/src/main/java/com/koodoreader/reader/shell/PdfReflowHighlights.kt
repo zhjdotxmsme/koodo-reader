@@ -22,7 +22,7 @@ object PdfReflowHighlights {
                     .put("t", range.y.toDouble())
                     .put("w", range.width.toDouble())
                     .put("h", range.height.toDouble())
-                    .put("c", HighlightPalette.css(note.color)),
+                    .put("c", HighlightPalette.readerCss(note.color)),
             )
         }
         return arr.toString()
@@ -51,7 +51,6 @@ object PdfReflowHighlights {
     el.style.width=(h.w||0)+'px';
     el.style.height=(h.h||0)+'px';
     el.style.background=(h.c||'#ffe066');
-    el.style.opacity='0.45';
     el.style.pointerEvents='none';
     el.style.borderRadius='2px';
     el.style.zIndex='1';

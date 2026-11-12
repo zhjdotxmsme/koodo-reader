@@ -1,19 +1,22 @@
 package com.koodoreader.reader.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +29,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.core.ui.component.koodoPressScale
+import com.koodoreader.core.ui.theme.KoodoCardShape
 import com.koodoreader.engine.annotate.HighlightColor
 import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.reader.shell.t
@@ -63,89 +69,130 @@ fun BookAnnotationsScreen(
     }
 
     when {
-        loading -> CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-        error != null -> Column(modifier = Modifier.padding(16.dp)) {
+        loading -> CircularProgressIndicator(modifier = Modifier.padding(SpaceTokens.md.dp))
+        error != null -> Column(modifier = Modifier.padding(SpaceTokens.md.dp)) {
             Text(error, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = onRetry) { Text(t("Retry")) }
+            TextButton(onClick = onRetry, modifier = Modifier.koodoPressScale()) { Text(t("Retry")) }
         }
         notes.isEmpty() && bookmarks.isEmpty() -> Text(
             t("No notes yet"),
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(SpaceTokens.md.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         else -> Column {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                TextButton(onClick = { addingNote = true; newNoteDraft = "" }) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(
+                    horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                    vertical = SpaceTokens.xs.dp,
+                ),
+            ) {
+                TextButton(
+                    onClick = { addingNote = true; newNoteDraft = "" },
+                    modifier = Modifier.koodoPressScale(),
+                ) {
                     Text(t("Note"))
                 }
             }
-            LazyColumn {
-            items(notes, key = { it.key }) { note ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        note.text.orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                    )
-                    if (!note.notes.isNullOrEmpty()) {
-                        Text(
-                            note.notes.orEmpty(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        note.chapter.orEmpty(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row {
-                        TextButton(onClick = { editing = note; draft = note.notes.orEmpty() }) {
-                            Text(t("Edit"))
-                        }
-                        TextButton(onClick = { onDeleteNote(note) }) { Text(t("Delete")) }
-                        note.cfi?.takeIf { it.isNotBlank() }?.let { cfi ->
-                            TextButton(onClick = { onJump(cfi) }) { Text(t("Jump")) }
-                        }
-                    }
-                    if (note.color != null || note.text?.isNotBlank() == true) {
-                        Row(modifier = Modifier.padding(top = 4.dp)) {
-                            recolorPalette.forEach { swatch ->
-                                val code = swatch.code.toLong()
-                                val argb = HighlightPalette.paintArgb(code)
-                                val rgb = (argb and 0xFFFFFF).toInt()
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = SpaceTokens.md.dp),
+                verticalArrangement = Arrangement.spacedBy(SpaceTokens.GROUP_GAP.dp),
+            ) {
+                items(notes, key = { it.key }) { note ->
+                    Surface(
+                        shape = KoodoCardShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                                    vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(SpaceTokens.GROUP_TITLE_GAP.dp),
+                        ) {
+                            Text(
+                                note.text.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                            )
+                            if (!note.notes.isNullOrEmpty()) {
+                                Text(
+                                    note.notes.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                note.chapter.orEmpty(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row {
                                 TextButton(
-                                    onClick = { onRecolor(note, code) },
-                                    modifier = Modifier.padding(end = 4.dp),
+                                    onClick = { editing = note; draft = note.notes.orEmpty() },
+                                    modifier = Modifier.koodoPressScale(),
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .background(Color(rgb), CircleShape),
-                                    )
+                                    Text(t("Edit"))
+                                }
+                                TextButton(
+                                    onClick = { onDeleteNote(note) },
+                                    modifier = Modifier.koodoPressScale(),
+                                ) { Text(t("Delete")) }
+                                note.cfi?.takeIf { it.isNotBlank() }?.let { cfi ->
+                                    TextButton(
+                                        onClick = { onJump(cfi) },
+                                        modifier = Modifier.koodoPressScale(),
+                                    ) { Text(t("Jump")) }
+                                }
+                            }
+                            if (note.color != null || note.text?.isNotBlank() == true) {
+                                Row(modifier = Modifier.padding(top = SpaceTokens.xs.dp)) {
+                                    recolorPalette.forEach { swatch ->
+                                        val code = swatch.code.toLong()
+                                        val rgb = HighlightPalette.paintArgb(code) and 0xFFFFFF
+                                        TextButton(
+                                            onClick = { onRecolor(note, code) },
+                                            modifier = Modifier
+                                                .padding(end = SpaceTokens.xs.dp)
+                                                .koodoPressScale(),
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(Color(rgb or 0xFF000000), CircleShape),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            items(bookmarks, key = { it.key }) { bookmark ->
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    Text(
-                        bookmark.label ?: bookmark.chapter.orEmpty(),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    bookmark.cfi?.takeIf { it.isNotBlank() }?.let { cfi ->
-                        TextButton(onClick = { onJump(cfi) }) { Text(t("Jump")) }
+                items(bookmarks, key = { it.key }) { bookmark ->
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                            vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+                        ),
+                    ) {
+                        Text(
+                            bookmark.label ?: bookmark.chapter.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        bookmark.cfi?.takeIf { it.isNotBlank() }?.let { cfi ->
+                            TextButton(
+                                onClick = { onJump(cfi) },
+                                modifier = Modifier.koodoPressScale(),
+                            ) { Text(t("Jump")) }
+                        }
+                        TextButton(
+                            onClick = { onDeleteBookmark(bookmark) },
+                            modifier = Modifier.koodoPressScale(),
+                        ) { Text(t("Delete")) }
                     }
-                    TextButton(onClick = { onDeleteBookmark(bookmark) }) { Text(t("Delete")) }
                 }
-            }
             }
         }
     }
@@ -162,13 +209,19 @@ fun BookAnnotationsScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    onAddNote(newNoteDraft.trim())
-                    addingNote = false
-                }) { Text(t("Confirm")) }
+                TextButton(
+                    onClick = {
+                        onAddNote(newNoteDraft.trim())
+                        addingNote = false
+                    },
+                    modifier = Modifier.koodoPressScale(),
+                ) { Text(t("Confirm")) }
             },
             dismissButton = {
-                TextButton(onClick = { addingNote = false }) { Text(t("Cancel")) }
+                TextButton(
+                    onClick = { addingNote = false },
+                    modifier = Modifier.koodoPressScale(),
+                ) { Text(t("Cancel")) }
             },
         )
     }
@@ -192,13 +245,19 @@ fun BookAnnotationsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    onEditNote(note, draft)
-                    editing = null
-                }) { Text(t("Confirm")) }
+                TextButton(
+                    onClick = {
+                        onEditNote(note, draft)
+                        editing = null
+                    },
+                    modifier = Modifier.koodoPressScale(),
+                ) { Text(t("Confirm")) }
             },
             dismissButton = {
-                TextButton(onClick = { editing = null }) { Text(t("Cancel")) }
+                TextButton(
+                    onClick = { editing = null },
+                    modifier = Modifier.koodoPressScale(),
+                ) { Text(t("Cancel")) }
             },
         )
     }
