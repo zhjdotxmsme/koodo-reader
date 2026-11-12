@@ -1,15 +1,19 @@
 package com.koodoreader.reader.reader
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -27,14 +31,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import com.koodoreader.reader.shell.FontManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.reader.shell.FontManager
+import com.koodoreader.reader.shell.ReaderChromeUiState
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeatureState
 import com.koodoreader.reader.shell.t
@@ -45,20 +51,45 @@ import com.koodoreader.reader.shell.t
  * [onChange] immediately so the open book updates live; persistence is the
  * caller's job (ReaderFeaturePrefs via commitFeatures).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ReaderSettingsSheet(
     state: ReaderFeatureState,
     onChange: (ReaderFeatureState) -> Unit,
+    chromeState: ReaderChromeUiState = ReaderChromeUiState(),
+    onChromeState: (ReaderChromeUiState) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = SpaceTokens.READER_HORIZONTAL_DEFAULT.dp)
+                .padding(top = SpaceTokens.sm.dp, bottom = SpaceTokens.md.dp),
         ) {
+            ReaderSettingSwitch(
+                label = t("Full-screen reading"),
+                checked = chromeState.fullScreen,
+                onChange = { onChromeState(chromeState.copy(fullScreen = it)) },
+            )
+            ReaderSettingSwitch(
+                label = t("First-line indent"),
+                checked = chromeState.firstLineIndent,
+                onChange = { onChromeState(chromeState.copy(firstLineIndent = it)) },
+            )
+            Text(t("Page margin"), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp)) {
+                SpaceTokens.READER_HORIZONTAL_OPTIONS.forEach { margin ->
+                    FilterChip(
+                        selected = chromeState.horizontalMarginDp == margin,
+                        onClick = { onChromeState(chromeState.copy(horizontalMarginDp = margin)) },
+                        label = { Text("$margin dp") },
+                    )
+                }
+            }
             val context = LocalContext.current
             val fonts = remember(context) { FontManager.systemFonts(context) }
             var fontMenuOpen by remember { mutableStateOf(false) }
@@ -73,6 +104,7 @@ fun ReaderSettingsSheet(
                 ),
                 onValueChange = { onChange(state.copy(fontScale = it)) },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
+                steps = 7,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -108,10 +140,11 @@ fun ReaderSettingsSheet(
                 }
             }
             Text(t("Paragraph spacing"), style = MaterialTheme.typography.labelLarge)
+            val paragraphGap = ReaderFeatureCodec.effectiveParagraphSpacingPx(state)
             Slider(
-                value = ReaderFeatureCodec.clampedParagraphSpacing(state),
+                value = paragraphGap,
                 onValueChange = { onChange(state.copy(paragraphSpacingPx = it)) },
-                valueRange = ReaderFeatureCodec.PARAGRAPH_SPACING_MIN..ReaderFeatureCodec.PARAGRAPH_SPACING_MAX,
+                valueRange = 0f..maxOf(ReaderFeatureCodec.PARAGRAPH_SPACING_MAX, paragraphGap),
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -183,5 +216,24 @@ fun ReaderSettingsSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReaderSettingSwitch(
+    label: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }

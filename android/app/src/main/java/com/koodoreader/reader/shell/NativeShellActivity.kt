@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.ui.theme.KoodoTheme
 import com.koodoreader.reader.LocalAssetServer
@@ -58,6 +59,7 @@ class NativeShellActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         ReaderGestureRuntime.config = ReaderGesturePrefs(applicationContext).load()
         val i18n = I18nState.create(this)
         // P6 简繁 AUTO mode needs the reader language before the first layout.

@@ -1492,5 +1492,8 @@
   "Could not open this book.": "Could not open this book.",
   "Import it again or use the web viewer.": "Import it again or use the web viewer.",
   "The local PDF engine is unavailable for this book.": "The local PDF engine is unavailable for this book.",
-  "The loopback asset server must be running and the book file must exist under files/books/.": "The loopback asset server must be running and the book file must exist under files/books/."
+  "The loopback asset server must be running and the book file must exist under files/books/.": "The loopback asset server must be running and the book file must exist under files/books/.",
+  "Full-screen reading": "Full-screen reading",
+  "First-line indent": "First-line indent",
+  "Page margin": "Page margin"
 }

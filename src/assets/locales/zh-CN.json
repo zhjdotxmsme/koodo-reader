@@ -1511,5 +1511,8 @@
   "Could not open this book.": "无法打开此书。",
   "Import it again or use the web viewer.": "请重新导入，或改用网页阅读器。",
   "The local PDF engine is unavailable for this book.": "此书的本地 PDF 引擎不可用。",
-  "The loopback asset server must be running and the book file must exist under files/books/.": "本地资源服务必须处于运行状态，且书籍文件须位于 files/books/ 目录下。"
+  "The loopback asset server must be running and the book file must exist under files/books/.": "本地资源服务必须处于运行状态，且书籍文件须位于 files/books/ 目录下。",
+  "Full-screen reading": "全屏阅读",
+  "First-line indent": "首行缩进",
+  "Page margin": "页边距"
 }
