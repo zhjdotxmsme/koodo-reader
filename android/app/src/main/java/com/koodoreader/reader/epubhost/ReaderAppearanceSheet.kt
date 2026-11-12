@@ -8,14 +8,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -27,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.core.ui.theme.ThemeSpecBridge
 import com.koodoreader.reader.shell.READER_THEME_OPTIONS
@@ -34,18 +39,18 @@ import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.shell.t
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ReaderAppearanceSheet(
     selected: ThemeKind,
     fontScale: Float,
     lineHeight: Float,
-    marginPx: Float,
+    marginDp: Int,
     scrolled: Boolean,
     onTheme: (ThemeKind) -> Unit,
     onFontScale: (Float) -> Unit,
     onLineHeight: (Float) -> Unit,
-    onMargin: (Float) -> Unit,
+    onMarginDp: (Int) -> Unit,
     onScrolled: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -57,13 +62,15 @@ fun ReaderAppearanceSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = SpaceTokens.READER_HORIZONTAL_DEFAULT.dp)
+                .padding(top = SpaceTokens.sm.dp, bottom = SpaceTokens.md.dp),
         ) {
             Text(t("Appearance"), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SpaceTokens.LIST_ITEM_VERTICAL.dp))
             Text(t("Theme"), style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(SpaceTokens.sm.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -77,7 +84,7 @@ fun ReaderAppearanceSheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .clickable { onTheme(kind) }
-                            .padding(8.dp),
+                            .padding(SpaceTokens.sm.dp),
                     ) {
                         Box(
                             modifier = Modifier
@@ -92,7 +99,7 @@ fun ReaderAppearanceSheet(
                                     },
                                 ),
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(SpaceTokens.xs.dp))
                         Text(
                             t(FoliateAppearance.themeLabelKey(kind)),
                             style = MaterialTheme.typography.labelSmall,
@@ -105,7 +112,7 @@ fun ReaderAppearanceSheet(
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SpaceTokens.md.dp))
             Text(t("Layout"), style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -118,7 +125,7 @@ fun ReaderAppearanceSheet(
                     Text(t("Paginated") + if (!scrolled) " ✓" else "")
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SpaceTokens.md.dp))
             Text(
                 "${t("Font size")} · ${(fontScale * 100).toInt()}%",
                 style = MaterialTheme.typography.titleMedium,
@@ -127,7 +134,7 @@ fun ReaderAppearanceSheet(
                 value = fontScale,
                 onValueChange = onFontScale,
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-                steps = 17,
+                steps = 7,
             )
             Text(
                 "${t("Line height")} · ${"%.2f".format(lineHeight)}",
@@ -137,19 +144,19 @@ fun ReaderAppearanceSheet(
                 value = lineHeight,
                 onValueChange = onLineHeight,
                 valueRange = ReaderFeatureCodec.LINE_HEIGHT_MIN..ReaderFeatureCodec.LINE_HEIGHT_MAX,
-                steps = 3,
+                steps = 9,
             )
-            Text(
-                "${t("Margin")} · ${marginPx.toInt()} px",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Slider(
-                value = marginPx,
-                onValueChange = onMargin,
-                valueRange = ReaderFeatureCodec.MARGIN_MIN..ReaderFeatureCodec.MARGIN_MAX,
-                steps = 23,
-            )
-            Spacer(Modifier.height(16.dp))
+            Text(t("Margin"), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp)) {
+                SpaceTokens.READER_HORIZONTAL_OPTIONS.forEach { margin ->
+                    FilterChip(
+                        selected = marginDp == margin,
+                        onClick = { onMarginDp(margin) },
+                        label = { Text("$margin dp") },
+                    )
+                }
+            }
+            Spacer(Modifier.height(SpaceTokens.md.dp))
         }
     }
 }

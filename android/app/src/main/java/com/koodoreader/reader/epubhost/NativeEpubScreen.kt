@@ -37,8 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -61,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -75,10 +74,8 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.designsystem.CssColor
-import com.koodoreader.core.ui.theme.ThemeSpecBridge
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import com.koodoreader.engine.annotate.HighlightColor
 import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.engine.feature.BionicConfig
@@ -143,10 +140,11 @@ import com.koodoreader.reader.BuildConfig
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.reader.shell.ReaderAssetHost
+import com.koodoreader.reader.shell.ReaderBottomProgress
 import com.koodoreader.reader.shell.ReaderChromeAction
 import com.koodoreader.reader.shell.ReaderChromeRevealStrip
+import com.koodoreader.reader.shell.ReaderChromeViewModel
 import com.koodoreader.reader.shell.ReaderFiles
-import com.koodoreader.reader.shell.ReaderImmersiveBars
 import com.koodoreader.reader.shell.ReaderHrefJump
 import com.koodoreader.reader.shell.ReaderPageGesture
 import com.koodoreader.reader.shell.ReaderGestureCodec
@@ -157,12 +155,15 @@ import com.koodoreader.reader.shell.ReaderFirstRunGuide
 import com.koodoreader.reader.shell.rememberReaderFirstRunGuide
 import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.shell.ReaderSystemBars
 import com.koodoreader.reader.shell.ReaderTapKind
 import com.koodoreader.reader.shell.ReaderTapTarget
+import com.koodoreader.reader.shell.ReaderTopBar
 import com.koodoreader.reader.shell.RememberReadingSession
 import com.koodoreader.reader.shell.ShellAppearancePrefs
+import com.koodoreader.reader.shell.rememberReaderColorScheme
+import com.koodoreader.reader.shell.rememberReaderContentInsets
 import com.koodoreader.reader.translate.AppHttpTransport
-import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.shell.t
 import com.koodoreader.reader.translate.rememberTranslationPopupController
 import android.os.Handler
@@ -181,15 +182,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.ui.graphics.Brush
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.component.ErrorState
@@ -224,6 +221,12 @@ fun NativeEpubScreen(
     assets: ReaderAssetHost = ReaderAssetHost.NONE,
 ) {
     val context = LocalContext.current
+    val chromeViewModel: ReaderChromeViewModel = viewModel(
+        factory = ReaderChromeViewModel.Factory(context),
+    )
+    val chromeState by chromeViewModel.state.collectAsStateWithLifecycle()
+    val contentInsets = rememberReaderContentInsets()
+    val horizontalMarginPx = with(LocalDensity.current) { chromeState.horizontalMarginDp.dp.roundToPx() }
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
     // 阅读进度（bookKey → 位置 CFI）：非 Room 键值存储，schema.lock 五表保持干净。
     val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
@@ -1333,9 +1336,9 @@ fun NativeEpubScreen(
     val appearancePrefs = remember(context) { ShellAppearancePrefs(context) }
     DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
     val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
-    val readerPreset = remember(readerThemeKind) { readerThemeKind.builtInPreset() }
-    val bgColor = ThemeSpecBridge.background(readerPreset)
-    val fgColor = ThemeSpecBridge.foreground(readerPreset)
+    val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
+    val bgColor = readerScheme.background
+    val fgColor = readerScheme.onBackground
     val foliateFontDecl = remember(context, features.fontKey) {
         FontManager.foliateFontDeclaration(context, features.fontKey)
     }
@@ -1345,12 +1348,15 @@ fun NativeEpubScreen(
         features.columnsPerPage, features.scrolled, features.doublePage,
         features.textRulesJson, features.customBookCss, features.customBookCssEnabled,
         features.paragraphSpacingPx, features.perfTier, foliateFontDecl,
+        chromeState.horizontalMarginDp, contentInsets, chromeState.firstLineIndent,
     ) {
         ReadestViewSettings.from(
             readerThemeKind,
             features,
             foliateFontFamily = foliateFontDecl?.family,
             extraUserStylesheet = foliateFontDecl?.css.orEmpty(),
+            horizontalMarginPx = horizontalMarginPx,
+            firstLineIndent = chromeState.firstLineIndent,
         )
     }
     LaunchedEffect(useFoliate, foliateReady, viewSettings) {
@@ -1414,247 +1420,194 @@ fun NativeEpubScreen(
     BackHandler(enabled = showToc) { showToc = false }
     BackHandler(enabled = showSelectionMenu) { showSelectionMenu = false }
 
-    MaterialTheme(colorScheme = ThemeSpecBridge.readerScheme(readerPreset)) {
+    MaterialTheme(colorScheme = readerScheme) {
     Box(modifier = Modifier.fillMaxSize()) {
-    ReaderImmersiveBars(showChrome || showToc)
+    ReaderSystemBars(
+        fullScreen = chromeState.fullScreen,
+        chromeVisible = showChrome || showToc,
+        readerBackground = bgColor,
+    )
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = bgColor,
         contentColor = fgColor,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            AnimatedVisibility(
+            ReaderTopBar(
                 visible = showChrome,
-                enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)) +
-                    slideInVertically(tween(MotionTokens.NORMAL)) { -it },
-                exit = fadeOut(tween(MotionTokens.NORMAL)) +
-                    slideOutVertically(tween(MotionTokens.NORMAL)) { -it },
-            ) {
-                // 渐变遮罩替代实底：TopAppBar 透明，scrim 从状态栏往下淡出，
-                // 内容排版不受 topBar 挂卸影响（Scaffold padding 未被消费）。
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
-                                1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
-                            ),
-                        ),
-                ) {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                        title = {
-                            if (bookmarkFlash) {
-                                Text("✓ ${t("Bookmark")}", color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                            } else {
-                                Text(
-                                    book?.name ?: "",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
-                            }
-                        },
-                        actions = {
-                            // Primary chrome stays on-screen on a phone TopAppBar.
-                            // Font / bookmark / TTS used to sit here too and pushed
-                            // TOC off the right edge — the packaged native APK then
-                            // looked like it had no contents list.
-                            if (ReaderChromeAction.TOC in ReaderChromeAction.PRIMARY) {
-                                IconButton(onClick = { showToc = true }) {
-                                    Icon(
-                                        painterResource(R.drawable.ic_list_view),
-                                        contentDescription = t("Content"),
-                                    )
-                                }
-                            }
-                            if (ReaderChromeAction.SEARCH in ReaderChromeAction.PRIMARY) {
-                                IconButton(onClick = { showSearch = true }) {
-                                    Icon(
-                                        painterResource(R.drawable.ic_search),
-                                        contentDescription = t("Search"),
-                                    )
-                                }
-                            }
-                            Box {
-                                IconButton(onClick = { moreMenu = true }) {
-                                    Icon(
-                                        painterResource(R.drawable.ic_more),
-                                        contentDescription = t("More"),
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = moreMenu,
-                                    onDismissRequest = { moreMenu = false },
-                                ) {
-                                    if (FoliateAppearance.showInReaderSheet(useFoliate)) {
-                                        DropdownMenuItem(
-                                            text = { Text(t("Appearance")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                showAppearance = true
-                                            },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text(t("Settings")) },
-                                        onClick = {
-                                            moreMenu = false
-                                            showReaderSettings = true
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("A−  ${(fontScale * 100).toInt()}%") },
-                                        onClick = { setFontScale(fontScale - 0.1f) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("A+") },
-                                        onClick = { setFontScale(fontScale + 0.1f) },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(t("Bookmark")) },
-                                        onClick = {
-                                            moreMenu = false
-                                            addBookmark()
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(t("Notes")) },
-                                        onClick = {
-                                            moreMenu = false
-                                            showBookAnnotations = true
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(t("Speak the text")) },
-                                        onClick = {
-                                            moreMenu = false
-                                            if (showTtsControl) stopTts() else startTts()
-                                        },
-                                    )
-                                    if (!useFoliate) {
-                                        DropdownMenuItem(
-                                            text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                commitFeatures(features.copy(bionic = !features.bionic))
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(t("Enable reading ruler")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                commitFeatures(features.copy(ruler = !features.ruler))
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(t("Enable paragraph mode")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(t("Enable speed reading")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                commitFeatures(features.copy(speedReading = !features.speedReading))
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(t("Two-column layout")) },
-                                            onClick = {
-                                                moreMenu = false
-                                                val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
-                                                commitFeatures(features.copy(columnsPerPage = next))
-                                            },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text(t("Ask AI")) },
-                                        onClick = {
-                                            moreMenu = false
-                                            showAi = true
-                                        },
-                                    )
-                                }
-                            }
-                            if (ReaderChromeAction.CLOSE in ReaderChromeAction.PRIMARY) {
-                                IconButton(onClick = { showChrome = false }) {
-                                    Icon(
-                                        painterResource(R.drawable.ic_close),
-                                        contentDescription = t("Close"),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            AnimatedVisibility(
-                visible = showChrome && (pageCount > 0 || (useFoliate && foliateReady) || (useNativeTextReader && chapterLoader != null)),
-                enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)) +
-                    slideInVertically(tween(MotionTokens.NORMAL)) { it },
-                exit = fadeOut(tween(MotionTokens.NORMAL)) +
-                    slideOutVertically(tween(MotionTokens.NORMAL)) { it },
-            ) {
-                // 遮罩方向与顶栏相反：从内容侧向下渐实，导航栏区域一并覆盖。
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
-                                1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
-                            ),
+                title = {
+                    if (bookmarkFlash) {
+                        Text("✓ ${t("Bookmark")}", color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    } else {
+                        Text(
+                            book?.name ?: "",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        .navigationBarsPadding(),
-                ) {
-                    Surface(tonalElevation = 2.dp) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showToc = true }
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                        ) {
-                            val bar = if (useFoliate) {
-                                val pct = (foliateFraction * 100).toInt().coerceIn(0, 100)
-                                val page = when {
-                                    foliatePageLabel.isNotBlank() -> foliatePageLabel
-                                    foliateLocTotal > 0 && foliateLocCurrent >= 0 ->
-                                        "p ${foliateLocCurrent + 1}/$foliateLocTotal"
-                                    else -> ""
-                                }
-                                listOf(foliateLabel, page, "$pct%").filter { it.isNotBlank() }.joinToString(" · ")
-                            } else if (useNativeTextReader) {
-                                val pct = (nativeFraction * 100).toInt().coerceIn(0, 100)
-                                listOf(chapterInfo, nativePageLabel, "$pct%")
-                                    .filter { it.isNotBlank() }
-                                    .joinToString(" · ")
-                                    .ifBlank { t("Reading") }
-                            } else {
-                                val pct = if (pageCount > 0) ((currentPage + 1) * 100 / pageCount) else 0
-                                "$chapterInfo · p ${currentPage + 1}/$pageCount · $pct%"
-                            }
-                            Text(
-                                bar,
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                    }
+                },
+                onBack = onBack,
+                onClose = { showChrome = false },
+                actions = {
+                    // Primary chrome stays on-screen on a phone TopAppBar.
+                    // Font / bookmark / TTS used to sit here too and pushed
+                    // TOC off the right edge — the packaged native APK then
+                    // looked like it had no contents list.
+                    if (ReaderChromeAction.TOC in ReaderChromeAction.PRIMARY) {
+                        IconButton(onClick = { showToc = true }) {
+                            Icon(
+                                painterResource(R.drawable.ic_list_view),
+                                contentDescription = t("Content"),
                             )
                         }
                     }
-                }
-            }
+                    if (ReaderChromeAction.SEARCH in ReaderChromeAction.PRIMARY) {
+                        IconButton(onClick = { showSearch = true }) {
+                            Icon(
+                                painterResource(R.drawable.ic_search),
+                                contentDescription = t("Search"),
+                            )
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { moreMenu = true }) {
+                            Icon(
+                                painterResource(R.drawable.ic_more),
+                                contentDescription = t("More"),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = moreMenu,
+                            onDismissRequest = { moreMenu = false },
+                        ) {
+                            if (FoliateAppearance.showInReaderSheet(useFoliate)) {
+                                DropdownMenuItem(
+                                    text = { Text(t("Appearance")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        showAppearance = true
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(t("Settings")) },
+                                onClick = {
+                                    moreMenu = false
+                                    showReaderSettings = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("A−  ${(fontScale * 100).toInt()}%") },
+                                onClick = { setFontScale(fontScale - 0.1f) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("A+") },
+                                onClick = { setFontScale(fontScale + 0.1f) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Bookmark")) },
+                                onClick = {
+                                    moreMenu = false
+                                    addBookmark()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Notes")) },
+                                onClick = {
+                                    moreMenu = false
+                                    showBookAnnotations = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(t("Speak the text")) },
+                                onClick = {
+                                    moreMenu = false
+                                    if (showTtsControl) stopTts() else startTts()
+                                },
+                            )
+                            if (!useFoliate) {
+                                DropdownMenuItem(
+                                    text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(bionic = !features.bionic))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable reading ruler")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(ruler = !features.ruler))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable paragraph mode")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Enable speed reading")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        commitFeatures(features.copy(speedReading = !features.speedReading))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(t("Two-column layout")) },
+                                    onClick = {
+                                        moreMenu = false
+                                        val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
+                                        commitFeatures(features.copy(columnsPerPage = next))
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(t("Ask AI")) },
+                                onClick = {
+                                    moreMenu = false
+                                    showAi = true
+                                },
+                            )
+                        }
+                    }
+                },
+            )
         },
-    ) { padding ->
+        bottomBar = {
+            val progressLabel = if (useFoliate) {
+                val pct = (foliateFraction * 100).toInt().coerceIn(0, 100)
+                val page = when {
+                    foliatePageLabel.isNotBlank() -> foliatePageLabel
+                    foliateLocTotal > 0 && foliateLocCurrent >= 0 ->
+                        "p ${foliateLocCurrent + 1}/$foliateLocTotal"
+                    else -> ""
+                }
+                listOf(foliateLabel, page, "$pct%").filter { it.isNotBlank() }.joinToString(" · ")
+            } else if (useNativeTextReader) {
+                val pct = (nativeFraction * 100).toInt().coerceIn(0, 100)
+                listOf(chapterInfo, nativePageLabel, "$pct%")
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+                    .ifBlank { t("Reading") }
+            } else {
+                val pct = if (pageCount > 0) ((currentPage + 1) * 100 / pageCount) else 0
+                "$chapterInfo · p ${currentPage + 1}/$pageCount · $pct%"
+            }
+            ReaderBottomProgress(
+                visible = showChrome && (pageCount > 0 || (useFoliate && foliateReady) || (useNativeTextReader && chapterLoader != null)),
+                fraction = when {
+                    useFoliate -> foliateFraction.toFloat()
+                    useNativeTextReader -> nativeFraction.toFloat()
+                    pageCount > 0 -> (currentPage + 1).toFloat() / pageCount
+                    else -> 0f
+                },
+                label = progressLabel,
+                onClick = { showToc = true },
+            )
+        },
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1712,7 +1665,10 @@ fun NativeEpubScreen(
                 ) -> Box(Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { foliateBridge?.view ?: android.view.View(it) },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(
+                            top = contentInsets.top,
+                            bottom = contentInsets.bottom,
+                        ),
                     )
                     if (FoliateReaderLayout.showLoadingOverlay(foliateReady, openError)) {
                         Box(
@@ -1828,17 +1784,17 @@ fun NativeEpubScreen(
                             )
                         }
                     }
-                    // 翻页过渡：200ms 轻微位移+淡入淡出，页码比较定方向。
+                    // 翻页过渡：250ms 轻微位移+淡入淡出，页码比较定方向。
                     // 出场帧按自己的页码取行与高亮；手势始终作用在实时页码上。
                     AnimatedContent(
                         targetState = currentPage,
                         transitionSpec = {
                             val dir = if (targetState > initialState) 1 else -1
-                            (slideInHorizontally(tween(MotionTokens.NORMAL)) { it / 4 * dir } +
-                                fadeIn(tween(MotionTokens.NORMAL)))
+                            (slideInHorizontally(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)) { it / 4 * dir } +
+                                fadeIn(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)))
                                 .togetherWith(
-                                    slideOutHorizontally(tween(MotionTokens.NORMAL)) { -it / 4 * dir } +
-                                        fadeOut(tween(MotionTokens.NORMAL)),
+                                    slideOutHorizontally(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)) { -it / 4 * dir } +
+                                        fadeOut(tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate)),
                                 )
                         },
                         label = "pageTurn",
@@ -2547,6 +2503,8 @@ fun NativeEpubScreen(
         ReaderSettingsSheet(
             state = features,
             onChange = { commitFeatures(it) },
+            chromeState = chromeState,
+            onChromeState = chromeViewModel::update,
             onDismiss = { showReaderSettings = false },
         )
     }
@@ -2555,12 +2513,12 @@ fun NativeEpubScreen(
             selected = readerThemeKind,
             fontScale = fontScale,
             lineHeight = ReaderFeatureCodec.clampedLineHeight(features),
-            marginPx = ReaderFeatureCodec.clampedMargin(features),
+            marginDp = chromeState.horizontalMarginDp,
             scrolled = features.scrolled,
             onTheme = { appearancePrefs.readerThemeKind = it },
             onFontScale = { setFontScale(it) },
             onLineHeight = { commitFeatures(features.copy(lineHeightRatio = it)) },
-            onMargin = { commitFeatures(features.copy(marginHorizontalPx = it)) },
+            onMarginDp = chromeViewModel::setHorizontalMarginDp,
             onScrolled = { commitFeatures(features.copy(scrolled = it)) },
             onDismiss = { showAppearance = false },
         )

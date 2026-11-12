@@ -31,6 +31,8 @@ object ReadestViewSettings {
         features: ReaderFeatureState,
         foliateFontFamily: String? = null,
         extraUserStylesheet: String = "",
+        horizontalMarginPx: Int? = null,
+        firstLineIndent: Boolean = false,
     ): Snapshot {
         val preset = kind.builtInPreset()
         val dark = kind == ThemeKind.NIGHT
@@ -42,7 +44,7 @@ object ReadestViewSettings {
             else -> "serif"
         }
         val userCss = listOf(
-            ReaderFeatureCodec.userStylesheet(features),
+            ReaderFeatureCodec.userStylesheet(features, firstLineIndent),
             extraUserStylesheet.trim(),
         ).filter { it.isNotEmpty() }.joinToString("\n")
         return Snapshot(
@@ -50,7 +52,8 @@ object ReadestViewSettings {
             fg = preset.foregroundColor,
             defaultFontSize = fontSizePx / 1.25,
             lineHeight = ReaderFeatureCodec.clampedLineHeight(features).toDouble(),
-            marginPx = ReaderFeatureCodec.clampedMargin(features).toInt().coerceAtLeast(0),
+            marginPx = horizontalMarginPx
+                ?: ReaderFeatureCodec.clampedMargin(features).toInt().coerceAtLeast(0),
             maxColumnCount = ReaderSpreadPolicy.foliateMaxColumnCount(features),
             maxInlineSizePx = ReaderPerformancePolicy.foliateMaxInlineSizePx(features),
             scrolled = ReaderSpreadPolicy.foliateScrolled(features),

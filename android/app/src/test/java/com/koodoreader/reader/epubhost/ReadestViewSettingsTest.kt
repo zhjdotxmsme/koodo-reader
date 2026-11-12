@@ -88,4 +88,25 @@ class ReadestViewSettingsTest {
         assertEquals(2, s.maxColumnCount)
         assertEquals(2, ReaderSpreadPolicy.foliateMaxColumnCount(ReaderFeatureState(doublePage = true)))
     }
+
+    @Test
+    fun `ui margin override is physical pixels and indent is css`() {
+        val snapshot = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(),
+            horizontalMarginPx = 60,
+            firstLineIndent = true,
+        )
+        assertEquals(60, snapshot.marginPx)
+        assertTrue(snapshot.userStylesheet.contains("text-indent:2em;"))
+    }
+
+    @Test
+    fun `null ui margin keeps legacy margin mapping`() {
+        val snapshot = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(marginHorizontalPx = -8f),
+        )
+        assertEquals(0, snapshot.marginPx)
+    }
 }
