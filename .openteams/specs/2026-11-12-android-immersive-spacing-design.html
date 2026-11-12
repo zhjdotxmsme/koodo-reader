@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Koodo Reader Android · 第三轮沉浸与间距设计</title>
+<style>
+:root{--bg:#f5f4f0;--paper:#fff;--ink:#1d2630;--muted:#61707d;--line:#dce2e6;--brand:#315f88;--soft:#eaf1f7;--p0:#a43b36;--p1:#9a671c;--p2:#39705b;--code:#14202b;--codeink:#e9f1f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.75 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}header{background:linear-gradient(125deg,#172b3c,#315f88);color:#fff;padding:52px 24px 42px}.wrap{max-width:1120px;margin:auto}h1{font-size:32px;line-height:1.25;margin:0 0 12px}h2{font-size:23px;line-height:1.35;margin:0 0 18px}h3{font-size:17px;margin:26px 0 10px}p{margin:8px 0 14px}.subtitle{opacity:.82;max-width:760px}.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:650}.meta .pill{background:#ffffff1c;color:#fff;border:1px solid #ffffff32}.layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:24px;padding:28px 24px 60px}nav{position:sticky;top:20px;align-self:start;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px}nav a{display:block;color:var(--muted);text-decoration:none;padding:7px 9px;border-radius:8px;font-size:13px}nav a:hover{background:var(--soft);color:var(--brand)}main{min-width:0}.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:26px;margin-bottom:22px;box-shadow:0 1px 1px #15243405}.p0{background:#fbe9e7;color:var(--p0)}.p1{background:#fff2d9;color:var(--p1)}.p2{background:#e4f3eb;color:var(--p2)}.ok{background:#e4f3eb;color:var(--p2)}ul{margin:8px 0;padding-left:22px}li{margin:6px 0}.issue{border-left:3px solid var(--line);padding-left:14px;margin:15px 0}.issue strong{display:block}.path{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);word-break:break-all}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.choice{border:1px solid var(--line);border-radius:12px;padding:16px;background:#fbfcfd}.choice.recommended{border-color:#7ea4c2;background:var(--soft)}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:10px 8px;vertical-align:top}th{color:var(--muted);font-weight:650;background:#fafbfc}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}pre{overflow:auto;background:var(--code);color:var(--codeink);border-radius:12px;padding:20px;font:12.5px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4}pre code{font:inherit}.note{border-left:4px solid var(--brand);background:var(--soft);padding:12px 15px;border-radius:0 8px 8px 0}.warn{border-left-color:#b47a22;background:#fff7e9}.change{color:#8fc7ff}.change:before{content:"// 关键改动：";color:#8fc7ff}.small{font-size:13px;color:var(--muted)}footer{color:var(--muted);font-size:12px;text-align:center;padding:0 20px 30px}@media(max-width:850px){.layout{grid-template-columns:1fr;padding:18px 14px}nav{position:static;display:flex;overflow:auto}nav a{white-space:nowrap}.grid{grid-template-columns:1fr}.card{padding:20px}h1{font-size:27px}}@media(prefers-color-scheme:dark){:root{--bg:#11171c;--paper:#192127;--ink:#e5e9ec;--muted:#a1afb9;--line:#303b44;--brand:#9ec3e8;--soft:#213242;--code:#0d1318;--codeink:#e9f1f7}th{background:#1d272e}.choice{background:#1b242b}header{background:linear-gradient(125deg,#0e1821,#294e70)}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>第三轮 UI/UX：全屏沉浸与间距节奏</h1><p class="subtitle">Koodo Reader Android 原生阅读链路设计。以共享阅读 Chrome、稳定安全区和完整 Design Token 达到一致、安静、可维护的商业级阅读体验。</p><div class="meta"><span class="pill">2026-11-12</span><span class="pill">设计已逐节确认</span><span class="pill">仅 UI / UX</span><span class="pill">Jetpack Compose · Material 3</span></div></div></header>
+<div class="wrap layout"><nav><a href="#issues">问题清单</a><a href="#approach">方案与范围</a><a href="#system">沉浸与系统栏</a><a href="#tokens">Design Tokens</a><a href="#chrome">共享阅读 Chrome</a><a href="#pages">逐页面 Compose</a><a href="#verification">验收矩阵</a><a href="#boundaries">边界与假设</a></nav><main>
+<section class="card" id="issues"><h2>1. 当前 UI 问题清单</h2>
+<div class="issue"><span class="pill p0">P0</span><strong>系统栏只有工具栏联动，没有独立全屏状态</strong><p>退出时强制恢复 <code>decorFitsSystemWindows=true</code>，与全局边到边相冲突。</p><div class="path">reader/shell/ReaderImmersiveChrome.kt:26,58</div></div>
+<div class="issue"><span class="pill p0">P0</span><strong>阅读主题与系统栏颜色没有单一控制者</strong><p>现有主题只同步图标明暗，没有统一透明系统栏、阅读背景和自定义背景亮度。</p><div class="path">core/ui/theme/KoodoTheme.kt:38 · reader/shell/ReaderImmersiveChrome.kt</div></div>
+<div class="issue"><span class="pill p0">P0</span><strong>正文安全区不统一</strong><p><code>navigationBarsPadding()</code> 主要用于底部工具栏；PDF 位图正文直接铺满容器，临时系统栏可能遮挡内容。</p><div class="path">reader/shell/NativePdfScreen.kt:764 · reader/epubhost/NativeEpubScreen.kt:1618</div></div>
+<div class="issue"><span class="pill p0">P0</span><strong>EPUB / PDF Chrome 两套实现</strong><p>动画、遮罩、进度和安全区容易分别漂移，本轮抽共享组件但保留格式专属 slot 与回调。</p></div>
+<div class="issue"><span class="pill p1">P1</span><strong>间距、圆角和字体与目标规范不一致</strong><p>现有 Spacing 为 4/8/12/16/24/32，大卡片为 16dp，UI 字体沿用 Material 默认值；卡片仍存在 6dp 等局部数值。</p><div class="path">core/designsystem/SpaceTokens.kt · ShapeTokens.kt · core/ui/theme/KoodoTypography.kt · KoodoBookCard.kt</div></div>
+<div class="issue"><span class="pill p1">P1</span><strong>阅读排版与底部进度缺少统一语义</strong><p>阅读行高默认 1.5，目标为 1.6；底部缺少统一 2dp 进度线，EPUB 当前使用 2dp elevation。</p></div>
+<div class="issue"><span class="pill p2">P2</span><strong>页面与微交互动效未完全分层</strong><p>缺少独立 250ms 页面切换、30ms 列表 stagger 和通用 0.98 按压缩放。</p></div>
+</section>
+<section class="card" id="approach"><h2>2. 已选方案与范围</h2><div class="grid"><div class="choice recommended"><span class="pill ok">已选择</span><h3>共享 Chrome + Token</h3><p>统一系统栏、正文安全区、顶部工具栏与底部进度；格式差异通过 slot 保留。一致性最好，回归范围可控。</p></div><div class="choice"><h3>仅就地修改</h3><p>短期改动较少，但 EPUB/PDF 两套实现会继续漂移。未采用。</p></div><div class="choice"><h3>全部页面重设计</h3><p>统计、备份、词典等均逐页重画，回归面过大。未采用。</p></div></div><h3>核心页面</h3><p>书架、EPUB/PDF、全屏目录、阅读设置、笔记/高亮、搜索。其他页面通过 MaterialTheme 继承 Token，不逐页重画。</p><div class="note"><strong>系统栏动画约束：</strong>系统图标不属于 Compose，不能可靠执行图标 Alpha 动画。系统栏与工具栏同步显隐；阅读主题色的状态栏背景/遮罩执行 200ms 淡入淡出，工具栏严格执行 200ms fade + slide。</div></section>
+<section class="card" id="system"><h2>3. 全屏、系统栏与正文布局</h2><table><tr><th>全屏阅读</th><th>Chrome</th><th>系统栏</th><th>正文</th></tr><tr><td>关</td><td>隐藏</td><td>隐藏</td><td>背景铺满，文字保留稳定安全区</td></tr><tr><td>关</td><td>显示</td><td>显示</td><td>尺寸不变，Chrome 覆盖正文</td></tr><tr><td>开</td><td>隐藏或显示</td><td>始终隐藏</td><td>尺寸不变，边缘手势可临时唤出系统栏</td></tr></table><ul><li>Activity 只设置一次 <code>WindowCompat.setDecorFitsSystemWindows(window, false)</code>，退出阅读不再切回 true。</li><li>状态栏与导航栏透明；窗口背景使用阅读主题色，系统图标按背景亮度切换。</li><li>顶部使用 <code>statusBarsIgnoringVisibility + 8dp</code>，底部使用 <code>navigationBarsIgnoringVisibility + 16dp</code>。工具栏显隐不会触发重分页或页面跳动。</li><li>阅读横距默认 20dp，可选 12/16/20/24dp。EPUB 传入排版视口，PDF 应用到滚动容器。</li><li>退出恢复书架主题和系统栏；不恢复为非边到边。</li><li><code>ReaderChromeViewModel</code> 仅用 StateFlow 管理并持久化 UI 偏好，不进入书籍、进度、标注或搜索数据协议。</li></ul></section>
+<section class="card" id="tokens"><h2>4. 完整 Design Token 代码</h2>
+<h3>4.1 Color：现有完整色板 + 阅读语义扩展</h3><p>现有 shell 色板值保持不变；以下 <code>ColorTokens</code> 是完整槽位与 LIGHT/DARK 定义，占位封面和对比度辅助函数继续沿用现有实现。</p>
+<pre><code>package com.koodoreader.core.designsystem
+
+data class ColorTokens(
+    val primary: Long, val onPrimary: Long,
+    val primaryContainer: Long, val onPrimaryContainer: Long,
+    val secondary: Long, val onSecondary: Long,
+    val secondaryContainer: Long, val onSecondaryContainer: Long,
+    val background: Long, val onBackground: Long,
+    val surface: Long, val onSurface: Long,
+    val surfaceContainerLowest: Long, val surfaceContainerLow: Long,
+    val surfaceContainer: Long, val surfaceContainerHigh: Long,
+    val surfaceContainerHighest: Long, val surfaceDim: Long, val surfaceBright: Long,
+    val surfaceVariant: Long, val onSurfaceVariant: Long,
+    val outlineVariant: Long, val outline: Long,
+    val error: Long, val onError: Long, val scrim: Long,
+) {
+    companion object {
+        val LIGHT = ColorTokens(
+            primary = 0xFF3A6EA5, onPrimary = 0xFFFFFFFF,
+            primaryContainer = 0xFFD6E4F7, onPrimaryContainer = 0xFF0B1B2E,
+            secondary = 0xFF6B8E23, onSecondary = 0xFFFFFFFF,
+            secondaryContainer = 0xFFDCE9C4, onSecondaryContainer = 0xFF1A2410,
+            background = 0xFFF8F6F2, onBackground = 0xFF1A1C1E,
+            surface = 0xFFF8F6F2, onSurface = 0xFF1A1C1E,
+            surfaceContainerLowest = 0xFFFFFFFF, surfaceContainerLow = 0xFFF2EFE9,
+            surfaceContainer = 0xFFECE9E3, surfaceContainerHigh = 0xFFE6E3DD,
+            surfaceContainerHighest = 0xFFE0DDD7,
+            surfaceDim = 0xFFDEDAD4, surfaceBright = 0xFFF8F6F2,
+            surfaceVariant = 0xFFE0DDD7, onSurfaceVariant = 0xFF44474A,
+            outlineVariant = 0xFFC4C7CA, outline = 0xFF74777A,
+            error = 0xFFBA1A1A, onError = 0xFFFFFFFF, scrim = 0xFF000000,
+        )
+        val DARK = ColorTokens(
+            primary = 0xFF9EC3E8, onPrimary = 0xFF0A1D30,
+            primaryContainer = 0xFF26405C, onPrimaryContainer = 0xFFD3E4F7,
+            secondary = 0xFFB5C98A, onSecondary = 0xFF1B2410,
+            secondaryContainer = 0xFF3A4A1F, onSecondaryContainer = 0xFFDCE9C4,
+            background = 0xFF16181D, onBackground = 0xFFE3E2E6,
+            surface = 0xFF16181D, onSurface = 0xFFE3E2E6,
+            surfaceContainerLowest = 0xFF0F1116, surfaceContainerLow = 0xFF1D2026,
+            surfaceContainer = 0xFF212429, surfaceContainerHigh = 0xFF2B2E34,
+            surfaceContainerHighest = 0xFF36393F,
+            surfaceDim = 0xFF16181D, surfaceBright = 0xFF3C3F45,
+            surfaceVariant = 0xFF44474A, onSurfaceVariant = 0xFFC4C7CA,
+            outlineVariant = 0xFF44474A, outline = 0xFF8E9196,
+            error = 0xFFFFB4AB, onError = 0xFF690005, scrim = 0xFF000000,
+        )
+        val ALL = listOf(LIGHT, DARK)
+        val COVER_PLACEHOLDERS = listOf(
+            0xFF3A6EA5, 0xFF6B8E23, 0xFF9C5B4F,
+            0xFF7A5C9E, 0xFF2E7D6B, 0xFF8A6D3B,
+        )
+    }
+}
+
+// ReaderChromeTokens.kt — Compose 阅读语义色，完整新增文件
+package com.koodoreader.reader.shell
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+object ReaderColorTokens {
+    const val CHROME_ALPHA = 0.92f
+    const val PROGRESS_TRACK_ALPHA = 0.12f
+    const val HIGHLIGHT_ALPHA = 0.30f
+}
+
+data class ReaderChromeColors(
+    val background: Color,
+    val content: Color,
+    val primary: Color,
+    val progressTrack: Color,
+)
+
+@Composable
+fun readerChromeColors() = ReaderChromeColors(
+    background = MaterialTheme.colorScheme.background,
+    content = MaterialTheme.colorScheme.onBackground,
+    primary = MaterialTheme.colorScheme.primary,
+    progressTrack = MaterialTheme.colorScheme.onSurface.copy(
+        alpha = ReaderColorTokens.PROGRESS_TRACK_ALPHA,
+    ),
+)
+
+fun Color.readerHighlight(): Color = copy(alpha = ReaderColorTokens.HIGHLIGHT_ALPHA)</code></pre>
+<h3>4.2 Spacing / Size / Elevation</h3>
+<pre><code>package com.koodoreader.core.designsystem
+
+object SpaceTokens {
+    const val xs = 4
+    const val sm = 8
+    const val md = 16
+    const val lg = 24
+    const val xl = 32
+    val ALL = listOf(xs, sm, md, lg, xl)
+
+    const val SCREEN_HORIZONTAL = md
+    const val LIST_ITEM_HORIZONTAL = md
+    const val LIST_ITEM_VERTICAL = 12
+    const val GRID_GAP_HORIZONTAL = 12
+    const val GRID_GAP_VERTICAL = md
+    const val COVER_TO_TEXT = sm
+    const val TEXT_LINE_GAP = xs
+    const val GROUP_TITLE_GAP = sm
+    const val GROUP_GAP = lg
+    const val READER_HORIZONTAL_DEFAULT = 20
+    const val READER_TOP_EXTRA = sm
+    const val READER_BOTTOM_EXTRA = md
+    const val TOP_BAR_HEIGHT = 56
+    val READER_HORIZONTAL_OPTIONS = listOf(12, 16, 20, 24)
+}
+
+object SizeTokens {
+    const val PROGRESS_STROKE = 2
+    const val HAIRLINE = 1
+    const val MIN_TOUCH_TARGET = 48
+}
+
+object ElevationTokens {
+    const val READER_CHROME = 1
+}</code></pre>
+<h3>4.3 Typography</h3>
+<pre><code>package com.koodoreader.core.ui.theme
+
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
+private val UiFamily = FontFamily.Default
+private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
+    TextStyle(fontFamily = UiFamily, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
+
+val KoodoTypography = Typography(
+    titleLarge = style(20, 28, FontWeight.SemiBold),
+    titleMedium = style(16, 24, FontWeight.SemiBold),
+    titleSmall = style(14, 20, FontWeight.Medium),
+    bodyLarge = style(16, 26),
+    bodyMedium = style(15, 24),
+    bodySmall = style(13, 20),
+    labelLarge = style(14, 20, FontWeight.Medium),
+    labelMedium = style(13, 18),
+    labelSmall = style(12, 16),
+)
+
+// :core:designsystem TypographyTokens — 只改变展示默认值，存储字段保持兼容
+data class TypographyTokens(
+    val fontSizeSp: Float = 17f,
+    val lineHeightRatio: Float = 1.6f,
+    val letterSpacingPx: Float = 0f,
+    val textIndentPx: Int = 0,
+    val paragraphSpacingBeforePx: Int = 0,
+    val paragraphSpacingAfterPx: Int = 0,
+    val marginLeftPx: Int = 0,
+    val marginRightPx: Int = 0,
+    val marginTopPx: Int = 0,
+    val marginBottomPx: Int = 0,
+    val textAlign: String = "left",
+)
+
+object ReaderTypographyPolicy {
+    const val MIN_FONT_SP = 14f
+    const val MAX_FONT_SP = 22f
+    const val PARAGRAPH_LINE_HEIGHT_FACTOR = 1.2f
+    const val FIRST_LINE_INDENT_EM = 2
+}</code></pre>
+<h3>4.4 Shape</h3>
+<pre><code>package com.koodoreader.core.designsystem
+
+object ShapeTokens {
+    const val extraSmall = 4
+    const val small = 8
+    const val medium = 12
+    const val large = 16
+    const val extraLarge = 28
+    val ALL = listOf(extraSmall, small, medium, large, extraLarge)
+}
+
+// :core:ui KoodoShapes.kt
+val KoodoShapes = androidx.compose.material3.Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(ShapeTokens.extraSmall.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(ShapeTokens.small.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(ShapeTokens.medium.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(ShapeTokens.large.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(ShapeTokens.extraLarge.dp),
+)
+val KoodoCardShape = KoodoShapes.medium // 大卡片统一 12dp；large=16dp 保留给 Material 容器
+val KoodoChipShape = KoodoShapes.small
+val KoodoCoverShape = KoodoShapes.small</code></pre>
+<h3>4.5 Motion 与按压反馈</h3>
+<pre><code>package com.koodoreader.core.designsystem
+
+object MotionTokens {
+    const val FAST = 120
+    const val NORMAL = 200
+    const val PAGE = 250
+    const val SLOW = 300
+    const val STAGGER = 30
+    const val SHIMMER = 900
+    const val HINT = 2000
+    const val PRESS_SCALE = 0.98f
+    val ALL = listOf(FAST, NORMAL, PAGE, SLOW, SHIMMER, HINT)
+}
+
+// :core:ui KoodoMotion.kt
+object KoodoMotion {
+    val Standard = androidx.compose.animation.core.FastOutSlowInEasing
+    val Decelerate = androidx.compose.animation.core.LinearOutSlowInEasing
+}
+
+// 工具栏统一规格
+val ReaderChromeEnter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Decelerate)) +
+    slideInVertically(tween(MotionTokens.NORMAL, easing = KoodoMotion.Decelerate)) { -it }
+val ReaderChromeExit = fadeOut(tween(MotionTokens.NORMAL, easing = KoodoMotion.Standard)) +
+    slideOutVertically(tween(MotionTokens.NORMAL, easing = KoodoMotion.Standard)) { -it }
+
+// 按压反馈只改变视觉，不消费点击事件，保留原 ripple 和 48dp 触控区域
+@Composable
+fun Modifier.pressScale(): Modifier = composed {
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) MotionTokens.PRESS_SCALE else 1f,
+        animationSpec = tween(MotionTokens.FAST, easing = KoodoMotion.Standard),
+        label = "pressScale",
+    )
+    this.graphicsLayer { scaleX = scale; scaleY = scale }
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                pressed = true
+                waitForUpOrCancellation()
+                pressed = false
+            }
+        }
+}
+
+// 仅 play=true 的首次书架呈现执行；滚动回收时父级已置 false
+@Composable
+fun Modifier.staggeredEntrance(index: Int, play: Boolean): Modifier = composed {
+    if (!play) return@composed this
+    val progress = remember(play) { Animatable(0f) }
+    LaunchedEffect(play) {
+        delay(index.coerceAtMost(12) * MotionTokens.STAGGER.toLong())
+        progress.animateTo(1f, tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate))
+    }
+    this.graphicsLayer {
+        alpha = progress.value
+        translationY = (1f - progress.value) * SpaceTokens.md.dp.toPx()
+    }
+}</code></pre>
+</section>
+<section class="card" id="chrome"><h2>5. 共享阅读 Chrome 关键代码</h2>
+<h3>5.1 系统栏策略与稳定正文安全区</h3>
+<pre><code>package com.koodoreader.reader.shell
+
+object ReaderSystemBarPolicy {
+    fun shouldHide(fullScreen: Boolean, chromeVisible: Boolean): Boolean =
+        fullScreen || !chromeVisible
+}
+
+data class ReaderContentInsets(val top: Dp, val bottom: Dp)
+
+@Composable
+fun rememberReaderContentInsets(): ReaderContentInsets {
+    val density = LocalDensity.current
+    val status = WindowInsets.statusBarsIgnoringVisibility.getTop(density).toDp(density)
+    val navigation = WindowInsets.navigationBarsIgnoringVisibility.getBottom(density).toDp(density)
+    return remember(status, navigation) {
+        ReaderContentInsets(
+            top = status + SpaceTokens.READER_TOP_EXTRA.dp,
+            bottom = navigation + SpaceTokens.READER_BOTTOM_EXTRA.dp,
+        )
+    }
+}
+
+private fun Int.toDp(density: Density): Dp = with(density) { toDp() }
+
+@Composable
+fun ReaderSystemBars(
+    fullScreen: Boolean,
+    chromeVisible: Boolean,
+    readerBackground: Color,
+    shellBackground: Color,
+) {
+    val view = LocalView.current
+    val window = (view.context as? Activity)?.window ?: return
+    val controller = WindowCompat.getInsetsController(window, view)
+    val darkIcons = readerBackground.luminance() &gt; 0.5f
+
+    // 每次状态变化只更新系统栏，不执行退出恢复，避免工具栏切换闪色。
+    SideEffect {
+        window.statusBarColor = AndroidColor.TRANSPARENT
+        window.navigationBarColor = AndroidColor.TRANSPARENT
+        window.setBackgroundDrawable(ColorDrawable(readerBackground.toArgb()))
+        controller.isAppearanceLightStatusBars = darkIcons
+        controller.isAppearanceLightNavigationBars = darkIcons
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (ReaderSystemBarPolicy.shouldHide(fullScreen, chromeVisible)) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    DisposableEffect(view, shellBackground) {
+        onDispose {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            window.setBackgroundDrawable(ColorDrawable(shellBackground.toArgb()))
+        }
+    }
+}</code></pre>
+<p class="small">NativeShellActivity 统一设置一次 decorFitsSystemWindows=false；这里不重复切换。退出时由 shell KoodoTheme 恢复图标明暗，ReaderSystemBars 恢复窗口背景与系统栏可见性。</p>
+<h3>5.2 顶部工具栏：56dp、主题渐变、200ms</h3>
+<pre><code>@Composable
+fun ReaderTopBar(
+    visible: Boolean,
+    title: String,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    actions: @Composable RowScope.() -&gt; Unit = {},
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = ReaderChromeEnter,
+        exit = ReaderChromeExit,
+    ) {
+        Box(
+            Modifier.fillMaxWidth().background(
+                Brush.verticalGradient(
+                    0f to MaterialTheme.colorScheme.surface.copy(alpha = ReaderColorTokens.CHROME_ALPHA),
+                    1f to MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                )
+            ).statusBarsPadding()
+        ) {
+            TopAppBar(
+                modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
+                    }
+                },
+                actions = {
+                    actions()
+                    IconButton(onClick = onClose) {
+                        Icon(painterResource(R.drawable.ic_close), contentDescription = t("Close"))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        }
+    }
+}</code></pre>
+<h3>5.3 底部进度：2dp 细线 + 原格式专属操作</h3>
+<pre><code>@Composable
+fun ReaderBottomProgress(
+    visible: Boolean,
+    fraction: Float,
+    label: String,
+    onClick: () -&gt; Unit,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -&gt; Unit = {},
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(MotionTokens.NORMAL)) +
+            slideInVertically(tween(MotionTokens.NORMAL)) { it },
+        exit = fadeOut(tween(MotionTokens.NORMAL)) +
+            slideOutVertically(tween(MotionTokens.NORMAL)) { it },
+    ) {
+        Column(
+            Modifier.fillMaxWidth().background(
+                Brush.verticalGradient(
+                    0f to MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                    1f to MaterialTheme.colorScheme.surface.copy(alpha = ReaderColorTokens.CHROME_ALPHA),
+                )
+            ).navigationBarsPadding().clickable(onClick = onClick)
+        ) {
+            LinearProgressIndicator(
+                progress = { fraction.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(SizeTokens.PROGRESS_STROKE.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = readerChromeColors().progressTrack,
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(
+                    horizontal = SpaceTokens.md.dp,
+                    vertical = SpaceTokens.sm.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                actions()
+            }
+        }
+    }
+}</code></pre>
+</section>
+<section class="card" id="pages"><h2>6. 逐页面 Compose 关键改动</h2>
+<h3>6.1 书架：56dp 顶栏、12/16dp 网格、8/4dp 卡片文字</h3>
+<pre><code>// LibraryScreen.kt：topBar 保持原回调，只固定高度与标题层级
+TopAppBar(
+    modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+    title = { Text(t("Library"), style = MaterialTheme.typography.titleLarge) },
+    // navigationIcon / actions 保持现状
+)
+
+// LibraryScreen.kt：首次呈现结束后关闭 stagger，滚动回收不重播
+var playEntrance by rememberSaveable { mutableStateOf(true) }
+LaunchedEffect(libraryLoading) {
+    if (!libraryLoading) {
+        delay(MotionTokens.PAGE + MotionTokens.STAGGER * 12L)
+        playEntrance = false
+    }
+}
+
+// 网格参数完整替换；底部兼顾导航区
+LazyVerticalGrid(
+    state = gridState,
+    columns = GridCells.Adaptive(minSize = 112.dp),
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(
+        start = SpaceTokens.SCREEN_HORIZONTAL.dp,
+        end = SpaceTokens.SCREEN_HORIZONTAL.dp,
+        top = SpaceTokens.md.dp,
+        bottom = SpaceTokens.md.dp,
+    ),
+    horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),
+    verticalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_VERTICAL.dp),
+) {
+    itemsIndexed(books, key = { _, book -&gt; book.key }) { index, book -&gt;
+        BookCard(
+            book = book,
+            onClick = { viewModel.markRecentOpened(book.key); onOpenBook(book.key) },
+            // 其余现有参数不变
+            modifier = Modifier.staggeredEntrance(index, play = playEntrance),
+        )
+    }
+}
+
+// KoodoBookCard.kt：标题与元信息间距
+Text(
+    text = model.title,
+    style = MaterialTheme.typography.bodyMedium,
+    maxLines = 2,
+    overflow = TextOverflow.Ellipsis,
+    modifier = Modifier.padding(top = SpaceTokens.COVER_TO_TEXT.dp),
+)
+Text(
+    text = model.subtitle,
+    style = MaterialTheme.typography.bodySmall,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    maxLines = 1,
+    modifier = Modifier.padding(top = SpaceTokens.TEXT_LINE_GAP.dp),
+)
+
+// 列表行：调用方保留选择/菜单逻辑，只统一容器内边距
+BookListRow(
+    book = book,
+    onClick = { viewModel.markRecentOpened(book.key); onOpenBook(book.key) },
+    modifier = Modifier.padding(
+        horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+        vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+    ),
+)</code></pre>
+<h3>6.2 EPUB / PDF：只替换展示容器，不触碰引擎回调</h3>
+<pre><code>// NativeEpubScreen.kt / NativePdfScreen.kt 的共同外壳
+val fullScreen by readerChromeViewModel.fullScreen.collectAsStateWithLifecycle()
+val insets = rememberReaderContentInsets()
+
+ReaderSystemBars(
+    fullScreen = fullScreen,
+    chromeVisible = showChrome || showToc || showOutline,
+    readerBackground = MaterialTheme.colorScheme.background,
+    shellBackground = shellBackground,
+)
+
+Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // EPUB：top/bottom/horizontal 作为排版展示参数传入现有 ReadestViewSettings。
+    // PDF：同样的 top/bottom 应用于 verticalScroll 内容容器，原 zoom/page 不变。
+    ReaderContent(
+        contentInsets = insets,
+        horizontalMargin = horizontalMarginDp.dp,
+    )
+
+    ReaderTopBar(
+        visible = showChrome,
+        title = book?.name.orEmpty(),
+        onBack = onBack,
+        onClose = { showChrome = false },
+        actions = {
+            // 原目录、搜索、更多按钮及原 onClick 全部保留
+        },
+    )
+    ReaderBottomProgress(
+        visible = showChrome,
+        fraction = displayedFraction,
+        label = displayedProgressLabel,
+        onClick = onOpenContents,
+        actions = {
+            // PDF 可在这里保留 previous/next；EPUB 不传即无额外按钮
+        },
+        modifier = Modifier.align(Alignment.BottomCenter),
+    )
+}</code></pre>
+<p class="small">这里的 <code>ReaderContent</code> 是设计伪名：实际接入仍使用当前 Foliate AndroidView / PDF Image，不新建或替换阅读引擎。shared BottomProgress 会接收 align modifier。</p>
+<h3>6.3 阅读设置：全屏、缩进、横距和可滚动底部</h3>
+<pre><code>@Composable
+fun ReaderSettingsSheet(
+    state: ReaderFeatureState,
+    fullScreen: Boolean,
+    onFullScreenChange: (Boolean) -&gt; Unit,
+    firstLineIndent: Boolean,
+    onFirstLineIndentChange: (Boolean) -&gt; Unit,
+    horizontalMarginDp: Int,
+    onHorizontalMarginChange: (Int) -&gt; Unit,
+    onChange: (ReaderFeatureState) -&gt; Unit,
+    onDismiss: () -&gt; Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = SpaceTokens.READER_HORIZONTAL_DEFAULT.dp)
+                .padding(top = SpaceTokens.sm.dp, bottom = SpaceTokens.md.dp),
+            verticalArrangement = Arrangement.spacedBy(SpaceTokens.md.dp),
+        ) {
+            Text(t("Appearance"), style = MaterialTheme.typography.titleLarge)
+            SettingSwitchRow(t("Full-screen reading"), fullScreen, onFullScreenChange)
+            SettingSwitchRow(t("First-line indent"), firstLineIndent, onFirstLineIndentChange)
+            Text(t("Page margin"), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp)) {
+                SpaceTokens.READER_HORIZONTAL_OPTIONS.forEach { margin -&gt;
+                    FilterChip(
+                        selected = horizontalMarginDp == margin,
+                        onClick = { onHorizontalMarginChange(margin) },
+                        label = { Text("$margin dp") },
+                    )
+                }
+            }
+            // 原字体、字号、行距、主题、亮度、常亮、方向、背景设置保留
+            ExistingReaderSettings(state = state, onChange = onChange)
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean) -&gt; Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}</code></pre>
+<h3>6.4 全屏目录：安全区与列表节奏</h3>
+<pre><code>@Composable
+fun ReaderTocPage(
+    title: String,
+    onBack: () -&gt; Unit,
+    content: @Composable (PaddingValues) -&gt; Unit,
+) {
+    BackHandler(onBack = onBack)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
+                    }
+                },
+            )
+        },
+        content = { padding -&gt;
+            Box(Modifier.padding(padding).navigationBarsPadding()) {
+                content(PaddingValues(
+                    horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                    vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+                ))
+            }
+        },
+    )
+}</code></pre>
+<h3>6.5 笔记 / 高亮 / 搜索：统一列表项与分组</h3>
+<pre><code>// BookAnnotationsScreen.kt：note 的编辑、删除、跳转、改色回调保持原样
+LazyColumn(
+    contentPadding = PaddingValues(bottom = SpaceTokens.md.dp),
+    verticalArrangement = Arrangement.spacedBy(SpaceTokens.GROUP_GAP.dp),
+) {
+    items(notes, key = { it.key }) { note -&gt;
+        Surface(shape = KoodoCardShape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Column(
+                Modifier.fillMaxWidth().padding(
+                    horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                    vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(SpaceTokens.GROUP_TITLE_GAP.dp),
+            ) {
+                Text(note.text.orEmpty(), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                Text(
+                    note.notes.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(note.chapter.orEmpty(), style = MaterialTheme.typography.labelSmall)
+                Row {
+                    note.cfi?.takeIf { it.isNotBlank() }?.let { cfi -&gt;
+                        TextButton(onClick = { onJump(cfi) }) { Text(t("Jump")) }
+                    }
+                    TextButton(onClick = { editing = note; draft = note.notes.orEmpty() }) { Text(t("Edit")) }
+                    TextButton(onClick = { onDeleteNote(note) }) { Text(t("Delete")) }
+                }
+            }
+        }
+    }
+}
+
+// 搜索结果行：只接受已有 hit 和 onJump，不改变搜索索引
+@Composable
+fun SearchResultRow(hit: SearchHit, onJump: (SearchHit) -&gt; Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clickable { onJump(hit) }
+            .padding(
+                horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(SpaceTokens.xs.dp),
+    ) {
+        Text(hit.chapterTitle, style = MaterialTheme.typography.titleMedium)
+        Text(
+            hit.contextBefore + hit.matchedText + hit.contextAfter,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+        )
+        Text(
+            "${hit.spineIndex + 1} · #${hit.rank + 1}",
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}</code></pre>
+</section>
+<section class="card" id="verification"><h2>7. 验证与验收矩阵</h2><h3>自动检查</h3><ul><li>更新 SpaceTokensTest、ShapeTokensTest、TypographyTokensTest，验证新刻度与默认值。</li><li>ReaderSystemBarPolicy 覆盖全屏开/关 × Chrome 显隐；安全区计算覆盖状态栏/导航栏各种尺寸。</li><li>UI 偏好 ViewModel 用 fake 存储验证 StateFlow 与持久化，不引入新测试框架。</li><li>运行 <code>:core:designsystem:test</code>、<code>:app:testNativeHostDebugUnitTest</code>、<code>:app:assembleNativeHostDebug</code>。</li></ul><h3>真机矩阵</h3><table><tr><th>场景</th><th>验收点</th></tr><tr><td>EPUB / PDF 四主题</td><td>背景边到边，图标对比正确，无黑条、白条或突兀闪色</td></tr><tr><td>全屏关 + 中央点击</td><td>系统栏和 Chrome 同步显隐，200ms fade + slide，正文尺寸稳定</td></tr><tr><td>全屏开</td><td>Chrome/目录/设置出现仍隐藏系统栏，边缘滑动可临时显示</td></tr><tr><td>退出与旋转</td><td>书架系统栏恢复；横竖屏切换正文不跳动、不丢失位置</td></tr><tr><td>正文与设置</td><td>默认 20dp，四档横距生效；设置最后一项完整可见</td></tr><tr><td>书架与目录</td><td>网格 12/16dp；长目录最后一项不被导航区遮挡</td></tr><tr><td>业务冒烟</td><td>目录跳转、PDF 页码、长按选择、高亮、笔记行为不变</td></tr></table><p>项目没有 Compose androidTest 基础设施，本轮不新增依赖或测试脚手架；UI 通过真机操作和截图验收。</p></section>
+<section class="card" id="boundaries"><h2>8. 边界、假设与实现顺序</h2><ul><li>不修改 Book、Chapter、Highlight、Note、Bookmark、ReadingProgress、SearchIndex 或统计数据模型。</li><li>不修改 EPUB/PDF 解析、进度映射、标注定位、搜索、同步协议和文件管理逻辑。</li><li>PDF 原始版式保持原字体与页面比例；17sp/1.6 行高仅用于流式正文和 PDF 重排。</li><li>段落间距按已确认规范使用 1.2 × 当前行高；首行缩进 2em 可开关。</li><li>列表 stagger 只在首次数据呈现执行，滚动回收不重复。</li><li>实现顺序：Token → 系统栏/安全区 → 共享 Chrome → EPUB/PDF 接入 → 书架 → 目录/设置/笔记/搜索 → 自动测试 → 真机验收。</li></ul><div class="note">设计评审已确认，下一阶段是在书面 spec 复核后编写独立实施计划；本文件本身不代表功能已实现。</div></section>
+</main></div><footer>Koodo Reader Android · Immersive Reading &amp; Spacing Rhythm · Design only</footer>
+</body></html>
