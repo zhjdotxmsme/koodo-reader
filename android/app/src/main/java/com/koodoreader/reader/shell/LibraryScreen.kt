@@ -470,7 +470,11 @@ fun LibraryScreen(
                                 viewModel.markRecentOpened(book.key)
                                 onOpenBook(book.key)
                             },
-                            modifier = Modifier.staggeredEntrance(index, play = book.key in firstEntranceKeys).pointerInput(book.key, selection.active) {
+                            modifier = Modifier.staggeredEntrance(
+                                index = index,
+                                play = book.key in firstEntranceKeys,
+                                onConsumed = { firstEntranceKeys = firstEntranceKeys - book.key },
+                            ).pointerInput(book.key, selection.active) {
                                 if (selection.active) return@pointerInput
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggingKey = book.key },

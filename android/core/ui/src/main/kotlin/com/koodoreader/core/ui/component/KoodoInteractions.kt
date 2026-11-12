@@ -7,10 +7,12 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -41,12 +43,17 @@ fun Modifier.koodoPressScale(): Modifier = composed {
 }
 
 @Composable
-fun Modifier.staggeredEntrance(index: Int, play: Boolean): Modifier = composed {
+fun Modifier.staggeredEntrance(index: Int, play: Boolean, onConsumed: () -> Unit): Modifier = composed {
     if (!play) return@composed this
+    val currentOnConsumed by rememberUpdatedState(onConsumed)
     val progress = remember(play) { Animatable(0f) }
     LaunchedEffect(play) {
         delay(index.coerceAtMost(12) * MotionTokens.STAGGER.toLong())
         progress.animateTo(1f, tween(MotionTokens.PAGE, easing = KoodoMotion.Decelerate))
+        currentOnConsumed()
+    }
+    DisposableEffect(play) {
+        onDispose { currentOnConsumed() }
     }
     this.graphicsLayer {
         alpha = progress.value
