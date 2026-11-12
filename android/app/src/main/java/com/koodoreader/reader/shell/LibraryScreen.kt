@@ -64,8 +64,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -84,7 +84,7 @@ import com.koodoreader.core.ui.component.koodoPressScale
 import com.koodoreader.core.ui.component.staggeredEntrance
 import com.koodoreader.core.ui.theme.KoodoMotion
 import com.koodoreader.reader.R
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -126,6 +126,14 @@ fun LibraryScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val gridState = rememberLazyGridState()
+    var firstEntranceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(gridState) {
+        if (firstEntranceKeys.isEmpty()) {
+            firstEntranceKeys = snapshotFlow {
+                gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet()
+            }.first { it.isNotEmpty() }
+        }
+    }
     var draggingKey by remember { mutableStateOf<String?>(null) }
 
     val loadError by viewModel.loadError.collectAsStateWithLifecycle()
@@ -404,13 +412,6 @@ fun LibraryScreen(
                     showFailureDialog = true
                 }
             }
-            var playEntrance by rememberSaveable { mutableStateOf(true) }
-            LaunchedEffect(libraryLoading) {
-                if (!libraryLoading) {
-                    delay(MotionTokens.PAGE + MotionTokens.STAGGER * 12L)
-                    playEntrance = false
-                }
-            }
             if (libraryLoading) {
                 LibraryLoadingSkeleton()
             } else if (loadError != null) {
@@ -469,7 +470,7 @@ fun LibraryScreen(
                                 viewModel.markRecentOpened(book.key)
                                 onOpenBook(book.key)
                             },
-                            modifier = Modifier.staggeredEntrance(index, play = playEntrance).pointerInput(book.key, selection.active) {
+                            modifier = Modifier.staggeredEntrance(index, play = book.key in firstEntranceKeys).pointerInput(book.key, selection.active) {
                                 if (selection.active) return@pointerInput
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggingKey = book.key },
