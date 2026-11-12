@@ -46,7 +46,7 @@ class ShapeTokensTest {
     fun `documented card and chip radii are on the scale`() {
         // Cards use medium (12) and chips use small (8) — the mapping the
         // library and settings components rely on.
-        assertTrue(ShapeTokens.ALL.contains(12))
+        assertEquals(12, ShapeTokens.medium)
         assertTrue(ShapeTokens.ALL.contains(8))
     }
 }
