@@ -13,6 +13,7 @@ import com.koodoreader.engine.pdf.CfiPdfMapper
 import com.koodoreader.engine.pdf.PdfHostBridge
 import com.koodoreader.engine.pdf.PdfLayerAnnotation
 import com.koodoreader.reader.epubhost.FoliateJsResult
+import com.koodoreader.reader.shell.ReaderFeatureCodec
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -106,7 +107,10 @@ class PdfJsHostBridge(
             args = listOf(
                 pageNumber.toString(),
                 targetWidthPx.toString(),
-                fontScale.coerceIn(0.7f, 2.5f).toString(),
+                fontScale.coerceIn(
+                    ReaderFeatureCodec.FONT_SCALE_MIN,
+                    ReaderFeatureCodec.FONT_SCALE_MAX,
+                ).toString(),
             ),
         )
         return raw

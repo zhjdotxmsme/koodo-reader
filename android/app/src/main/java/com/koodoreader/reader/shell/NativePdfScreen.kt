@@ -55,7 +55,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -74,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,18 +103,9 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import com.koodoreader.core.ui.component.ErrorState
+import org.json.JSONObject
 
 /**
  * Native PDF reader screen (P3).
@@ -146,12 +137,21 @@ fun NativePdfScreen(
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val chromeViewModel: ReaderChromeViewModel = viewModel(
+        factory = ReaderChromeViewModel.Factory(context),
+    )
+    val chromeState by chromeViewModel.state.collectAsStateWithLifecycle()
+    val contentInsets = rememberReaderContentInsets()
     val density = LocalDensity.current
     val book by viewModel.book(bookKey).collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
     val featurePrefs = remember(context) { ReaderFeaturePrefs(context) }
     var features by remember { mutableStateOf(featurePrefs.load()) }
+    val appearancePrefs = remember(context) { ShellAppearancePrefs(context) }
+    DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
+    val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
+    val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
 
     val readerActivity = context as? android.app.Activity
     DisposableEffect(readerActivity) {
@@ -281,6 +281,11 @@ fun NativePdfScreen(
     val reflowHighlightsJson = remember(annotationNotes, state.page) {
         PdfReflowHighlights.jsonForPage(annotationNotes, state.page)
     }
+    val reflowCss = ReaderFeatureCodec.userStylesheet(
+        features,
+        firstLineIndent = chromeState.firstLineIndent,
+    ) + "\nbody{line-height:${ReaderFeatureCodec.clampedLineHeight(features)};font-size:${ReaderFeatureCodec.fontSizePx(features)}px;margin:0;}"
+    val currentReflowCss by rememberUpdatedState(reflowCss)
     val reflowWeb = remember(features.pdfReflow) {
         if (!features.pdfReflow) return@remember null
         ReflowWebView(context).apply {
@@ -291,6 +296,12 @@ fun NativePdfScreen(
             settings.displayZoomControls = false
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript(
+                        "document.getElementById('koodo-reader-typography')?.remove();" +
+                            "var s=document.createElement('style');s.id='koodo-reader-typography';" +
+                            "s.textContent=${JSONObject.quote(currentReflowCss)};document.head.appendChild(s);",
+                        null,
+                    )
                     view?.evaluateJavascript(REFLOW_SELECTION_RELAY_JS, null)
                     view?.evaluateJavascript(
                         PdfReflowHighlights.paintJavascript(reflowPaintSink.highlightsJson),
@@ -479,30 +490,19 @@ fun NativePdfScreen(
         }
     }
 
+    MaterialTheme(colorScheme = readerScheme) {
     Box(modifier = Modifier.fillMaxSize()) {
-    ReaderImmersiveBars(showChrome || showOutline)
+    ReaderSystemBars(
+        fullScreen = chromeState.fullScreen,
+        chromeVisible = showChrome || showOutline,
+        readerBackground = readerScheme.background,
+    )
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            AnimatedVisibility(
+            ReaderTopBar(
                 visible = showChrome,
-                enter = fadeIn(tween(MotionTokens.NORMAL)) + slideInVertically(tween(MotionTokens.NORMAL)) { -it },
-                exit = fadeOut(tween(MotionTokens.NORMAL)) + slideOutVertically(tween(MotionTokens.NORMAL)) { -it },
-            ) {
-            // 渐变遮罩替代实底：TopAppBar 透明，遮罩不参与正文排版。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
-                            1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
-                        ),
-                    ),
-            ) {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = {
                     Column {
                         Text(book?.name.orEmpty(), maxLines = 1)
@@ -515,11 +515,8 @@ fun NativePdfScreen(
                         }
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
-                    }
-                },
+                onBack = onBack,
+                onClose = { showChrome = false },
                 actions = {
                     IconButton(
                         onClick = {
@@ -616,18 +613,10 @@ fun NativePdfScreen(
                             )
                         }
                     }
-                    IconButton(onClick = { showChrome = false }) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            contentDescription = t("Close"),
-                        )
-                    }
                 },
             )
-            }
-            }
         },
-    ) { padding ->
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -720,6 +709,11 @@ fun NativePdfScreen(
                             factory = { checkNotNull(reflowWeb) },
                             modifier = Modifier
                                 .fillMaxSize()
+                                .padding(top = contentInsets.top, bottom = contentInsets.bottom)
+                                .padding(
+                                    start = chromeState.horizontalMarginDp.dp,
+                                    end = chromeState.horizontalMarginDp.dp,
+                                )
                                 .verticalScroll(rememberScrollState()),
                         )
                     } else state.pageImage?.let { image ->
@@ -764,6 +758,7 @@ fun NativePdfScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
+                                .padding(top = contentInsets.top, bottom = contentInsets.bottom)
                                 .verticalScroll(rememberScrollState())
                                 .horizontalScroll(rememberScrollState()),
                         ) {
@@ -809,31 +804,21 @@ fun NativePdfScreen(
                             }
                         }
                     }
-                    AnimatedVisibility(
+                    ReaderBottomProgress(
                         visible = showChrome,
-                        enter = fadeIn(tween(MotionTokens.NORMAL)) + slideInVertically(tween(MotionTokens.NORMAL)) { it },
-                        exit = fadeOut(tween(MotionTokens.NORMAL)) + slideOutVertically(tween(MotionTokens.NORMAL)) { it },
+                        fraction = if (state.pageCount > 0) state.page.toFloat() / state.pageCount else 0f,
+                        label = "${state.page} / ${state.pageCount}",
+                        onClick = { controller.loadOutline(); showOutline = true },
                         modifier = Modifier.align(Alignment.BottomCenter),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Brush.verticalGradient(
-                                        0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0f),
-                                        1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f),
-                                    ),
-                                )
-                                .navigationBarsPadding(),
-                        ) {
-                            PagerBar(
-                                page = state.page,
-                                pageCount = state.pageCount,
-                                onPrevious = controller::previousPage,
-                                onNext = controller::nextPage,
-                            )
-                        }
-                    }
+                        actions = {
+                            TextButton(onClick = controller::previousPage, enabled = state.page > 1) {
+                                Text("‹ ${t("Previous page")}")
+                            }
+                            TextButton(onClick = controller::nextPage, enabled = state.page < state.pageCount) {
+                                Text("${t("Next page")} ›")
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -891,6 +876,8 @@ fun NativePdfScreen(
                 features = it
                 featurePrefs.save(it)
             },
+            chromeState = chromeState,
+            onChromeState = chromeViewModel::update,
             onDismiss = { showReaderSettings = false },
         )
     }
@@ -1074,6 +1061,7 @@ fun NativePdfScreen(
             )
         }
     }
+    }
 }
 
 /**
@@ -1148,36 +1136,6 @@ private fun PasswordPrompt(error: Boolean, onSubmit: (String) -> Unit) {
             TextButton(onClick = { onSubmit(field) }) { Text(t("Enter password")) }
         },
     )
-}
-
-/** Bottom pager: explicit prev/next, so paging never depends on tap zones. */
-@Composable
-private fun PagerBar(
-    page: Int,
-    pageCount: Int,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (pageCount <= 0) return
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onPrevious, enabled = page > 1) {
-                Text("‹ ${t("Previous page")}")
-            }
-            Text("$page / $pageCount", style = MaterialTheme.typography.labelMedium)
-            TextButton(onClick = onNext, enabled = page < pageCount) {
-                Text("${t("Next page")} ›")
-            }
-        }
-    }
 }
 
 @Composable

@@ -234,7 +234,10 @@ class PdfReaderController(
     private fun requestReflow(force: Boolean = false) {
         val page = state.page
         val target = viewportPx.coerceIn(MIN_RENDER_PX, MAX_RENDER_PX)
-        val fontScale = reflowFontScale.coerceIn(0.7f, 2.5f)
+        val fontScale = reflowFontScale.coerceIn(
+            ReaderFeatureCodec.FONT_SCALE_MIN,
+            ReaderFeatureCodec.FONT_SCALE_MAX,
+        )
         if (!force && page == renderedPage && target == renderedWidth) return
         renderedPage = page
         renderedWidth = target
