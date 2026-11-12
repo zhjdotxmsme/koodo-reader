@@ -98,7 +98,7 @@ class ReadestViewSettingsTest {
             firstLineIndent = true,
         )
         assertEquals(60, snapshot.marginPx)
-        assertTrue(snapshot.userStylesheet.contains("text-indent:2em;"))
+        assertTrue(snapshot.userStylesheet.contains("text-indent:2em !important;"))
     }
 
     @Test

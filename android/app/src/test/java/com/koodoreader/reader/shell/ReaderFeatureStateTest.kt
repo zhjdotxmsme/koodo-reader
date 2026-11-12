@@ -56,7 +56,7 @@ class ReaderFeatureStateTest {
     fun `first line indent is presentation css only`() {
         val state = ReaderFeatureState(paragraphSpacingPx = 12f)
         assertEquals(
-            "p{margin-bottom:12px;text-indent:2em;}",
+            "p{margin-bottom:12px;text-indent:2em !important;}",
             ReaderFeatureCodec.userStylesheet(state, firstLineIndent = true),
         )
     }

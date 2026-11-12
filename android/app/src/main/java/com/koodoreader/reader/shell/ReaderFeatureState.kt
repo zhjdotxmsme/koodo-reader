@@ -163,7 +163,7 @@ object ReaderFeatureCodec {
 
     fun userStylesheet(state: ReaderFeatureState, firstLineIndent: Boolean = false): String {
         val custom = if (state.customBookCssEnabled) state.customBookCss.trim() else ""
-        val indent = if (firstLineIndent) "text-indent:2em;" else ""
+        val indent = if (firstLineIndent) "text-indent:2em !important;" else ""
         val paragraph = "p{margin-bottom:${cssPx(effectiveParagraphSpacingPx(state))}px;$indent}"
         return listOf(paragraph, custom).filter { it.isNotEmpty() }.joinToString("\n")
     }
