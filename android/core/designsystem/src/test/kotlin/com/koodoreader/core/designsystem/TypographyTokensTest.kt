@@ -10,7 +10,7 @@ import org.junit.jupiter.api.assertThrows
  * reader config defaults extracted from:
  *   - sliderList/dropdownList.tsx  (fontSize 17, letterSpacing 0, margin 0,
  *     paraSpacing 0, scale 1)
- *   - dropdownList.tsx lineHeight default "" → 1.5 ratio
+ *   - dropdownList.tsx lineHeight default "" → 1.6 ratio
  *   - dropdownList.tsx textAlign default "" → "left"
  */
 class TypographyTokensTest {
@@ -24,8 +24,8 @@ class TypographyTokensTest {
 
     @Test
     fun `default lineHeightRatio matches desktop dropdown default`() {
-        // dropdownList.tsx lineHeight options: "" (=1.5), "1", "1.25", "1.5", "1.75", "2"
-        assertEquals(1.5f, TypographyTokens().lineHeightRatio)
+        // dropdownList.tsx lineHeight options: "" (=1.6), "1", "1.25", "1.5", "1.75", "2"
+        assertEquals(1.6f, TypographyTokens().lineHeightRatio)
     }
 
     @Test

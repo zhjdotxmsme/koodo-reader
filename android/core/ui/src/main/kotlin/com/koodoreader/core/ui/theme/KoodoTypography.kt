@@ -11,29 +11,24 @@ import androidx.compose.ui.unit.sp
  *
  * IMPORTANT: this is NOT the reader typography. Book text is laid out by
  * `:core:designsystem`'s `TypographyTokens`, whose defaults mirror the desktop
- * reader config (fontSize 17, lineHeight 1.5 ratio, ...). Keeping the two apart
+ * reader config (fontSize 17, lineHeight 1.6 ratio, ...). Keeping the two apart
  * is what stops a shell restyle from moving text inside a book.
- *
- * Material 3's defaults are kept for the type *sizes*; only the family and the
- * weights that the shell actually uses are pinned, so this stays close to a
- * standard M3 app rather than inventing a second type system.
  */
 private val UiFamily = FontFamily.Default
+private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
+    TextStyle(fontFamily = UiFamily, fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
 
-val KoodoTypography = Typography().let { base ->
-    Typography(
-        headlineSmall = base.headlineSmall.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
-        titleLarge = base.titleLarge.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
-        titleMedium = base.titleMedium.copy(fontFamily = UiFamily, fontWeight = FontWeight.SemiBold),
-        titleSmall = base.titleSmall.copy(fontFamily = UiFamily, fontWeight = FontWeight.Medium),
-        bodyLarge = base.bodyLarge.copy(fontFamily = UiFamily),
-        bodyMedium = base.bodyMedium.copy(fontFamily = UiFamily),
-        bodySmall = base.bodySmall.copy(fontFamily = UiFamily),
-        labelLarge = base.labelLarge.copy(fontFamily = UiFamily, fontWeight = FontWeight.Medium),
-        labelMedium = base.labelMedium.copy(fontFamily = UiFamily),
-        labelSmall = base.labelSmall.copy(fontFamily = UiFamily),
-    )
-}
+val KoodoTypography = Typography(
+    titleLarge = style(20, 28, FontWeight.SemiBold),
+    titleMedium = style(16, 24, FontWeight.SemiBold),
+    titleSmall = style(14, 20, FontWeight.Medium),
+    bodyLarge = style(16, 26),
+    bodyMedium = style(15, 24),
+    bodySmall = style(13, 20),
+    labelLarge = style(14, 20, FontWeight.Medium),
+    labelMedium = style(13, 18),
+    labelSmall = style(12, 16),
+)
 
 /**
  * Section header inside a settings group (see `KoodoSettingsSection`).

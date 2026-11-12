@@ -104,7 +104,7 @@ class AppearanceCodecTest {
         assertEquals("rgba(0,0,0,1)", decoded.theme.foregroundColor)
         assertEquals("Default", decoded.theme.name)
         assertEquals(17f, decoded.typography.fontSizeSp)
-        assertEquals(1.5f, decoded.typography.lineHeightRatio)
+        assertEquals(1.6f, decoded.typography.lineHeightRatio)
     }
 
     @Test
@@ -176,6 +176,7 @@ class AppearanceCodecTest {
         // An empty object should produce the default config.
         val decoded = AppearanceCodec.decode("{}")
         assertEquals(17f, decoded.typography.fontSizeSp)
+        assertEquals(1.6f, decoded.typography.lineHeightRatio)
         assertEquals(ThemeKind.DEFAULT, decoded.theme.kind)
         assertEquals("Built-in font", decoded.fontCatalogEntry.key)
     }

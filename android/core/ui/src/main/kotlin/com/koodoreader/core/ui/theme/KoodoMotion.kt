@@ -2,6 +2,7 @@ package com.koodoreader.core.ui.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 
 /**
  * Shared easing curves for the shell. Durations live in
@@ -14,4 +15,6 @@ object KoodoMotion {
 
     /** The Material standard curve; default for most shell motion. */
     val Standard = FastOutSlowInEasing
+
+    val Decelerate = LinearOutSlowInEasing
 }

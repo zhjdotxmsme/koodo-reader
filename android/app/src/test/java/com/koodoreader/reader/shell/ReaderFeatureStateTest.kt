@@ -8,7 +8,7 @@ import org.junit.Test
 /**
  * Pins the native reading-enhancement + typography settings that the
  * packaged reader never exposed. Defaults match desktop
- * `DesktopReaderConfig` (font 17px, line-height 1.5, margin 0).
+ * `DesktopReaderConfig` (font 17px, line-height 1.6, margin 0).
  */
 class ReaderFeatureStateTest {
 
@@ -16,7 +16,7 @@ class ReaderFeatureStateTest {
     fun `empty store is desktop defaults with enhancements off`() {
         val s = ReaderFeatureCodec.fromMap(emptyMap())
         assertEquals(1.0f, s.fontScale, 0.001f)
-        assertEquals(1.5f, s.lineHeightRatio, 0.001f)
+        assertEquals(1.6f, s.lineHeightRatio, 0.001f)
         assertEquals(0f, s.marginHorizontalPx, 0.001f)
         assertEquals(17f, ReaderFeatureCodec.fontSizePx(s), 0.001f)
         assertFalse(s.bionic)
@@ -31,18 +31,34 @@ class ReaderFeatureStateTest {
         assertTrue(s.scrolled)
         assertFalse(s.customBookCssEnabled)
         assertTrue(s.customBookCss.isEmpty())
-        assertTrue(ReaderFeatureCodec.userStylesheet(s).isEmpty())
+        assertEquals("p{margin-bottom:32.64px;}", ReaderFeatureCodec.userStylesheet(s))
         assertEquals(ReaderPerformancePolicy.TIER_NORMAL, s.perfTier)
         assertEquals(0f, s.pdfCropMarginPx, 0.001f)
         assertFalse(s.pdfReflow)
     }
 
     @Test
-    fun `font scale maps to desktop 17px base`() {
-        val doubled = ReaderFeatureCodec.fromMap(mapOf("fontScale" to "2"))
-        assertEquals(34f, ReaderFeatureCodec.fontSizePx(doubled), 0.001f)
-        val tiny = ReaderFeatureCodec.fromMap(mapOf("fontScale" to "0.1"))
-        assertEquals(17f * 0.7f, ReaderFeatureCodec.fontSizePx(tiny), 0.001f)
+    fun `reader font size is clamped to 14 through 22 px`() {
+        val tiny = ReaderFeatureState(fontScale = 0.01f)
+        val huge = ReaderFeatureState(fontScale = 9f)
+        assertEquals(14f, ReaderFeatureCodec.fontSizePx(tiny), 0.001f)
+        assertEquals(22f, ReaderFeatureCodec.fontSizePx(huge), 0.001f)
+    }
+
+    @Test
+    fun `default paragraph gap is 1 point 2 times current line height`() {
+        val state = ReaderFeatureState()
+        assertEquals(17f * 1.6f * 1.2f, ReaderFeatureCodec.effectiveParagraphSpacingPx(state), 0.001f)
+        assertEquals("p{margin-bottom:32.64px;}", ReaderFeatureCodec.userStylesheet(state))
+    }
+
+    @Test
+    fun `first line indent is presentation css only`() {
+        val state = ReaderFeatureState(paragraphSpacingPx = 12f)
+        assertEquals(
+            "p{margin-bottom:12px;text-indent:2em;}",
+            ReaderFeatureCodec.userStylesheet(state, firstLineIndent = true),
+        )
     }
 
     @Test
@@ -98,7 +114,7 @@ class ReaderFeatureStateTest {
         assertFalse(restored.scrolled)
         assertTrue(restored.customBookCssEnabled)
         assertEquals("body { color: red; }", restored.customBookCss)
-        assertEquals("body { color: red; }", ReaderFeatureCodec.userStylesheet(restored))
+        assertEquals("p{margin-bottom:42.84px;}\nbody { color: red; }", ReaderFeatureCodec.userStylesheet(restored))
         assertEquals(12f, restored.pdfCropMarginPx, 0.001f)
         assertTrue(restored.pdfReflow)
     }
@@ -109,7 +125,7 @@ class ReaderFeatureStateTest {
             customBookCss = "body{color:blue}",
             customBookCssEnabled = false,
         )
-        assertTrue(ReaderFeatureCodec.userStylesheet(s).isEmpty())
+        assertEquals("p{margin-bottom:32.64px;}", ReaderFeatureCodec.userStylesheet(s))
     }
 
     @Test

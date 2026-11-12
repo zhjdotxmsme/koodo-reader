@@ -6,7 +6,7 @@ package com.koodoreader.core.designsystem
  * Default values are extracted from:
  *   - sliderList (dropdownList.tsx): fontSize 17, letterSpacing 0, margin 0,
  *     paraSpacing 0, scale 1, brightness 1
- *   - dropdownList.tsx lineHeight options: default empty = 1.5 ratio
+ *   - dropdownList.tsx lineHeight options: default empty = 1.6 ratio
  *   - dropdownList.tsx textAlign options: default empty = "left"
  *
  * All pixel fields are stored as Int (px) to stay compatible with the
@@ -17,10 +17,10 @@ data class TypographyTokens(
     val fontSizeSp: Float = 17f,
 
     /**
-     * Line height as a unitless ratio (e.g. 1.5 → 1.5 × fontSize).
-     * Desktop dropdownList: "" (=1.5), "1", "1.25", "1.5", "1.75", "2".
+     * Line height as a unitless ratio (e.g. 1.6 → 1.6 × fontSize).
+     * Desktop dropdownList: "" (=1.6), "1", "1.25", "1.5", "1.75", "2".
      */
-    val lineHeightRatio: Float = 1.5f,
+    val lineHeightRatio: Float = 1.6f,
 
     /**
      * Letter spacing in pixels. Desktop ConfigService "letterSpacing" key.

@@ -13,7 +13,7 @@ package com.koodoreader.core.designsystem
  * ```json
  * {
  *   "fontSizeSp": 17.0,
- *   "lineHeightRatio": 1.5,
+ *   "lineHeightRatio": 1.6,
  *   "letterSpacingPx": 0.0,
  *   "textIndentPx": 0,
  *   "paragraphSpacingBeforePx": 0,
@@ -132,7 +132,7 @@ object AppearanceCodec {
 
         val typography = TypographyTokens(
             fontSizeSp = m["fontSizeSp"]?.toFloatOrNull() ?: 17f,
-            lineHeightRatio = m["lineHeightRatio"]?.toFloatOrNull() ?: 1.5f,
+            lineHeightRatio = m["lineHeightRatio"]?.toFloatOrNull() ?: 1.6f,
             letterSpacingPx = m["letterSpacingPx"]?.toFloatOrNull() ?: 0f,
             textIndentPx = m["textIndentPx"]?.toIntOrNull() ?: 0,
             paragraphSpacingBeforePx = m["paragraphSpacingBeforePx"]?.toIntOrNull() ?: 0,

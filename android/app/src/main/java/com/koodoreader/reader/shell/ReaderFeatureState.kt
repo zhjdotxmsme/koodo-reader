@@ -4,13 +4,13 @@ package com.koodoreader.reader.shell
  * Native reading typography + P6 enhancement switches.
  *
  * Kept as a plain data class so JVM tests can pin the desktop-parity defaults
- * (`fontSize` 17, `lineHeight` 1.5, `margin` 0) without SharedPreferences.
+ * (`fontSize` 17, `lineHeight` 1.6, `margin` 0) without SharedPreferences.
  * [ReaderFeaturePrefs] is the Android store; [NativeEpubScreen] and
  * [ReadingSettingsRoute] share this object as the single fact source.
  */
 data class ReaderFeatureState(
     val fontScale: Float = 1.0f,
-    val lineHeightRatio: Float = 1.5f,
+    val lineHeightRatio: Float = 1.6f,
     val marginHorizontalPx: Float = 0f,
     val bionic: Boolean = false,
     val ruler: Boolean = false,
@@ -84,8 +84,8 @@ object ReaderFeatureCodec {
     const val FONT_SIZE_DEFAULT = 17f
     const val PDF_CROP_MIN = 0f
     const val PDF_CROP_MAX = 48f
-    const val FONT_SCALE_MIN = 0.7f
-    const val FONT_SCALE_MAX = 2.5f
+    const val FONT_SCALE_MIN = 14f / 17f
+    const val FONT_SCALE_MAX = 22f / 17f
     const val LINE_HEIGHT_MIN = 1f
     const val LINE_HEIGHT_MAX = 2f
     const val MARGIN_MIN = -40f
@@ -93,10 +93,11 @@ object ReaderFeatureCodec {
     const val SPEED_WPM_MIN = 100
     const val SPEED_WPM_MAX = 900
     const val SPEED_WPM_DEFAULT = 300
+    private const val PARAGRAPH_LINE_HEIGHT_FACTOR = 1.2f
 
     fun fromMap(map: Map<String, String>): ReaderFeatureState = ReaderFeatureState(
         fontScale = floatOf(map[KEY_FONT_SCALE], 1.0f),
-        lineHeightRatio = floatOf(map[KEY_LINE_HEIGHT], 1.5f),
+        lineHeightRatio = floatOf(map[KEY_LINE_HEIGHT], 1.6f),
         marginHorizontalPx = floatOf(map[KEY_MARGIN], 0f),
         bionic = boolOf(map[KEY_BIONIC]),
         ruler = boolOf(map[KEY_RULER]),
@@ -151,11 +152,20 @@ object ReaderFeatureCodec {
         KEY_CUSTOM_BACKGROUND to state.customBackgroundArgb?.toString().orEmpty(),
     )
 
-    fun userStylesheet(state: ReaderFeatureState): String {
+    fun effectiveParagraphSpacingPx(state: ReaderFeatureState): Float {
+        val explicit = clampedParagraphSpacing(state)
+        return if (explicit > 0f) explicit
+        else fontSizePx(state) * clampedLineHeight(state) * PARAGRAPH_LINE_HEIGHT_FACTOR
+    }
+
+    private fun cssPx(value: Float): String =
+        if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(java.util.Locale.US, value)
+
+    fun userStylesheet(state: ReaderFeatureState, firstLineIndent: Boolean = false): String {
         val custom = if (state.customBookCssEnabled) state.customBookCss.trim() else ""
-        val gap = clampedParagraphSpacing(state)
-        val para = if (gap > 0f) "p{margin-bottom:${gap.toInt()}px;}" else ""
-        return listOf(para, custom).filter { it.isNotEmpty() }.joinToString("\n")
+        val indent = if (firstLineIndent) "text-indent:2em;" else ""
+        val paragraph = "p{margin-bottom:${cssPx(effectiveParagraphSpacingPx(state))}px;$indent}"
+        return listOf(paragraph, custom).filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     fun fontSizePx(state: ReaderFeatureState): Float =

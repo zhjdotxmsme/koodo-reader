@@ -53,12 +53,12 @@ class ReadestViewSettingsTest {
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = true),
         )
-        assertEquals(css, on.userStylesheet)
+        assertEquals("p{margin-bottom:32.64px;}\n$css", on.userStylesheet)
         val off = ReadestViewSettings.from(
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = false),
         )
-        assertTrue(off.userStylesheet.isEmpty())
+        assertEquals("p{margin-bottom:32.64px;}", off.userStylesheet)
     }
 
     @Test

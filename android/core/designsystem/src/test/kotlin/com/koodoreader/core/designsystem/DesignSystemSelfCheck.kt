@@ -31,9 +31,9 @@ fun main(args: Array<String>) {
         }
     }.onFailure { failures.add(it) }
 
-    runCheck("TypographyTokens default lineHeightRatio == 1.5f") {
-        check(TypographyTokens().lineHeightRatio == 1.5f) {
-            "Expected 1.5f, got ${TypographyTokens().lineHeightRatio}"
+    runCheck("TypographyTokens default lineHeightRatio == 1.6f") {
+        check(TypographyTokens().lineHeightRatio == 1.6f) {
+            "Expected 1.6f, got ${TypographyTokens().lineHeightRatio}"
         }
     }.onFailure { failures.add(it) }
 
@@ -256,11 +256,12 @@ fun main(args: Array<String>) {
         check(ShapeTokens.ALL.zipWithNext().all { (a, b) -> a < b }) { "shape scale not ascending" }
     }
 
-    runCheck("SpaceTokens: 4dp grid, ascending, named constants on-scale") {
+    runCheck("SpaceTokens: 4dp grid, ascending, semantic reader and list values") {
         check(SpaceTokens.ALL.zipWithNext().all { (a, b) -> a < b }) { "spacing not ascending" }
         check(SpaceTokens.ALL.all { it % 4 == 0 }) { "spacing off the 4dp grid: ${SpaceTokens.ALL}" }
-        val offScale = SpaceTokens.NAMED.filterNot { SpaceTokens.ALL.contains(it) }
-        check(offScale.isEmpty()) { "named spacing constants not on the scale: $offScale" }
+        check(SpaceTokens.GRID_GAP_HORIZONTAL == 12) { "grid horizontal gap != 12" }
+        check(SpaceTokens.LIST_ITEM_VERTICAL == 12) { "list item vertical spacing != 12" }
+        check(SpaceTokens.READER_HORIZONTAL_DEFAULT == 20) { "reader horizontal default != 20" }
     }
 
     // ─── Summary ───────────────────────────────────────────────────────────

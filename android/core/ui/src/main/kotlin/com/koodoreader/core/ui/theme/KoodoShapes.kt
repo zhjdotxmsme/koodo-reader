@@ -9,12 +9,11 @@ import com.koodoreader.core.designsystem.ShapeTokens
  * Compose shapes built from [ShapeTokens].
  *
  * Mapping used across the app (documented in ShapeTokens):
- *   cards & bottom sheets -> large (16dp)
+ *   cards -> medium (12dp)
+ *   Material containers -> large (16dp)
+ *   bottom sheets -> extraLarge (28dp)
  *   controls, chips, text fields -> medium (12dp) / small (8dp)
  *   inline badges -> extraSmall (4dp)
- *
- * 16dp cards and 8dp chips deliberately match the reference reading app's
- * `rounded-box` / `rounded-btn` scale.
  */
 val KoodoShapes = Shapes(
     extraSmall = RoundedCornerShape(ShapeTokens.extraSmall.dp),
@@ -24,8 +23,8 @@ val KoodoShapes = Shapes(
     extraLarge = RoundedCornerShape(ShapeTokens.extraLarge.dp),
 )
 
-/** Card corner radius, named so components do not hardcode 16.dp. */
-val KoodoCardShape = RoundedCornerShape(ShapeTokens.large.dp)
+/** Card corner radius, named so components do not hardcode 12.dp. */
+val KoodoCardShape = KoodoShapes.medium
 
 /** Chip / filter corner radius. */
 val KoodoChipShape = RoundedCornerShape(ShapeTokens.small.dp)
