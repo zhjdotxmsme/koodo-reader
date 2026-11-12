@@ -3,6 +3,7 @@ package com.koodoreader.reader.shell
 import android.app.Activity
 import android.graphics.Color as AndroidColor
 import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
@@ -52,6 +53,11 @@ fun ReaderSystemBars(fullScreen: Boolean, chromeVisible: Boolean, readerBackgrou
     SideEffect {
         window.statusBarColor = AndroidColor.TRANSPARENT
         window.navigationBarColor = AndroidColor.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 28) {
+            val attrs = window.attributes
+            attrs.layoutInDisplayCutoutMode = ReaderSystemBarPolicy.displayCutoutMode(Build.VERSION.SDK_INT)
+            window.attributes = attrs
+        }
         window.setBackgroundDrawable(ColorDrawable(readerBackground.toArgb()))
         controller.isAppearanceLightStatusBars = readerDarkIcons
         controller.isAppearanceLightNavigationBars = readerDarkIcons
