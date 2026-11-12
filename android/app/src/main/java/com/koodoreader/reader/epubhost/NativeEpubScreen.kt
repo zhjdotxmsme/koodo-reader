@@ -190,6 +190,7 @@ import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.component.ErrorState
+import com.koodoreader.core.ui.component.koodoPressScale
 import com.koodoreader.core.ui.theme.KoodoChipShape
 import com.koodoreader.core.ui.theme.KoodoMotion
 
@@ -1454,7 +1455,7 @@ fun NativeEpubScreen(
                     // TOC off the right edge — the packaged native APK then
                     // looked like it had no contents list.
                     if (ReaderChromeAction.TOC in ReaderChromeAction.PRIMARY) {
-                        IconButton(onClick = { showToc = true }) {
+                        IconButton(onClick = { showToc = true }, modifier = Modifier.koodoPressScale()) {
                             Icon(
                                 painterResource(R.drawable.ic_list_view),
                                 contentDescription = t("Content"),
@@ -1462,7 +1463,7 @@ fun NativeEpubScreen(
                         }
                     }
                     if (ReaderChromeAction.SEARCH in ReaderChromeAction.PRIMARY) {
-                        IconButton(onClick = { showSearch = true }) {
+                        IconButton(onClick = { showSearch = true }, modifier = Modifier.koodoPressScale()) {
                             Icon(
                                 painterResource(R.drawable.ic_search),
                                 contentDescription = t("Search"),
@@ -1470,7 +1471,7 @@ fun NativeEpubScreen(
                         }
                     }
                     Box {
-                        IconButton(onClick = { moreMenu = true }) {
+                        IconButton(onClick = { moreMenu = true }, modifier = Modifier.koodoPressScale()) {
                             Icon(
                                 painterResource(R.drawable.ic_more),
                                 contentDescription = t("More"),
@@ -1487,6 +1488,7 @@ fun NativeEpubScreen(
                                         moreMenu = false
                                         showAppearance = true
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                             }
                             DropdownMenuItem(
@@ -1495,14 +1497,17 @@ fun NativeEpubScreen(
                                     moreMenu = false
                                     showReaderSettings = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text("A−  ${(fontScale * 100).toInt()}%") },
                                 onClick = { setFontScale(fontScale - 0.1f) },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text("A+") },
                                 onClick = { setFontScale(fontScale + 0.1f) },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Bookmark")) },
@@ -1510,6 +1515,7 @@ fun NativeEpubScreen(
                                     moreMenu = false
                                     addBookmark()
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Notes")) },
@@ -1517,6 +1523,7 @@ fun NativeEpubScreen(
                                     moreMenu = false
                                     showBookAnnotations = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Speak the text")) },
@@ -1524,6 +1531,7 @@ fun NativeEpubScreen(
                                     moreMenu = false
                                     if (showTtsControl) stopTts() else startTts()
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             if (!useFoliate) {
                                 DropdownMenuItem(
@@ -1532,6 +1540,7 @@ fun NativeEpubScreen(
                                         moreMenu = false
                                         commitFeatures(features.copy(bionic = !features.bionic))
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                                 DropdownMenuItem(
                                     text = { Text(t("Enable reading ruler")) },
@@ -1539,6 +1548,7 @@ fun NativeEpubScreen(
                                         moreMenu = false
                                         commitFeatures(features.copy(ruler = !features.ruler))
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                                 DropdownMenuItem(
                                     text = { Text(t("Enable paragraph mode")) },
@@ -1546,6 +1556,7 @@ fun NativeEpubScreen(
                                         moreMenu = false
                                         commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                                 DropdownMenuItem(
                                     text = { Text(t("Enable speed reading")) },
@@ -1553,6 +1564,7 @@ fun NativeEpubScreen(
                                         moreMenu = false
                                         commitFeatures(features.copy(speedReading = !features.speedReading))
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                                 DropdownMenuItem(
                                     text = { Text(t("Two-column layout")) },
@@ -1561,6 +1573,7 @@ fun NativeEpubScreen(
                                         val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
                                         commitFeatures(features.copy(columnsPerPage = next))
                                     },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                             }
                             DropdownMenuItem(
@@ -1569,6 +1582,7 @@ fun NativeEpubScreen(
                                     moreMenu = false
                                     showAi = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                         }
                     }
@@ -2056,20 +2070,20 @@ fun NativeEpubScreen(
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                         )
-                        TextButton(onClick = { deleteHighlight() }) { Text(t("Delete")) }
+                        TextButton(onClick = { deleteHighlight() }, modifier = Modifier.koodoPressScale()) { Text(t("Delete")) }
                         TextButton(onClick = {
                             clipboard.setText(AnnotatedString(excerpt))
                             showSelectionMenu = false
-                        }) { Text(t("Copy")) }
+                        }, modifier = Modifier.koodoPressScale()) { Text(t("Copy")) }
                         TextButton(onClick = {
                             searchQuery = excerpt
                             showSelectionMenu = false
                             showSearch = true
                             doSearch()
-                        }) { Text(t("Search")) }
-                        TextButton(onClick = { lookupDictionary() }) { Text(t("Dictionary")) }
-                        TextButton(onClick = { startTranslation() }) { Text(t("Translate")) }
-                        TextButton(onClick = { showSelectionMenu = false }) { Text(t("Close")) }
+                        }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
+                        TextButton(onClick = { lookupDictionary() }, modifier = Modifier.koodoPressScale()) { Text(t("Dictionary")) }
+                        TextButton(onClick = { startTranslation() }, modifier = Modifier.koodoPressScale()) { Text(t("Translate")) }
+                        TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
                     }
                 } else {
                     // 未高亮：高亮(4色) + 笔记 + 字典
@@ -2080,26 +2094,26 @@ fun NativeEpubScreen(
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
                         )
-                        TextButton(onClick = { saveHighlight(0) }) { Text(t("Yellow")) }
-                        TextButton(onClick = { saveHighlight(1) }) { Text(t("Green")) }
-                        TextButton(onClick = { saveHighlight(2) }) { Text(t("Pink")) }
-                        TextButton(onClick = { saveHighlight(3) }) { Text(t("Blue")) }
+                        TextButton(onClick = { saveHighlight(0) }, modifier = Modifier.koodoPressScale()) { Text(t("Yellow")) }
+                        TextButton(onClick = { saveHighlight(1) }, modifier = Modifier.koodoPressScale()) { Text(t("Green")) }
+                        TextButton(onClick = { saveHighlight(2) }, modifier = Modifier.koodoPressScale()) { Text(t("Pink")) }
+                        TextButton(onClick = { saveHighlight(3) }, modifier = Modifier.koodoPressScale()) { Text(t("Blue")) }
                     }
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { noteText = ""; showNoteDialog = true }) { Text(t("Note")) }
+                        TextButton(onClick = { noteText = ""; showNoteDialog = true }, modifier = Modifier.koodoPressScale()) { Text(t("Note")) }
                         TextButton(onClick = {
                             clipboard.setText(AnnotatedString(excerpt))
                             showSelectionMenu = false
-                        }) { Text(t("Copy")) }
+                        }, modifier = Modifier.koodoPressScale()) { Text(t("Copy")) }
                         TextButton(onClick = {
                             searchQuery = excerpt
                             showSelectionMenu = false
                             showSearch = true
                             doSearch()
-                        }) { Text(t("Search")) }
-                        TextButton(onClick = { lookupDictionary() }) { Text(t("Dictionary")) }
-                        TextButton(onClick = { startTranslation() }) { Text(t("Translate")) }
-                        TextButton(onClick = { showSelectionMenu = false }) { Text(t("Close")) }
+                        }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
+                        TextButton(onClick = { lookupDictionary() }, modifier = Modifier.koodoPressScale()) { Text(t("Dictionary")) }
+                        TextButton(onClick = { startTranslation() }, modifier = Modifier.koodoPressScale()) { Text(t("Translate")) }
+                        TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
                     }
                 }
             }
@@ -2139,7 +2153,7 @@ fun NativeEpubScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showDictDialog = false }) { Text(t("Close")) }
+                TextButton(onClick = { showDictDialog = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
             },
         )
     }
@@ -2190,7 +2204,7 @@ fun NativeEpubScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .verticalScroll(rememberScrollState()),
             )
-            TextButton(onClick = { footnoteText = null }) { Text(t("Close")) }
+            TextButton(onClick = { footnoteText = null }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
         }
     }
 
@@ -2274,10 +2288,10 @@ fun NativeEpubScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { saveNote() }) { Text(t("Save")) }
+                TextButton(onClick = { saveNote() }, modifier = Modifier.koodoPressScale()) { Text(t("Save")) }
             },
             dismissButton = {
-                TextButton(onClick = { showNoteDialog = false }) { Text(t("Cancel")) }
+                TextButton(onClick = { showNoteDialog = false }, modifier = Modifier.koodoPressScale()) { Text(t("Cancel")) }
             },
         )
     }
@@ -2300,7 +2314,7 @@ fun NativeEpubScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { imagePreview = null }) { Text(t("Close")) }
+                TextButton(onClick = { imagePreview = null }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
             },
         )
     }
@@ -2310,7 +2324,7 @@ fun NativeEpubScreen(
             title = { Text(t("Notes")) },
             text = { Text(body) },
             confirmButton = {
-                TextButton(onClick = { footnoteBody = null }) { Text(t("Close")) }
+                TextButton(onClick = { footnoteBody = null }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
             },
         )
     }
@@ -2337,12 +2351,12 @@ fun NativeEpubScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { runAi(summarize = false) }, enabled = !aiBusy) {
+                TextButton(onClick = { runAi(summarize = false) }, enabled = !aiBusy, modifier = Modifier.koodoPressScale()) {
                     Text(t("Ask AI"))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { runAi(summarize = true) }, enabled = !aiBusy) {
+                TextButton(onClick = { runAi(summarize = true) }, enabled = !aiBusy, modifier = Modifier.koodoPressScale()) {
                     Text(t("Summarize this chapter"))
                 }
             },
@@ -2456,10 +2470,10 @@ fun NativeEpubScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { doSearch() }) { Text(t("Search")) }
+                TextButton(onClick = { doSearch() }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
             },
             dismissButton = {
-                TextButton(onClick = { showSearch = false }) { Text(t("Close")) }
+                TextButton(onClick = { showSearch = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
             },
         )
     }

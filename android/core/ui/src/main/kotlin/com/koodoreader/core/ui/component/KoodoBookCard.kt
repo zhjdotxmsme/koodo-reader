@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.ColorTokens
 import com.koodoreader.core.designsystem.MotionTokens
+import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.theme.KoodoCoverShape
 
 /**
@@ -104,7 +105,9 @@ fun KoodoBookCard(
     }
     Box(modifier = modifier) {
         Column(
-            modifier = clickableModifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            modifier = clickableModifier
+                .koodoPressScale()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
             Box {
                 KoodoBookCover(
@@ -129,18 +132,19 @@ fun KoodoBookCard(
             }
             Text(
                 text = model.title,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp),
+                modifier = Modifier.padding(top = SpaceTokens.COVER_TO_TEXT.dp),
             )
             Text(
                 text = model.subtitle,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = SpaceTokens.TEXT_LINE_GAP.dp),
             )
         }
         menu(this)
@@ -182,6 +186,7 @@ fun KoodoBookRow(
         Row(
             modifier = clickableModifier
                 .fillMaxWidth()
+                .koodoPressScale()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -204,10 +209,11 @@ fun KoodoBookRow(
                 )
                 Text(
                     text = model.subtitle,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = SpaceTokens.TEXT_LINE_GAP.dp),
                 )
             }
             if (model.isFavorite) {

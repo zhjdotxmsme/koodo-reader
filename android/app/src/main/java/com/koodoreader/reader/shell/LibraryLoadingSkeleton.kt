@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +23,12 @@ fun LibraryLoadingSkeleton(tileCount: Int = 12) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 112.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(SpaceTokens.SCREEN_HORIZONTAL.dp),
+        contentPadding = PaddingValues(
+            start = SpaceTokens.SCREEN_HORIZONTAL.dp,
+            end = SpaceTokens.SCREEN_HORIZONTAL.dp,
+            top = SpaceTokens.md.dp,
+            bottom = SpaceTokens.md.dp,
+        ),
         horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),
         verticalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_VERTICAL.dp),
         userScrollEnabled = false,
@@ -32,7 +36,6 @@ fun LibraryLoadingSkeleton(tileCount: Int = 12) {
         items(tileCount) {
             Box(
                 modifier = Modifier
-                    .padding(top = SpaceTokens.md.dp)
                     .aspectRatio(0.72f)
                     .shimmer()
                     .background(

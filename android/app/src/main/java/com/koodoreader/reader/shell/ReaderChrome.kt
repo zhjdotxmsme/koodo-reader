@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SizeTokens
 import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.core.ui.component.koodoPressScale
 import com.koodoreader.core.ui.theme.KoodoMotion
 import com.koodoreader.reader.R
 
@@ -74,13 +75,13 @@ fun ReaderTopBar(
                 modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
                 title = title,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, modifier = Modifier.koodoPressScale()) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
                     }
                 },
                 actions = {
                     actions()
-                    IconButton(onClick = onClose) {
+                    IconButton(onClick = onClose, modifier = Modifier.koodoPressScale()) {
                         Icon(painterResource(R.drawable.ic_close), contentDescription = t("Close"))
                     }
                 },

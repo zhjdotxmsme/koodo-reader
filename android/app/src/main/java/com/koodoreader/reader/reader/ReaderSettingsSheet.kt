@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.core.ui.component.koodoPressScale
 import com.koodoreader.reader.shell.FontManager
 import com.koodoreader.reader.shell.ReaderChromeUiState
 import com.koodoreader.reader.shell.ReaderFeatureCodec
@@ -86,6 +87,7 @@ fun ReaderSettingsSheet(
                     FilterChip(
                         selected = chromeState.horizontalMarginDp == margin,
                         onClick = { onChromeState(chromeState.copy(horizontalMarginDp = margin)) },
+                        modifier = Modifier.koodoPressScale(),
                         label = { Text("$margin dp") },
                     )
                 }
@@ -113,7 +115,10 @@ fun ReaderSettingsSheet(
                     modifier = Modifier.weight(1f),
                 )
                 Box {
-                    TextButton(onClick = { fontMenuOpen = true }) {
+                    TextButton(
+                        onClick = { fontMenuOpen = true },
+                        modifier = Modifier.koodoPressScale(),
+                    ) {
                         Text(fonts.firstOrNull { it.key == state.fontKey }?.label ?: t("Default"))
                     }
                     DropdownMenu(
@@ -126,6 +131,7 @@ fun ReaderSettingsSheet(
                                 onChange(state.copy(fontKey = ""))
                                 fontMenuOpen = false
                             },
+                            modifier = Modifier.koodoPressScale(),
                         )
                         fonts.forEach { font ->
                             DropdownMenuItem(
@@ -134,6 +140,7 @@ fun ReaderSettingsSheet(
                                     onChange(state.copy(fontKey = font.key))
                                     fontMenuOpen = false
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                         }
                     }
@@ -152,7 +159,10 @@ fun ReaderSettingsSheet(
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { onChange(state.copy(brightness = -1f)) }) {
+                TextButton(
+                    onClick = { onChange(state.copy(brightness = -1f)) },
+                    modifier = Modifier.koodoPressScale(),
+                ) {
                     Text(t("Follow system"))
                 }
             }
@@ -185,6 +195,7 @@ fun ReaderSettingsSheet(
                     FilterChip(
                         selected = state.orientation == value,
                         onClick = { onChange(state.copy(orientation = value)) },
+                        modifier = Modifier.koodoPressScale(),
                         label = { Text(label) },
                     )
                 }
@@ -202,7 +213,10 @@ fun ReaderSettingsSheet(
                     0xFF121212.toInt() to t("Black background"),
                 ).forEach { (argb, description) ->
                     // 32dp 色块外包 48dp 触达盒（IconButton 默认最小尺寸）。
-                    IconButton(onClick = { onChange(state.copy(customBackgroundArgb = argb)) }) {
+                    IconButton(
+                        onClick = { onChange(state.copy(customBackgroundArgb = argb)) },
+                        modifier = Modifier.koodoPressScale(),
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
@@ -211,7 +225,10 @@ fun ReaderSettingsSheet(
                         )
                     }
                 }
-                TextButton(onClick = { onChange(state.copy(customBackgroundArgb = null)) }) {
+                TextButton(
+                    onClick = { onChange(state.copy(customBackgroundArgb = null)) },
+                    modifier = Modifier.koodoPressScale(),
+                ) {
                     Text(t("Default"))
                 }
             }

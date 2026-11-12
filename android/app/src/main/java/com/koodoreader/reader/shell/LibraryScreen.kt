@@ -18,12 +18,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -63,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -78,8 +80,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.component.ErrorState
+import com.koodoreader.core.ui.component.koodoPressScale
+import com.koodoreader.core.ui.component.staggeredEntrance
 import com.koodoreader.core.ui.theme.KoodoMotion
 import com.koodoreader.reader.R
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -144,19 +149,25 @@ fun LibraryScreen(
                 exit = fadeOut(tween(MotionTokens.FAST)),
             ) {
                 TopAppBar(
+                    modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                     navigationIcon = {
-                        IconButton(onClick = viewModel::clearSelection) {
+                        IconButton(onClick = viewModel::clearSelection, modifier = Modifier.koodoPressScale()) {
                             Icon(Icons.Default.Close, contentDescription = t("Cancel"))
                         }
                     },
-                    title = { Text("${selection.selected.size}") },
+                    title = {
+                        Text(
+                            "${selection.selected.size}",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    },
                     actions = {
-                        TextButton(onClick = viewModel::selectAllVisible) { Text(t("Select all")) }
-                        TextButton(onClick = { moveDialogOpen = true }) { Text(t("Move")) }
+                        TextButton(onClick = viewModel::selectAllVisible, modifier = Modifier.koodoPressScale()) { Text(t("Select all")) }
+                        TextButton(onClick = { moveDialogOpen = true }, modifier = Modifier.koodoPressScale()) { Text(t("Move")) }
                         TextButton(onClick = {
                             viewModel.deleteSelected()
                             scope.launch {
@@ -171,7 +182,7 @@ fun LibraryScreen(
                                     viewModel.commitDelete()
                                 }
                             }
-                        }) { Text(t("Delete")) }
+                        }, modifier = Modifier.koodoPressScale()) { Text(t("Delete")) }
                     },
                 )
             }
@@ -182,6 +193,7 @@ fun LibraryScreen(
                 exit = fadeOut(tween(MotionTokens.FAST)),
             ) {
             TopAppBar(
+                modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -189,7 +201,7 @@ fun LibraryScreen(
                 title = {
                     Text(
                         t("Library"),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                 },
                 actions = {
@@ -220,7 +232,7 @@ fun LibraryScreen(
                     // two icon buttons whose glyphs said something else (the file
                     // picker wore a hamburger, backup wore a list icon).
                     Box {
-                        IconButton(onClick = { importMenuOpen = true }) {
+                        IconButton(onClick = { importMenuOpen = true }, modifier = Modifier.koodoPressScale()) {
                             Icon(painterResource(R.drawable.ic_import), contentDescription = t("Import"))
                         }
                         DropdownMenu(
@@ -233,6 +245,7 @@ fun LibraryScreen(
                                     filesLauncher.launch(arrayOf("*/*"))
                                     importMenuOpen = false
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Import books from folder")) },
@@ -240,6 +253,7 @@ fun LibraryScreen(
                                     treeLauncher.launch(null)
                                     importMenuOpen = false
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                         }
                     }
@@ -248,30 +262,35 @@ fun LibraryScreen(
                     // global moved out: Trash / Backup / Dictionary → Settings,
                     // Stats → its own tab, Language → Settings › Language.
                     Box {
-                        IconButton(onClick = { menuOpen = true }) {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.koodoPressScale()) {
                             Icon(painterResource(R.drawable.ic_more), contentDescription = t("View"))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
                                 text = { Text(if (shelf.viewGrid) t("Switch to list view") else t("Switch to grid view")) },
                                 onClick = { viewModel.setViewGrid(!shelf.viewGrid); menuOpen = false },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Sort by")) },
                                 onClick = { menuOpen = false; sortSheetOpen = true },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(if (shelf.favoritesOnly) t("Show all books") else t("Show favorites")) },
                                 onClick = { viewModel.setFavoritesOnly(!shelf.favoritesOnly); menuOpen = false },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("New shelf")) },
                                 onClick = { menuOpen = false; newShelfOpen = true },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             if (shelf.activeShelf != null) {
                                 DropdownMenuItem(
                                     text = { Text(t("Delete")) },
                                     onClick = { viewModel.deleteActiveShelf(); menuOpen = false },
+                                    modifier = Modifier.koodoPressScale(),
                                 )
                             }
                         }
@@ -300,6 +319,7 @@ fun LibraryScreen(
                                 viewModel.setSearchQuery("")
                                 keyboard?.hide()
                             },
+                            modifier = Modifier.koodoPressScale(),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -328,6 +348,7 @@ fun LibraryScreen(
                 FilterChip(
                     selected = shelf.activeShelf == null,
                     onClick = { viewModel.setActiveShelf(null) },
+                    modifier = Modifier.koodoPressScale(),
                     label = { Text(t("All books")) },
                     colors = ShellChrome.shelfChipColors(),
                     border = ShellChrome.shelfChipBorder(shelf.activeShelf == null),
@@ -337,6 +358,7 @@ fun LibraryScreen(
                     FilterChip(
                         selected = shelf.activeShelf == title,
                         onClick = { viewModel.setActiveShelf(title) },
+                        modifier = Modifier.koodoPressScale(),
                         label = { Text(title) },
                         colors = ShellChrome.shelfChipColors(),
                         border = ShellChrome.shelfChipBorder(shelf.activeShelf == title),
@@ -382,6 +404,13 @@ fun LibraryScreen(
                     showFailureDialog = true
                 }
             }
+            var playEntrance by rememberSaveable { mutableStateOf(true) }
+            LaunchedEffect(libraryLoading) {
+                if (!libraryLoading) {
+                    delay(MotionTokens.PAGE + MotionTokens.STAGGER * 12L)
+                    playEntrance = false
+                }
+            }
             if (libraryLoading) {
                 LibraryLoadingSkeleton()
             } else if (loadError != null) {
@@ -405,15 +434,21 @@ fun LibraryScreen(
                         onImportClick = { filesLauncher.launch(arrayOf("*/*")) },
                     )
                 }
-            } else if (shelf.viewGrid) {                LazyVerticalGrid(
+            } else if (shelf.viewGrid) {
+                LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 112.dp),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(SpaceTokens.SCREEN_HORIZONTAL.dp),
+                    contentPadding = PaddingValues(
+                        start = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                        end = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                        top = SpaceTokens.md.dp,
+                        bottom = SpaceTokens.md.dp,
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),
                     verticalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_VERTICAL.dp),
                 ) {
-                    items(books, key = { it.key }) { book ->
+                    itemsIndexed(books, key = { _, book -> book.key }) { index, book ->
                         val itemInfo = gridState.layoutInfo.visibleItemsInfo
                             .firstOrNull { it.key == book.key }
                         BookCard(
@@ -434,7 +469,7 @@ fun LibraryScreen(
                                 viewModel.markRecentOpened(book.key)
                                 onOpenBook(book.key)
                             },
-                            modifier = Modifier.pointerInput(book.key, selection.active) {
+                            modifier = Modifier.staggeredEntrance(index, play = playEntrance).pointerInput(book.key, selection.active) {
                                 if (selection.active) return@pointerInput
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { draggingKey = book.key },
@@ -465,7 +500,7 @@ fun LibraryScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(SpaceTokens.SCREEN_HORIZONTAL.dp),
-                    verticalArrangement = Arrangement.spacedBy(SpaceTokens.md.dp),
+                    verticalArrangement = Arrangement.spacedBy(SpaceTokens.GROUP_GAP.dp),
                 ) {
                     items(books, key = { it.key }) { book ->
                         ShellSettingsGroup {
@@ -488,8 +523,8 @@ fun LibraryScreen(
                                     onOpenBook(book.key)
                                 },
                                 modifier = Modifier.padding(
-                                    horizontal = SpaceTokens.md.dp,
-                                    vertical = SpaceTokens.sm.dp,
+                                    horizontal = SpaceTokens.LIST_ITEM_HORIZONTAL.dp,
+                                    vertical = SpaceTokens.LIST_ITEM_VERTICAL.dp,
                                 ),
                             )
                         }
@@ -536,10 +571,11 @@ fun LibraryScreen(
                         newShelfTitle = ""
                         newShelfOpen = false
                     },
+                    modifier = Modifier.koodoPressScale(),
                 ) { Text(t("Confirm")) }
             },
             dismissButton = {
-                TextButton(onClick = { newShelfOpen = false }) { Text(t("Cancel")) }
+                TextButton(onClick = { newShelfOpen = false }, modifier = Modifier.koodoPressScale()) { Text(t("Cancel")) }
             },
         )
     }
@@ -559,6 +595,7 @@ fun LibraryScreen(
                                 viewModel.addToShelf(title, pickKey)
                                 shelfPickKey = null
                             },
+                            modifier = Modifier.koodoPressScale(),
                         ) { Text(title) }
                     }
                     TextButton(
@@ -566,12 +603,13 @@ fun LibraryScreen(
                             shelfPickKey = null
                             newShelfOpen = true
                         },
+                        modifier = Modifier.koodoPressScale(),
                     ) { Text(t("New shelf")) }
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { shelfPickKey = null }) { Text(t("Cancel")) }
+                TextButton(onClick = { shelfPickKey = null }, modifier = Modifier.koodoPressScale()) { Text(t("Cancel")) }
             },
         )
     }
@@ -599,10 +637,11 @@ fun LibraryScreen(
                         moveFolderName = ""
                         moveDialogOpen = false
                     },
+                    modifier = Modifier.koodoPressScale(),
                 ) { Text(t("Confirm")) }
             },
             dismissButton = {
-                TextButton(onClick = { moveDialogOpen = false }) { Text(t("Cancel")) }
+                TextButton(onClick = { moveDialogOpen = false }, modifier = Modifier.koodoPressScale()) { Text(t("Cancel")) }
             },
         )
     }
@@ -631,7 +670,7 @@ fun LibraryScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showFailureDialog = false }) { Text(t("Confirm")) }
+                TextButton(onClick = { showFailureDialog = false }, modifier = Modifier.koodoPressScale()) { Text(t("Confirm")) }
             },
         )
     }
@@ -710,7 +749,7 @@ private fun EmptyLibraryHint(
             if (showImport) {
                 Button(
                     onClick = onImportClick,
-                    modifier = Modifier.padding(top = SpaceTokens.md.dp),
+                    modifier = Modifier.padding(top = SpaceTokens.md.dp).koodoPressScale(),
                 ) {
                     Text(t("Import"))
                 }

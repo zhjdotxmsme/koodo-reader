@@ -105,6 +105,7 @@ import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import androidx.compose.runtime.mutableIntStateOf
 import com.koodoreader.core.ui.component.ErrorState
+import com.koodoreader.core.ui.component.koodoPressScale
 import org.json.JSONObject
 
 /**
@@ -524,17 +525,26 @@ fun NativePdfScreen(
                             showOutline = true
                         },
                         enabled = state.pageCount > 0,
+                        modifier = Modifier.koodoPressScale(),
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_list_view),
                             contentDescription = t("PDF outline"),
                         )
                     }
-                    IconButton(onClick = { showSearch = true }, enabled = state.pageCount > 0) {
+                    IconButton(
+                        onClick = { showSearch = true },
+                        enabled = state.pageCount > 0,
+                        modifier = Modifier.koodoPressScale(),
+                    ) {
                         Icon(painterResource(R.drawable.ic_search), contentDescription = t("Search in book"))
                     }
                     Box {
-                        IconButton(onClick = { moreMenu = true }, enabled = state.pageCount > 0) {
+                        IconButton(
+                            onClick = { moreMenu = true },
+                            enabled = state.pageCount > 0,
+                            modifier = Modifier.koodoPressScale(),
+                        ) {
                             Icon(
                                 painterResource(R.drawable.ic_more),
                                 contentDescription = t("More"),
@@ -550,6 +560,7 @@ fun NativePdfScreen(
                                     moreMenu = false
                                     controller.zoomOut()
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text("+") },
@@ -557,6 +568,7 @@ fun NativePdfScreen(
                                     moreMenu = false
                                     controller.zoomIn()
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("OCR")) },
@@ -565,6 +577,7 @@ fun NativePdfScreen(
                                     ocrController.refresh()
                                     showOcr = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Share")) },
@@ -573,6 +586,7 @@ fun NativePdfScreen(
                                     moreMenu = false
                                     controller.exportCurrentPage { file -> shareSnapshot(context, file) }
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Double-page view")) },
@@ -582,6 +596,7 @@ fun NativePdfScreen(
                                     features = next
                                     featurePrefs.save(next)
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Notes")) },
@@ -589,6 +604,7 @@ fun NativePdfScreen(
                                     moreMenu = false
                                     showBookAnnotations = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = { Text(t("Settings")) },
@@ -596,6 +612,7 @@ fun NativePdfScreen(
                                     moreMenu = false
                                     showReaderSettings = true
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                             DropdownMenuItem(
                                 text = {
@@ -610,6 +627,7 @@ fun NativePdfScreen(
                                     features = next
                                     featurePrefs.save(next)
                                 },
+                                modifier = Modifier.koodoPressScale(),
                             )
                         }
                     }
@@ -811,10 +829,18 @@ fun NativePdfScreen(
                         onClick = { controller.loadOutline(); showOutline = true },
                         modifier = Modifier.align(Alignment.BottomCenter),
                         actions = {
-                            TextButton(onClick = controller::previousPage, enabled = state.page > 1) {
+                            TextButton(
+                                onClick = controller::previousPage,
+                                enabled = state.page > 1,
+                                modifier = Modifier.koodoPressScale(),
+                            ) {
                                 Text("‹ ${t("Previous page")}")
                             }
-                            TextButton(onClick = controller::nextPage, enabled = state.page < state.pageCount) {
+                            TextButton(
+                                onClick = controller::nextPage,
+                                enabled = state.page < state.pageCount,
+                                modifier = Modifier.koodoPressScale(),
+                            ) {
                                 Text("${t("Next page")} ›")
                             }
                         },
@@ -896,21 +922,21 @@ fun NativePdfScreen(
                         clipboard.setText(AnnotatedString(reflowSelectionText))
                         showReflowSelection = false
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Copy")) }
                 TextButton(
                     onClick = {
                         saveReflowAnnotation("")
                         showReflowSelection = false
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Highlight")) }
                 TextButton(
                     onClick = {
                         showReflowSelection = false
                         showReflowNoteInput = true
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Note")) }
                 TextButton(
                     onClick = {
@@ -918,7 +944,7 @@ fun NativePdfScreen(
                         showSearch = true
                         showReflowSelection = false
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Search in book")) }
             }
         }
@@ -942,10 +968,10 @@ fun NativePdfScreen(
                     saveReflowAnnotation(reflowNoteDraft)
                     reflowNoteDraft = ""
                     showReflowNoteInput = false
-                }) { Text(t("Confirm")) }
+                }, modifier = Modifier.koodoPressScale()) { Text(t("Confirm")) }
             },
             dismissButton = {
-                TextButton(onClick = { showReflowNoteInput = false }) { Text(t("Cancel")) }
+                TextButton(onClick = { showReflowNoteInput = false }, modifier = Modifier.koodoPressScale()) { Text(t("Cancel")) }
             },
         )
     }
@@ -963,14 +989,14 @@ fun NativePdfScreen(
                         controller.loadOutline()
                         showOutline = true
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("PDF outline")) }
                 TextButton(
                     onClick = {
                         showPageMenu = false
                         showSearch = true
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Search in book")) }
                 TextButton(
                     onClick = {
@@ -978,7 +1004,7 @@ fun NativePdfScreen(
                         controller.exportCurrentPage { file -> shareSnapshot(context, file) }
                     },
                     enabled = state.pageCount > 0 && !state.exporting,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) { Text(t("Share")) }
             }
         }
@@ -1079,7 +1105,7 @@ private fun PdfUnavailableScreen(title: String, bookKey: String, onBack: () -> U
             TopAppBar(
                 title = { Text(if (title.isEmpty()) bookKey else title, maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, modifier = Modifier.koodoPressScale()) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = t("Back"))
                     }
                 },
@@ -1133,7 +1159,7 @@ private fun PasswordPrompt(error: Boolean, onSubmit: (String) -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(field) }) { Text(t("Enter password")) }
+            TextButton(onClick = { onSubmit(field) }, modifier = Modifier.koodoPressScale()) { Text(t("Enter password")) }
         },
     )
 }
@@ -1164,7 +1190,7 @@ private fun OutlineList(
                 TextButton(
                     onClick = { onPick(row) },
                     enabled = resolved,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                 ) {
                     Text(
                         text = if (resolved) {
@@ -1233,15 +1259,15 @@ private fun SearchDialog(
                                 style = MaterialTheme.typography.labelMedium,
                             )
                             Row {
-                                TextButton(onClick = { onCycle(-1) }) { Text("‹") }
-                                TextButton(onClick = { onCycle(1) }) { Text("›") }
+                                TextButton(onClick = { onCycle(-1) }, modifier = Modifier.koodoPressScale()) { Text("‹") }
+                                TextButton(onClick = { onCycle(1) }, modifier = Modifier.koodoPressScale()) { Text("›") }
                             }
                         }
                         LazyColumn(modifier = Modifier.fillMaxHeight(0.5f)) {
                             itemsIndexed(hits) { index, hit ->
                                 TextButton(
                                     onClick = { onJump(index) },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth().koodoPressScale(),
                                 ) {
                                     Text(
                                         text = "[${hit.pageNumber}] ${hit.snippet}",
@@ -1261,10 +1287,10 @@ private fun SearchDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSearch(query) }) { Text(t("Search")) }
+            TextButton(onClick = { onSearch(query) }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(t("Close")) }
+            TextButton(onClick = onDismiss, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
         },
     )
 }
