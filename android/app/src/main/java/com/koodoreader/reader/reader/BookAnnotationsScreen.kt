@@ -125,7 +125,7 @@ fun BookAnnotationsScreen(
                             }
                             Text(
                                 note.chapter.orEmpty(),
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Row {
