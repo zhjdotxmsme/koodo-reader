@@ -66,7 +66,11 @@ import androidx.compose.runtime.LaunchedEffect
 import com.koodoreader.reader.reader.BookAnnotationsScreen
 import com.koodoreader.reader.reader.BookAnnotationsViewModel
 import com.koodoreader.reader.reader.ReaderWindowController
-import com.koodoreader.reader.reader.ReaderSettingsSheet
+import com.koodoreader.reader.reader.ReaderControlCenterSheet
+import com.koodoreader.reader.reader.ReaderNativeSurfaceObscurer
+import com.koodoreader.reader.reader.ReaderFormatKind
+import com.koodoreader.reader.reader.ReaderMoreIconWithOverflow
+import com.koodoreader.reader.reader.ReaderOverflowItems
 import com.koodoreader.reader.reader.ReaderTocPage
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -191,7 +195,7 @@ fun NativePdfScreen(
     var reflowSelectionW by remember { mutableStateOf(0f) }
     var reflowSelectionH by remember { mutableStateOf(0f) }
     var showReflowSelection by remember { mutableStateOf(false) }
-    var showReaderSettings by remember { mutableStateOf(false) }
+    var showControlCenter by remember { mutableStateOf(false) }
     var showReflowNoteInput by remember { mutableStateOf(false) }
     var reflowNoteDraft by remember { mutableStateOf("") }
     var showBookAnnotations by remember { mutableStateOf(false) }
@@ -541,98 +545,25 @@ fun NativePdfScreen(
                     ) {
                         Icon(painterResource(R.drawable.ic_search), contentDescription = t("Search in book"))
                     }
-                    Box {
-                        IconButton(
-                            onClick = { moreMenu = true },
-                            enabled = state.pageCount > 0,
-                            modifier = Modifier.koodoPressScale(),
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_more),
-                                contentDescription = t("More"),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = moreMenu,
-                            onDismissRequest = { moreMenu = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("−") },
-                                onClick = {
-                                    moreMenu = false
-                                    controller.zoomOut()
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text("+") },
-                                onClick = {
-                                    moreMenu = false
-                                    controller.zoomIn()
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("OCR")) },
-                                onClick = {
-                                    moreMenu = false
-                                    ocrController.refresh()
-                                    showOcr = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Share")) },
-                                enabled = !state.exporting,
-                                onClick = {
-                                    moreMenu = false
-                                    controller.exportCurrentPage { file -> shareSnapshot(context, file) }
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Double-page view")) },
-                                onClick = {
-                                    moreMenu = false
-                                    val next = features.copy(doublePage = !features.doublePage)
-                                    features = next
-                                    featurePrefs.save(next)
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Notes")) },
-                                onClick = {
-                                    moreMenu = false
-                                    showBookAnnotations = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Settings")) },
-                                onClick = {
-                                    moreMenu = false
-                                    showReaderSettings = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (features.pdfReflow) t("PDF raster view")
-                                        else t("PDF reflow view"),
-                                    )
-                                },
-                                onClick = {
-                                    moreMenu = false
-                                    val next = features.copy(pdfReflow = !features.pdfReflow)
-                                    features = next
-                                    featurePrefs.save(next)
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                        }
-                    }
+                    ReaderMoreIconWithOverflow(
+                        menuExpanded = moreMenu,
+                        onMenuExpandedChange = { moreMenu = it },
+                        enabled = state.pageCount > 0,
+                        items = ReaderOverflowItems.forPdf(
+                            exporting = state.exporting,
+                            onZoomOut = { controller.zoomOut() },
+                            onZoomIn = { controller.zoomIn() },
+                            onOcr = {
+                                ocrController.refresh()
+                                showOcr = true
+                            },
+                            onShare = {
+                                controller.exportCurrentPage { file -> shareSnapshot(context, file) }
+                            },
+                            onReadingOptions = { showControlCenter = true },
+                            onNotes = { showBookAnnotations = true },
+                        ),
+                    )
                 },
             )
         },
@@ -897,16 +828,33 @@ fun NativePdfScreen(
         scope.launch(Dispatchers.IO) { annotationDb.noteDao().upsert(entity) }
     }
 
-    if (showReaderSettings) {
-        ReaderSettingsSheet(
+    val pdfModalObscured =
+        showControlCenter || showBookAnnotations || showReflowSelection
+    ReaderNativeSurfaceObscurer(pdfModalObscured, bridge.view, reflowWeb)
+
+    if (showControlCenter) {
+        ReaderControlCenterSheet(
+            format = ReaderFormatKind.PDF,
+            useFoliate = false,
+            initialTab = null,
+            readerThemeKind = readerThemeKind,
+            onTheme = { appearancePrefs.readerThemeKind = it },
+            fontScale = features.fontScale,
+            onFontScale = {
+                val next = features.copy(fontScale = it)
+                features = next
+                featurePrefs.save(next)
+            },
             state = features,
-            onChange = {
+            onFeatureChange = {
                 features = it
                 featurePrefs.save(it)
             },
             chromeState = chromeState,
             onChromeState = chromeViewModel::update,
-            onDismiss = { showReaderSettings = false },
+            marginDp = chromeState.horizontalMarginDp,
+            onMarginDp = chromeViewModel::setHorizontalMarginDp,
+            onDismiss = { showControlCenter = false },
         )
     }
 

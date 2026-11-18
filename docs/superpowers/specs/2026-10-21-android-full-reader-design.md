@@ -165,6 +165,8 @@ NativeEpubScreen │ NativePdfScreen │ ComicViewerActivity
 | `docs/superpowers/plans/2026-10-21-android-reader-m1-foliate-rules-css.md` | **M1 可执行任务分解** |
 | `docs/superpowers/plans/2026-10-21-android-reader-m2-gestures-perf.md` | **M2 手势 + 性能档** |
 | `docs/superpowers/plans/2026-10-21-android-reader-m3-pdf-spread.md` | **M3 PDF 裁边/重排 + EPUB spread** |
+| `docs/superpowers/plans/2026-11-18-android-reader-ux-review-roadmap.md` | **UX 审查 + M4–M5 路线图** |
+| `docs/superpowers/plans/2026-11-18-android-reader-m4a-control-center.md` | **M4a 阅读控制中心任务清单** |
 
 ---
 

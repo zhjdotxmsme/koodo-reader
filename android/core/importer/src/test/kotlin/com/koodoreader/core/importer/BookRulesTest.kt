@@ -76,6 +76,17 @@ class BookRulesTest {
     }
 
     @Test
+    fun `library import whitelist accepts common ebook types only`() {
+        listOf("a.epub", "b.pdf", "c.mobi", "d.azw", "e.AZW3").forEach {
+            assertTrue(BookRules.isLibraryImportName(it), "should import $it")
+        }
+        listOf("notes.txt", "comic.cbz", "page.html", "cover.jpg").forEach {
+            assertFalse(BookRules.isLibraryImportName(it), "should skip $it in library picker")
+        }
+        assertTrue(BookRules.libraryImportMimeTypes().contains("application/epub+zip"))
+    }
+
+    @Test
     fun `isBookName rejects non-book names`() {
         val names = listOf(
             "IMG_0001.jpg", "readme", ".hidden", "trailing.",

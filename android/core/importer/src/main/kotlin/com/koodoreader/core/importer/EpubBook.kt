@@ -24,6 +24,7 @@ data class EpubMetadata(
     val creator: String?,
     val description: String?,
     val publisher: String?,
+    val isbn: String? = null,
 )
 
 /** Result of [EpubBook.parse]. [cover] is null when the package has none. */
@@ -113,7 +114,39 @@ object EpubBook {
         description = valueOfElement(opfXml, "dc:description") ?: metaValueOf(opfXml, "dc:description"),
         publisher = valueOfElement(opfXml, "dc:publisher") ?: metaValueOf(opfXml, "dc:publisher")
             ?: valueOfElement(opfXml, "publisher"),
+        isbn = isbnOf(opfXml),
     )
+
+    private fun isbnOf(opfXml: String): String? {
+        val values = identifierValues(opfXml, "dc:identifier") +
+            identifierValues(opfXml, "identifier")
+        return values.firstNotNullOfOrNull { normalizeIsbn(it) }
+    }
+
+    private fun normalizeIsbn(raw: String): String? {
+        var s = raw.trim()
+        if (s.startsWith("urn:isbn:", ignoreCase = true)) {
+            s = s.substringAfter(':', "").trim()
+        }
+        val compact = s.replace("-", "").replace(" ", "")
+        return compact.takeIf { looksLikeIsbn(compact) }
+    }
+
+    private fun identifierValues(xml: String, tag: String): List<String> {
+        val re = Regex(
+            Regex.escape("<$tag") + """(?=[\s/>])[^>]*>(.*?)</""",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        return re.findAll(xml).mapNotNull { normalizeText(it.groupValues[1]) }.toList()
+    }
+
+    private fun looksLikeIsbn(raw: String): Boolean {
+        val compact = raw.filter { it.isDigit() || it == 'X' || it == 'x' || it == '-' }
+            .replace("-", "")
+            .trim()
+        if (compact.length !in listOf(10, 13)) return false
+        return compact.all { it.isDigit() || it == 'X' || it == 'x' }
+    }
 
     private fun valueOfElement(xml: String, name: String): String? {
         val re = Regex(

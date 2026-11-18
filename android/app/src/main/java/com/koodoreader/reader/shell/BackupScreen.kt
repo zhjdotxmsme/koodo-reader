@@ -117,11 +117,11 @@ fun BackupScreen(
             )
             AssistChip(
                 onClick = { syncKind = SyncPrefs.TargetKind.WEBDAV },
-                label = { Text("WebDAV") },
+                label = { Text(t("WebDAV")) },
             )
             AssistChip(
                 onClick = { syncKind = SyncPrefs.TargetKind.S3 },
-                label = { Text("S3") },
+                label = { Text(t("S3 Compatible")) },
             )
         }
         when (syncKind) {
@@ -137,7 +137,7 @@ fun BackupScreen(
                     value = webDavUrl,
                     onValueChange = { webDavUrl = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("WebDAV URL") },
+                    label = { Text(t("WebDAV URL")) },
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -160,14 +160,14 @@ fun BackupScreen(
                     value = s3Url,
                     onValueChange = { s3Url = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("S3 / presigned URL") },
+                    label = { Text(t("S3 / presigned URL")) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = s3Headers,
                     onValueChange = { s3Headers = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Headers JSON") },
+                    label = { Text(t("Headers JSON")) },
                 )
             }
         }
@@ -292,17 +292,17 @@ private fun DataExportRow(
         AssistChip(
             onClick = { onExport(BackupDataExportFormat.CSV) },
             enabled = enabled,
-            label = { Text("CSV") },
+            label = { Text(t("CSV")) },
         )
         AssistChip(
             onClick = { onExport(BackupDataExportFormat.JSON) },
             enabled = enabled,
-            label = { Text("JSON") },
+            label = { Text(t("JSON")) },
         )
         AssistChip(
             onClick = { onExport(BackupDataExportFormat.MD) },
             enabled = enabled,
-            label = { Text("MD") },
+            label = { Text(t("MD")) },
         )
     }
 }

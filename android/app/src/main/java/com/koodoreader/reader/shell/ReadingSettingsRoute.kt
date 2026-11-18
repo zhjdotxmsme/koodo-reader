@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.engine.feature.TextRule
 import com.koodoreader.engine.feature.TextRuleJson
 
@@ -100,6 +101,12 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(8.dp))
 
+            Text(
+                t("Default for new sessions"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(SpaceTokens.sm.dp))
             Text(t("Performance profile"), style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 TextButton(onClick = {
@@ -164,7 +171,7 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 value = state.fontScale,
                 onValueChange = { commit(state.copy(fontScale = it)) },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-                // 与阅读内 ReaderAppearanceSheet 一致：0.1 步长（0.7..2.5 → 17 steps）。
+                // 与书内阅读选项 Layout/Advanced 一致：0.1 步长（0.7..2.5 → 17 steps）。
                 steps = 17,
             )
 
@@ -198,6 +205,11 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
             )
 
             Text(t("PDF display"), style = MaterialTheme.typography.titleMedium)
+            Text(
+                t("Also adjustable while reading"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             FeatureSwitch(
                 title = t("PDF reflow view"),
                 checked = state.pdfReflow,

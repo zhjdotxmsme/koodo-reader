@@ -7,6 +7,10 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.dao.BookDao
 import com.koodoreader.core.data.entity.BookEntity
 import com.koodoreader.core.importer.BookMetadata
+import com.koodoreader.reader.metadata.CoverDownload
+import com.koodoreader.reader.metadata.FetchedBookMetadata
+import com.koodoreader.reader.metadata.PublicMetadataSearch
+import com.koodoreader.reader.translate.AppHttpTransport
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +19,14 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.withContext
+
+sealed interface BookMetadataSearchUiState {
+    data object Idle : BookMetadataSearchUiState
+    data object Loading : BookMetadataSearchUiState
+    data class Results(val items: List<FetchedBookMetadata>) : BookMetadataSearchUiState
+    data object Empty : BookMetadataSearchUiState
+    data object Failed : BookMetadataSearchUiState
+}
 
 sealed interface BookMetadataUiState {
     data object Idle : BookMetadataUiState
@@ -28,14 +40,25 @@ class BookMetadataViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<BookMetadataUiState>(BookMetadataUiState.Idle)
     val state: StateFlow<BookMetadataUiState> = _state
 
-    fun save(bookKey: String, draft: BookMetadata) {
+    private val _searchState = MutableStateFlow<BookMetadataSearchUiState>(BookMetadataSearchUiState.Idle)
+    val searchState: StateFlow<BookMetadataSearchUiState> = _searchState
+
+    fun save(bookKey: String, draft: BookMetadata, coverUrl: String? = null) {
         if (_state.value is BookMetadataUiState.Saving) return
         _state.value = BookMetadataUiState.Saving
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    val booksDir = File(getApplication<Application>().filesDir, "books")
+                    val app = getApplication<Application>()
+                    val booksDir = File(app.filesDir, "books")
                     saveBookMetadata(bookDao, bookKey, draft, booksDir)
+                    val url = coverUrl?.trim().orEmpty()
+                    if (url.isNotEmpty()) {
+                        val cover = CoverDownload.fetchBookCover(url)
+                        if (cover != null) {
+                            CoverStore(app).save(bookKey, cover)
+                        }
+                    }
                 }
                 _state.value = BookMetadataUiState.Saved
             } catch (e: CancellationException) {
@@ -48,6 +71,30 @@ class BookMetadataViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reset() {
         _state.value = BookMetadataUiState.Idle
+        _searchState.value = BookMetadataSearchUiState.Idle
+    }
+
+    /** 多公开源链式检索；有 ISBN 时优先按 ISBN 查。 */
+    fun searchOnline(name: String, author: String, isbn: String) {
+        if (_searchState.value is BookMetadataSearchUiState.Loading) return
+        _searchState.value = BookMetadataSearchUiState.Loading
+        viewModelScope.launch {
+            val transport = AppHttpTransport()
+            val cacheDir = File(getApplication<Application>().cacheDir, "book-metadata")
+            val items = withContext(Dispatchers.IO) {
+                runCatching {
+                    PublicMetadataSearch.search(transport, name, author, isbn, cacheDir)
+                }.getOrDefault(emptyList())
+            }
+            _searchState.value = when {
+                items.isEmpty() -> BookMetadataSearchUiState.Empty
+                else -> BookMetadataSearchUiState.Results(items)
+            }
+        }
+    }
+
+    fun clearSearch() {
+        _searchState.value = BookMetadataSearchUiState.Idle
     }
 }
 

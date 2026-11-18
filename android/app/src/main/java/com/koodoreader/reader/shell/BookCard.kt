@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.res.painterResource
+import com.koodoreader.reader.R
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
@@ -100,7 +100,10 @@ fun BookCard(
                     .size(48.dp)
                     .align(Alignment.BottomEnd),
             ) {
-                Icon(Icons.Default.MoreVert, contentDescription = t("More options"))
+                Icon(
+                    painter = painterResource(R.drawable.ic_more),
+                    contentDescription = t("More options"),
+                )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
@@ -179,7 +182,10 @@ fun BookListRow(
                     .size(48.dp)
                     .align(Alignment.BottomEnd),
             ) {
-                Icon(Icons.Default.MoreVert, contentDescription = t("More options"))
+                Icon(
+                    painter = painterResource(R.drawable.ic_more),
+                    contentDescription = t("More options"),
+                )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 if (onShowDetails != null) {

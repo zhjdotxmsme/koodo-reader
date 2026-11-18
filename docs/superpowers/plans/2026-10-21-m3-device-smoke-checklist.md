@@ -5,6 +5,10 @@
 
 ## 0 · 前置
 
+- [ ] **安装前备份**：`scripts/android-pull-device-backup.ps1` → `.tools/device-backup/`（勿轻易 `adb uninstall`，会清空书库与笔记）
+- [ ] 覆盖安装失败（签名/版本）：优先用 **同一 debug 签名** + `-PversionCode=…` 抬高 versionCode，**不要**先卸载再装
+- [ ] 恢复快照：`scripts/android-restore-device-backup.ps1`
+
 - [ ] 手机 **解锁**（adb 无法代输 PIN/指纹；锁屏时 screencap 只有黑屏/锁屏界面）
 - [ ] USB 调试已开；`adb devices` 见 `device`
 - [ ] 测试书：书架空置时可从 **设置 → 导入** 选 `Download/koodo-smoke/`（脚本会 push），或使用已有 `files/books/*.pdf` / `*.epub`
@@ -54,6 +58,16 @@ $apk = "$root\.tools\out\_app\outputs\apk\debug\app-debug.apk"
 | P6 | `adb logcat -d \| findstr /i pdfengine` | 无 `FATAL`；可见 `pdfengine ready` 类 info（Tag 因 ROM 而异） |
 
 **扫描 PDF：** 重排应显示「无文本」占位或极短内容 → 切回栅格 + 可选 OCR。
+
+---
+
+## 2b · 阅读选项（M4a）
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| R1 | EPUB/PDF **⋯ → Reading options** | 底部 Sheet，Tab：外观 / 版式 /（PDF）PDF display / 高级 |
+| R2 | PDF **PDF display** | 裁边、重排开关；无需进全局设置 |
+| R3 | EPUB **版式** | 双页、滚动/分页、双栏 |
 
 ---
 

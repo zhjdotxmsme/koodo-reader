@@ -100,7 +100,11 @@ import com.koodoreader.reader.reader.NoOpAnnotationStore
 import com.koodoreader.reader.reader.RoomNoteAnnotationStore
 import com.koodoreader.reader.reader.TextSearchHit
 import com.koodoreader.reader.reader.TextReaderScreenControl
-import com.koodoreader.reader.reader.ReaderSettingsSheet
+import com.koodoreader.reader.reader.ReaderControlCenterSheet
+import com.koodoreader.reader.reader.ReaderNativeSurfaceObscurer
+import com.koodoreader.reader.reader.ReaderFormatKind
+import com.koodoreader.reader.reader.ReaderMoreIconWithOverflow
+import com.koodoreader.reader.reader.ReaderOverflowItems
 import com.koodoreader.reader.reader.ReaderTocPage
 import com.koodoreader.reader.reader.ReaderWindowController
 import com.koodoreader.reader.reader.BookAnnotationsScreen
@@ -416,8 +420,7 @@ fun NativeEpubScreen(
     var retryKey by remember { mutableIntStateOf(0) }
     var expandingEpub by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
-    var showAppearance by remember { mutableStateOf(false) }
-    var showReaderSettings by remember { mutableStateOf(false) }
+    var showControlCenter by remember { mutableStateOf(false) }
     var showBookAnnotations by remember { mutableStateOf(false) }
     val annotationScope = rememberCoroutineScope()
     val bookAnnotations = remember(bookKey) {
@@ -1159,19 +1162,33 @@ fun NativeEpubScreen(
         }
     }
 
-    val dictionaryLabel = t("Dictionary")
     fun lookupDictionary() {
         val word = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
         readerScope.launch {
-            val result = withContext(Dispatchers.IO) { dictRepo.lookup(word) }
-            val htmlSafe = result.html
-            dictResultText = if (htmlSafe != null) {
-                "【${result.entry}】\n" +
-                    htmlSafe.replace(Regex("<[^>]+>"), "").replace(Regex("&[a-z]+;"), "·").trim()
-            } else {
-                "$dictionaryLabel: $word"
+            val lookup = withContext(Dispatchers.IO) {
+                com.koodoreader.reader.reader.ReaderDictionaryLookup.lookup(dictRepo, word)
             }
-            showDictDialog = true
+            dictResultText = when (lookup) {
+                com.koodoreader.reader.reader.DictionaryLookupResult.Empty -> ""
+                is com.koodoreader.reader.reader.DictionaryLookupResult.Found ->
+                    "【${lookup.headword}】\n${lookup.definition}"
+                is com.koodoreader.reader.reader.DictionaryLookupResult.Suggestions ->
+                    buildString {
+                        append(i18nState.localization.t("No dictionary installed")).append('\n')
+                        append(lookup.suggestions.joinToString(" · "))
+                    }
+                is com.koodoreader.reader.reader.DictionaryLookupResult.NotFound -> {
+                    val hasDict = dictRepo.dicts().any { it.enabled }
+                    if (hasDict) {
+                        "【$word】\n${i18nState.localization.t("Word not found in dictionary")}"
+                    } else {
+                        i18nState.localization.t("No dictionary installed")
+                    }
+                }
+            }
+            if (dictResultText.isNotBlank()) {
+                showDictDialog = true
+            }
             showSelectionMenu = false
         }
     }
@@ -1470,122 +1487,20 @@ fun NativeEpubScreen(
                             )
                         }
                     }
-                    Box {
-                        IconButton(onClick = { moreMenu = true }, modifier = Modifier.koodoPressScale()) {
-                            Icon(
-                                painterResource(R.drawable.ic_more),
-                                contentDescription = t("More"),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = moreMenu,
-                            onDismissRequest = { moreMenu = false },
-                        ) {
-                            if (FoliateAppearance.showInReaderSheet(useFoliate)) {
-                                DropdownMenuItem(
-                                    text = { Text(t("Appearance")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        showAppearance = true
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(t("Settings")) },
-                                onClick = {
-                                    moreMenu = false
-                                    showReaderSettings = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text("A−  ${(fontScale * 100).toInt()}%") },
-                                onClick = { setFontScale(fontScale - 0.1f) },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text("A+") },
-                                onClick = { setFontScale(fontScale + 0.1f) },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Bookmark")) },
-                                onClick = {
-                                    moreMenu = false
-                                    addBookmark()
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Notes")) },
-                                onClick = {
-                                    moreMenu = false
-                                    showBookAnnotations = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(t("Speak the text")) },
-                                onClick = {
-                                    moreMenu = false
-                                    if (showTtsControl) stopTts() else startTts()
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                            if (!useFoliate) {
-                                DropdownMenuItem(
-                                    text = { Text(t("Fast reading mode (make the first half of the word bold)")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(bionic = !features.bionic))
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable reading ruler")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(ruler = !features.ruler))
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable paragraph mode")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(paragraphMode = !features.paragraphMode))
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Enable speed reading")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        commitFeatures(features.copy(speedReading = !features.speedReading))
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(t("Two-column layout")) },
-                                    onClick = {
-                                        moreMenu = false
-                                        val next = if (ReaderFeatureCodec.clampedColumns(features) >= 2) 1 else 2
-                                        commitFeatures(features.copy(columnsPerPage = next))
-                                    },
-                                    modifier = Modifier.koodoPressScale(),
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(t("Ask AI")) },
-                                onClick = {
-                                    moreMenu = false
-                                    showAi = true
-                                },
-                                modifier = Modifier.koodoPressScale(),
-                            )
-                        }
-                    }
+                    ReaderMoreIconWithOverflow(
+                        menuExpanded = moreMenu,
+                        onMenuExpandedChange = { moreMenu = it },
+                        items = ReaderOverflowItems.forEpub(
+                            useFoliate = useFoliate,
+                            features = features,
+                            onReadingOptions = { showControlCenter = true },
+                            onBookmark = { addBookmark() },
+                            onNotes = { showBookAnnotations = true },
+                            onTts = { if (showTtsControl) stopTts() else startTts() },
+                            onAskAi = { showAi = true },
+                            onCommitFeatures = { commitFeatures(it) },
+                        ),
+                    )
                 },
             )
         },
@@ -2514,28 +2429,25 @@ fun NativeEpubScreen(
             )
         }
     }
-    if (showReaderSettings) {
-        ReaderSettingsSheet(
+    val readerModalObscured =
+        showControlCenter || showBookAnnotations || showToc || showSelectionMenu || showSearch
+    ReaderNativeSurfaceObscurer(readerModalObscured, foliateBridge?.view)
+
+    if (showControlCenter) {
+        ReaderControlCenterSheet(
+            format = ReaderFormatKind.REFLOW,
+            useFoliate = useFoliate,
+            readerThemeKind = readerThemeKind,
+            onTheme = { appearancePrefs.readerThemeKind = it },
+            fontScale = fontScale,
+            onFontScale = { setFontScale(it) },
             state = features,
-            onChange = { commitFeatures(it) },
+            onFeatureChange = { commitFeatures(it) },
             chromeState = chromeState,
             onChromeState = chromeViewModel::update,
-            onDismiss = { showReaderSettings = false },
-        )
-    }
-    if (showAppearance) {
-        ReaderAppearanceSheet(
-            selected = readerThemeKind,
-            fontScale = fontScale,
-            lineHeight = ReaderFeatureCodec.clampedLineHeight(features),
             marginDp = chromeState.horizontalMarginDp,
-            scrolled = features.scrolled,
-            onTheme = { appearancePrefs.readerThemeKind = it },
-            onFontScale = { setFontScale(it) },
-            onLineHeight = { commitFeatures(features.copy(lineHeightRatio = it)) },
             onMarginDp = chromeViewModel::setHorizontalMarginDp,
-            onScrolled = { commitFeatures(features.copy(scrolled = it)) },
-            onDismiss = { showAppearance = false },
+            onDismiss = { showControlCenter = false },
         )
     }
     }

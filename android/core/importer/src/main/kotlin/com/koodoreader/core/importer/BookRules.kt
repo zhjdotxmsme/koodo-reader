@@ -28,6 +28,14 @@ object BookRules {
     /** Supported native book extensions, in registry order. */
     val BOOK_EXTENSIONS: List<String> = BookFormat.entries.map { it.extension }
 
+    /**
+     * Extensions the **library import UI** offers (folder / multi-file picker).
+     * Narrower than [BOOK_EXTENSIONS] so junk files in a folder are ignored
+     * without spinning the full pipeline.
+     */
+    val LIBRARY_IMPORT_EXTENSIONS: List<String> =
+        listOf("epub", "pdf", "mobi", "azw", "azw3")
+
     /** Canonical MIME type per supported native book extension. */
     val MIME_BY_EXT: Map<String, String> = BookFormat.entries.associate { it.extension to it.mime }
 
@@ -45,6 +53,14 @@ object BookRules {
 
     /** Whether a file name is a supported book (case-insensitive). */
     fun isBookName(name: String?): Boolean = getExt(name) in BOOK_EXTENSIONS
+
+    /** Whether a file is eligible for the library import picker. */
+    fun isLibraryImportName(name: String?): Boolean =
+        getExt(name) in LIBRARY_IMPORT_EXTENSIONS
+
+    /** MIME types passed to [android.content.Intent] for multi-file import. */
+    fun libraryImportMimeTypes(): Array<String> =
+        LIBRARY_IMPORT_EXTENSIONS.mapNotNull { MIME_BY_EXT[it] }.distinct().toTypedArray()
 
     /** Canonical MIME type for a file name's extension ("" if not a known book). */
     fun mimeForExt(name: String?): String = MIME_BY_EXT[getExt(name)] ?: ""

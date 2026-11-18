@@ -77,6 +77,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.core.importer.BookRules
+import com.koodoreader.reader.shell.LocalI18n
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.component.ErrorState
@@ -106,6 +108,8 @@ fun LibraryScreen(
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
     val metadataState by metadataViewModel.state.collectAsStateWithLifecycle()
+    val metadataSearchState by metadataViewModel.searchState.collectAsStateWithLifecycle()
+    val i18n = LocalI18n.current
     val treeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> uri?.let(viewModel::importFolder) }
@@ -164,7 +168,10 @@ fun LibraryScreen(
                     ),
                     navigationIcon = {
                         IconButton(onClick = viewModel::clearSelection, modifier = Modifier.koodoPressScale()) {
-                            Icon(Icons.Default.Close, contentDescription = t("Cancel"))
+                            Icon(
+                                painterResource(R.drawable.ic_close),
+                                contentDescription = t("Cancel"),
+                            )
                         }
                     },
                     title = {
@@ -250,7 +257,7 @@ fun LibraryScreen(
                             DropdownMenuItem(
                                 text = { Text(t("Import")) },
                                 onClick = {
-                                    filesLauncher.launch(arrayOf("*/*"))
+                                    filesLauncher.launch(BookRules.libraryImportMimeTypes())
                                     importMenuOpen = false
                                 },
                                 modifier = Modifier.koodoPressScale(),
@@ -388,7 +395,10 @@ fun LibraryScreen(
             val viewDetailsText = t("View details")
             LaunchedEffect(statusMessage) {
                 val message = statusMessage ?: return@LaunchedEffect
-                snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Long)
+                snackbarHostState.showSnackbar(
+                    message = i18n.localization.t(message),
+                    duration = SnackbarDuration.Long,
+                )
                 viewModel.consumeStatusMessage()
             }
             LaunchedEffect(finished) {
@@ -549,7 +559,9 @@ fun LibraryScreen(
         BookMetadataDialog(
             book = metadataBook,
             state = metadataState,
-            onSave = { draft -> metadataViewModel.save(metadataBook.key, draft) },
+            searchState = metadataSearchState,
+            onSearch = metadataViewModel::searchOnline,
+            onSave = { draft, coverUrl -> metadataViewModel.save(metadataBook.key, draft, coverUrl) },
             onDismiss = {
                 metadataBookKey = null
                 metadataViewModel.reset()

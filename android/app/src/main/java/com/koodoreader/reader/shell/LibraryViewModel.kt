@@ -54,7 +54,11 @@ sealed interface ImportState {
 }
 
 /** Candidates produced by a SAF picker plus files dropped before processing. */
-private class PendingBatch(val sources: List<BookSource>, val skipped: Int)
+private class PendingBatch(
+    val sources: List<BookSource>,
+    val skipped: Int,
+    val emptyCatalogKey: String = "No supported ebooks found",
+)
 
 /** Shelf UI state — the native mirror of the desktop config JSONs. */
 data class ShelfUiState(
@@ -373,22 +377,30 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun importFolder(treeUri: Uri) {
         startImport { resolver ->
             persistReadPermission(resolver, treeUri)
+            var skipped = 0
+            val sources = FolderEnumerator
+                .enumerate(resolver, treeUri, BookRules.FOLDER_DEPTH, BookRules.MAX_FILES)
+                .mapNotNull { file ->
+                    if (!BookRules.isLibraryImportName(file.name)) {
+                        skipped++
+                        return@mapNotNull null
+                    }
+                    BookSource(
+                        name = file.name,
+                        openStream = {
+                            resolver.openInputStream(file.uri)
+                                ?: throw IllegalStateException("stream missing for ${file.name}")
+                        },
+                        size = file.size,
+                        mime = file.mime,
+                    )
+                }
+                .take(BookRules.MAX_FILES)
+                .toList()
             PendingBatch(
-                FolderEnumerator
-                    .enumerate(resolver, treeUri, BookRules.FOLDER_DEPTH, BookRules.MAX_FILES)
-                    .take(BookRules.MAX_FILES)
-                    .map { file ->
-                        BookSource(
-                            name = file.name,
-                            openStream = {
-                                resolver.openInputStream(file.uri)
-                                    ?: throw IllegalStateException("stream missing for ${file.name}")
-                            },
-                            size = file.size,
-                            mime = file.mime,
-                        )
-                    },
-                skipped = 0,
+                sources = sources,
+                skipped = skipped,
+                emptyCatalogKey = "No supported ebooks in this folder",
             )
         }
     }
@@ -405,6 +417,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         skipped++ // reported in the result, never silently dropped
                         return@mapNotNull null
                     }
+                    if (!BookRules.isLibraryImportName(name)) {
+                        skipped++
+                        return@mapNotNull null
+                    }
                     BookSource(
                         name = name,
                         openStream = {
@@ -414,7 +430,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 .take(BookRules.MAX_FILES)
-            PendingBatch(sources, skipped)
+            PendingBatch(
+                sources = sources,
+                skipped = skipped,
+                emptyCatalogKey = "No supported ebook files selected",
+            )
         }
     }
 
@@ -437,6 +457,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val pending = batch.sources
                 if (pending.isEmpty()) {
                     _importState.value = ImportState.Finished(0, 0, batch.skipped)
+                    _statusMessage.value = if (batch.skipped > 0) {
+                        "No supported ebooks found"
+                    } else {
+                        batch.emptyCatalogKey
+                    }
                     return@withContext
                 }
                 _importState.value = ImportState.Running(0, pending.size)
