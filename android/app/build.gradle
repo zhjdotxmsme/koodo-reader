@@ -288,6 +288,12 @@ dependencies {
     // `runBlocking` for the suspend import pipeline (import → read E2E test).
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1'
+
+    // org.json is an ANDROID PLATFORM API (android.jar) at runtime; on the JVM
+    // unit-test classpath it hits the "not mocked" stub. Mirror :engine:pdf's
+    // pattern: real org.json artifact for unit tests only. Fixes
+    // PdfReflowHighlightsTest (CfiPdfMapper.serialise -> JSONObject.put).
+    testImplementation 'org.json:json:20231013'
 }
 
 tasks.withType(Test).configureEach {
