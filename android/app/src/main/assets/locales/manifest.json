@@ -14,12 +14,12 @@
   ],
   "source": {
     "en": {
-      "keys": 1518,
-      "sha256": "831189109705937fa142a72474b75c79ee4457c9b918fd64d18541ff799a96f7"
+      "keys": 1522,
+      "sha256": "da0a6d833bdbb7c8faede6f8722f02f7995a11d4fa02a064fad6f080ce8e52ea"
     },
     "zh-CN": {
-      "keys": 1529,
-      "sha256": "7d9b376fa17f9dd6e2bdce46f13b56fe4844ddb1cc5b465a3c5652ca202f5906"
+      "keys": 1533,
+      "sha256": "d93c45438bc3f71c80c164aa8802523d3497c126e91b4c0d7fe2c64f5d98eac0"
     },
     "zh-TW": {
       "keys": 1328,
@@ -58,5 +58,5 @@
       "sha256": "acc77a3cf523593579ffdab1547e86ff8bb1ae71a0423a5c4654f4286bd42c73"
     }
   },
-  "syncedAt": "2026-11-19T03:52:52.534Z"
+  "syncedAt": "2026-11-19T03:55:35.673Z"
 }

@@ -21,7 +21,7 @@ enum class ReaderControlCenterTab {
 
 object ReaderControlCenterTabs {
 
-    fun forFormat(format: ReaderFormatKind, useFoliate: Boolean = true): List<ReaderControlCenterTab> =
+    fun forFormat(format: ReaderFormatKind): List<ReaderControlCenterTab> =
         when (format) {
             ReaderFormatKind.PDF -> listOf(
                 ReaderControlCenterTab.APPEARANCE,

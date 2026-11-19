@@ -23,8 +23,13 @@ object GoogleBooksBookMetadataProvider : BookMetadataSearchProvider {
             val a = request.author.trim()
             if (t.isEmpty()) return emptyList()
             buildString {
-                append("intitle:").append(t)
-                if (a.isNotEmpty()) append("+inauthor:").append(a)
+                // A SPACE is Google's canonical AND separator in `q`; a literal
+                // "+" would be percent-encoded to %2B and break the query.
+                if (t.isNotEmpty()) append("intitle:").append(t)
+                if (a.isNotEmpty()) {
+                    if (isNotEmpty()) append(' ')
+                    append("inauthor:").append(a)
+                }
             }
         }
         val body = httpGetText(

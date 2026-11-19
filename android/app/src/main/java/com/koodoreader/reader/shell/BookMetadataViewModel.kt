@@ -81,15 +81,16 @@ class BookMetadataViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val transport = AppHttpTransport()
             val cacheDir = File(getApplication<Application>().cacheDir, "book-metadata")
-            val items = withContext(Dispatchers.IO) {
-                runCatching {
-                    PublicMetadataSearch.search(transport, name, author, isbn, cacheDir)
-                }.getOrDefault(emptyList())
+            val result = withContext(Dispatchers.IO) {
+                runCatching { PublicMetadataSearch.search(transport, name, author, isbn, cacheDir) }
             }
-            _searchState.value = when {
-                items.isEmpty() -> BookMetadataSearchUiState.Empty
-                else -> BookMetadataSearchUiState.Results(items)
-            }
+            _searchState.value = result.fold(
+                onSuccess = { items ->
+                    if (items.isEmpty()) BookMetadataSearchUiState.Empty
+                    else BookMetadataSearchUiState.Results(items)
+                },
+                onFailure = { BookMetadataSearchUiState.Failed },
+            )
         }
     }
 

@@ -16,7 +16,7 @@ class ReaderControlCenterTabsTest {
 
     @Test
     fun reflow_epub_excludesPdfTab() {
-        val tabs = ReaderControlCenterTabs.forFormat(ReaderFormatKind.REFLOW, useFoliate = true)
+        val tabs = ReaderControlCenterTabs.forFormat(ReaderFormatKind.REFLOW)
         assertFalse(tabs.contains(ReaderControlCenterTab.PDF))
         assertEquals(3, tabs.size)
     }

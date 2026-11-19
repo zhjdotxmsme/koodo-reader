@@ -67,7 +67,7 @@ fun ReaderControlCenterSheet(
     val appearance = remember { ShellAppearancePrefs(context) }
     val appMode by appearance.appThemeModeFlow.collectAsStateWithLifecycle()
     val appDark = appMode.darkThemeOf(isSystemInDarkTheme())
-    val tabs = remember(format, useFoliate) { ReaderControlCenterTabs.forFormat(format, useFoliate) }
+    val tabs = remember(format) { ReaderControlCenterTabs.forFormat(format) }
     var selectedTab by remember(format, initialTab) {
         mutableStateOf(ReaderControlCenterTabs.defaultTab(format, initialTab))
     }
