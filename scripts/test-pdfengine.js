@@ -309,7 +309,12 @@ async function main() {
         eq('dispatch answers exactly once', seen.length, 1);
         eq('dispatch reports the call id', seen[0].id, 'c1');
         eq('dispatch passes a string payload unquoted', seen[0].payload, 'QUJD');
-        eq('dispatch reports no error on success', seen[0].error, '');
+        // The onResult contract allows BOTH '' and null to mean success
+        // (FoliateJsResult.errorOrNull maps any blank/null error to null).
+        // The engine's success path passes null, so accept either.
+        check('dispatch reports no error on success',
+            seen[0].error === '' || seen[0].error === null,
+            JSON.stringify(seen[0].error));
         await dispatch(engine, 'c2', 'outline', [], host);
         check('dispatch JSON-encodes object/array results', seen[1].payload.startsWith('[{'), seen[1].payload.slice(0, 20));
         // PdfJsHostBridge.runJs throws "PDF engine: <error>" on a non-empty error.
