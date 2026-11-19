@@ -38,14 +38,18 @@ $files = @(
 function Save-AdbBinary([string]$remotePath, [string]$localPath) {
     # POSIX-shell-quote the path so names with spaces survive.
     $quoted = $remotePath.Replace("'", "'\''")
+    # NOTE: `exec-out` already RUNS the command on the device — it must not
+    # be followed by `shell` ("exec-out shell ..." makes the device shell try
+    # to run a binary named `shell` and fails with
+    # "/system/bin/sh: shell: inaccessible or not found").
+    # The whole remote command travels as ONE adb argument, so the device
+    # shell sees the inner quotes and splits the path correctly.
     $remoteCmd = "run-as $pkg cat '$quoted'"
     $serialArgs = ""
     if ($Serial) { $serialArgs = " -s $Serial" }
-    # The whole remote command travels as ONE adb argument, so the device
-    # shell sees the inner quotes and splits the path correctly.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $adb
-    $psi.Arguments = "exec-out$serialArgs shell `"$remoteCmd`""
+    $psi.Arguments = "exec-out$serialArgs `"$remoteCmd`""
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $proc = [System.Diagnostics.Process]::Start($psi)
