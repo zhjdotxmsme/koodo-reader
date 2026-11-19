@@ -50,6 +50,9 @@ android {
 
     kotlinOptions {
         jvmTarget = '17'
+        // TraceSectionMetric (used by OpenEpubBenchmark) is still marked
+        // @ExperimentalMetricApi — without this opt-in the compile fails.
+        freeCompilerArgs += "-opt-in=androidx.benchmark.macro.ExperimentalMetricApi"
     }
 }
 
