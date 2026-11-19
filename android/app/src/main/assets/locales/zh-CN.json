@@ -1425,6 +1425,7 @@
   "Advanced": "高级",
   "No supported ebooks found": "未找到可导入的电子书",
   "No supported ebooks in this folder": "此文件夹内没有可导入的电子书",
+  "No supported ebooks in this folder (EPUB · PDF · MOBI · AZW3)": "此文件夹内没有可导入的电子书（支持 EPUB、PDF、MOBI、AZW3）",
   "No supported ebook files selected": "未选择可导入的电子书文件",
   "WebDAV URL": "WebDAV 地址",
   "S3 / presigned URL": "S3 / 预签名 URL",

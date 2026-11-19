@@ -400,7 +400,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             PendingBatch(
                 sources = sources,
                 skipped = skipped,
-                emptyCatalogKey = "No supported ebooks in this folder",
+                emptyCatalogKey = "No supported ebooks in this folder (EPUB · PDF · MOBI · AZW3)",
             )
         }
     }
