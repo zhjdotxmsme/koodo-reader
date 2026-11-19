@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookEntity
 import com.koodoreader.core.importer.BookMetadata
 import com.koodoreader.reader.metadata.FetchedBookMetadata
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun BookMetadataDialog(
@@ -39,8 +42,14 @@ fun BookMetadataDialog(
     var author by remember(book.key) { mutableStateOf(book.author.orEmpty()) }
     var description by remember(book.key) { mutableStateOf(book.description.orEmpty()) }
     var publisher by remember(book.key) { mutableStateOf(book.publisher.orEmpty()) }
-    var isbn by remember(book.key) {
-        mutableStateOf(BookIsbnProbe.probe(book).orEmpty())
+    // BookIsbnProbe.probe parses the book file (EpubBook.parse / MobiMetadataReader.read),
+    // which is blocking I/O — it must not run on the composition's main thread.
+    var isbn by remember(book.key) { mutableStateOf("") }
+    var isbnProbing by remember(book.key) { mutableStateOf(true) }
+    LaunchedEffect(book.key) {
+        isbnProbing = true
+        isbn = withContext(Dispatchers.IO) { BookIsbnProbe.probe(book).orEmpty() }
+        isbnProbing = false
     }
     var coverUrl by remember(book.key) { mutableStateOf<String?>(null) }
     val saving = state is BookMetadataUiState.Saving
@@ -118,6 +127,9 @@ fun BookMetadataDialog(
                         )
                     }
                     BookMetadataSearchUiState.Idle -> Unit
+                }
+                if (isbnProbing) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 MetadataField(t("ISBN"), isbn, !saving) { isbn = it }
                 MetadataField(t("Book name"), name, !saving) { name = it }
