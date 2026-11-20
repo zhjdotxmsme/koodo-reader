@@ -89,6 +89,31 @@ object NotesAggregation {
         items.filter { matches(it, filter) }
 
     /**
+     * Cross-book text search over what the row actually shows.
+     *
+     * All whitespace-separated terms must match (AND, not OR): searching
+     * "孔子 仁" should narrow to the passage containing both, which is what a
+     * reader checking a citation expects. Matching is case-insensitive and
+     * covers the highlight text, the note body, the bookmark label and the
+     * chapter name — the four things visible on the row.
+     */
+    fun search(items: List<NoteListItem>, query: String): List<NoteListItem> {
+        val terms = query.trim().lowercase()
+            .split(Regex("\\s+"))
+            .filter { it.isNotEmpty() }
+        if (terms.isEmpty()) return items
+        return items.filter { item ->
+            val haystack = buildString {
+                append(item.selectedText).append('\n')
+                append(item.noteText).append('\n')
+                append(item.label).append('\n')
+                append(item.chapter)
+            }.lowercase()
+            terms.all { haystack.contains(it) }
+        }
+    }
+
+    /**
      * Group by book. Books are ordered by title (case-insensitive) so the list is
      * stable as annotations are added; items keep their incoming order.
      *

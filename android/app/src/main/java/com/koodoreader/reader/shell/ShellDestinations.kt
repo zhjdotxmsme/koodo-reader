@@ -57,6 +57,8 @@ object ShellNav {
     const val BACKUP = "backup"
     const val TRASH = "trash"
     const val DICTIONARY = "dictionary"
+    /** Vocabulary saved from the reader's dictionary popup. */
+    const val WORDBOOK = "wordbook"
 
     // ── Leaves under SETTINGS (settings page 2026-09-29 spec §2) ────────────
     const val APPEARANCE = "appearance"

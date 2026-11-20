@@ -14,6 +14,15 @@ import kotlinx.coroutines.flow.first
 /** Room → [SyncSnapshot] for [com.koodoreader.core.sync.SyncCoordinator] transports. */
 object SyncSnapshotBuilder {
 
+    /** What a pull actually changed on this device. */
+    data class ApplyReport(
+        val progressApplied: Int = 0,
+        val notesAdded: Int = 0,
+        val notesKept: Int = 0,
+        val bookmarksAdded: Int = 0,
+        val bookmarksKept: Int = 0,
+    )
+
     suspend fun build(
         db: KoodoDatabase,
         progress: ReaderProgressPrefs,
@@ -22,23 +31,21 @@ object SyncSnapshotBuilder {
         val books = db.bookDao().observeAll().first()
         val notes = db.noteDao().observeAll().first()
         val bookmarks = db.bookmarkDao().observeAll().first()
-        val progressRows = books.mapNotNull { b ->
-            val cfi = progress.cfiOf(b.key) ?: return@mapNotNull null
-            ProgressSnapshot(b.key, cfi, progress.fractionOf(b.key))
-        }
         return SyncSnapshot(
             books = books.map {
                 BookSnapshot(it.key, it.name, it.author, it.md5, it.format)
             },
-            progress = progressRows,
+            progress = progressRows(db, progress),
             annotations = notes.map {
                 AnnotationSnapshot(
-                    it.key,
-                    it.bookKey,
-                    it.chapter,
-                    it.text,
-                    it.notes,
-                    it.color,
+                    key = it.key,
+                    bookKey = it.bookKey,
+                    chapter = it.chapter,
+                    text = it.text,
+                    notes = it.notes,
+                    color = it.color,
+                    cfi = it.cfi,
+                    percentage = it.percentage,
                 )
             },
             bookmarks = bookmarks.map {
@@ -48,37 +55,123 @@ object SyncSnapshotBuilder {
         )
     }
 
+    /**
+     * The device's reading positions, stamped with their last write time.
+     *
+     * The timestamp is what lets [com.koodoreader.core.sync.SyncMerge] tell a
+     * stale remote row from a genuinely newer one; without it a pull can only
+     * move forwards.
+     */
+    suspend fun progressRows(
+        db: KoodoDatabase,
+        progress: ReaderProgressPrefs,
+    ): List<ProgressSnapshot> =
+        db.bookDao().observeAll().first().mapNotNull { book ->
+            val cfi = progress.cfiOf(book.key) ?: return@mapNotNull null
+            ProgressSnapshot(
+                bookKey = book.key,
+                cfi = cfi,
+                fraction = progress.fractionOf(book.key),
+                updatedAt = progress.updatedAtOf(book.key),
+            )
+        }
+
     fun encode(snapshot: SyncSnapshot): ByteArray =
         SyncSnapshotCodec.encode(snapshot).toByteArray(Charsets.UTF_8)
 
-    suspend fun decodeAndApply(db: KoodoDatabase, bytes: ByteArray, progress: ReaderProgressPrefs) {
-        val snapshot = SyncSnapshotCodec.decode(bytes.decodeToString())
-        snapshot.annotations.forEach { row ->
-            db.noteDao().upsert(
-                NoteEntity(
-                    key = row.key,
-                    bookKey = row.bookKey.orEmpty(),
-                    chapter = row.chapter,
-                    text = row.text,
-                    notes = row.notes,
-                    color = row.color,
-                ),
-            )
-        }
-        snapshot.bookmarks.forEach { row ->
-            db.bookmarkDao().upsert(
-                BookmarkEntity(
-                    key = row.key,
-                    bookKey = row.bookKey.orEmpty(),
-                    chapter = row.label,
-                    cfi = row.cfi,
-                    label = row.label,
-                ),
-            )
-        }
-        snapshot.progress.forEach { row ->
+    fun decode(bytes: ByteArray): SyncSnapshot =
+        SyncSnapshotCodec.decode(bytes.decodeToString())
+
+    /**
+     * Applies the rows chosen by the merge plan.
+     *
+     * Notes and bookmarks are merged **additively**: a row whose key is absent
+     * locally is inserted, but an existing row is never overwritten. Remote data
+     * must not silently replace a highlight body the user edited on this
+     * device — that was the second half of the old overwrite bug.
+     *
+     * @param rows progress rows to write (already resolved by the caller).
+     * @param now fallback timestamp for peers that predate the timestamp field.
+     */
+    suspend fun apply(
+        db: KoodoDatabase,
+        snapshot: SyncSnapshot,
+        progress: ReaderProgressPrefs,
+        rows: List<ProgressSnapshot>,
+        now: Long = System.currentTimeMillis(),
+    ): ApplyReport {
+        var progressApplied = 0
+        rows.forEach { row ->
             val cfi = row.cfi ?: return@forEach
-            progress.save(row.bookKey, cfi, row.fraction ?: 0.0)
+            if (row.bookKey.isBlank()) return@forEach
+            progress.save(
+                bookKey = row.bookKey,
+                cfi = cfi,
+                fraction = row.fraction ?: 0.0,
+                updatedAt = row.updatedAt ?: now,
+            )
+            progressApplied++
         }
+
+        val existingNotes = db.noteDao().observeAll().first().associateBy { it.key }
+        var notesAdded = 0
+        var notesKept = 0
+        snapshot.annotations.forEach { row ->
+            val current = existingNotes[row.key]
+            if (current == null) {
+                db.noteDao().upsert(
+                    NoteEntity(
+                        key = row.key,
+                        bookKey = row.bookKey.orEmpty(),
+                        chapter = row.chapter,
+                        text = row.text,
+                        cfi = row.cfi,
+                        notes = row.notes,
+                        percentage = row.percentage,
+                        color = row.color,
+                    ),
+                )
+                notesAdded++
+            } else {
+                // Fill in fields this device never had, keep everything else.
+                val merged = current.copy(
+                    chapter = current.chapter?.takeIf { it.isNotBlank() } ?: row.chapter,
+                    text = current.text?.takeIf { it.isNotBlank() } ?: row.text,
+                    cfi = current.cfi?.takeIf { it.isNotBlank() } ?: row.cfi,
+                    notes = current.notes?.takeIf { it.isNotBlank() } ?: row.notes,
+                    percentage = current.percentage?.takeIf { it.isNotBlank() } ?: row.percentage,
+                    color = current.color ?: row.color,
+                )
+                if (merged != current) db.noteDao().upsert(merged) else notesKept++
+            }
+        }
+
+        val existingBookmarks = db.bookmarkDao().observeAll().first().associateBy { it.key }
+        var bookmarksAdded = 0
+        var bookmarksKept = 0
+        snapshot.bookmarks.forEach { row ->
+            if (existingBookmarks.containsKey(row.key)) {
+                bookmarksKept++
+            } else {
+                db.bookmarkDao().upsert(
+                    BookmarkEntity(
+                        key = row.key,
+                        bookKey = row.bookKey.orEmpty(),
+                        chapter = row.label,
+                        cfi = row.cfi,
+                        label = row.label,
+                    ),
+                )
+                bookmarksAdded++
+            }
+        }
+
+        return ApplyReport(
+            progressApplied = progressApplied,
+            notesAdded = notesAdded,
+            notesKept = notesKept,
+            bookmarksAdded = bookmarksAdded,
+            bookmarksKept = bookmarksKept,
+        )
     }
 }

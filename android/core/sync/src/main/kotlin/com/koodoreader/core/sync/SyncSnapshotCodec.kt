@@ -122,6 +122,7 @@ internal object SyncJson {
                 bookKey = stringField(o, "bookKey") ?: "",
                 cfi = stringField(o, "cfi"),
                 fraction = numberField(o, "fraction")?.toDoubleOrNull(),
+                updatedAt = numberField(o, "updatedAt")?.toLongOrNull(),
             )
         }
         val annotations = splitObjects(sliceArray("annotations")).map { o ->
@@ -132,6 +133,8 @@ internal object SyncJson {
                 text = stringField(o, "text"),
                 notes = stringField(o, "notes"),
                 color = numberField(o, "color")?.toLongOrNull(),
+                cfi = stringField(o, "cfi"),
+                percentage = stringField(o, "percentage"),
             )
         }
         val bookmarks = splitObjects(sliceArray("bookmarks")).map { o ->
@@ -205,6 +208,11 @@ internal object SyncJson {
                     append("\"fraction\":")
                     append(p.fraction)
                 }
+                if (p.updatedAt != null) {
+                    comma()
+                    append("\"updatedAt\":")
+                    append(p.updatedAt)
+                }
             }
         }
         append(']')
@@ -225,6 +233,8 @@ internal object SyncJson {
                     append("\"color\":")
                     append(a.color)
                 }
+                optStr("cfi", a.cfi)
+                optStr("percentage", a.percentage)
             }
         }
         append(']')

@@ -24,17 +24,33 @@ class ReaderProgressPrefs(context: Context) {
 
     /** 记录位置（翻页后调用）。 */
     fun save(bookKey: String, cfi: String) {
-        if (bookKey.isBlank() || cfi.isBlank()) return
-        sp.edit().putString(key(bookKey), cfi).apply()
+        save(bookKey, cfi, fractionOf(bookKey))
     }
 
     fun save(bookKey: String, cfi: String, fraction: Double) {
+        save(bookKey, cfi, fraction, System.currentTimeMillis())
+    }
+
+    /**
+     * 记录位置与写入时间。
+     *
+     * [updatedAt] 是同步冲突判定的唯一依据（见 `core:sync` 的 `SyncMerge`）：
+     * 两处进度分叉时，只有「双方都有时间戳且远端更新」才允许把本地进度后退，
+     * 否则一律弹窗由用户裁决。旧版本写入的进度没有该字段，读取时返回 null，
+     * 合并逻辑会退化为「只前进、不后退」。
+     */
+    fun save(bookKey: String, cfi: String, fraction: Double, updatedAt: Long) {
         if (bookKey.isBlank() || cfi.isBlank()) return
         sp.edit()
             .putString(key(bookKey), cfi)
             .putString(fracKey(bookKey), fraction.coerceIn(0.0, 1.0).toString())
+            .putLong(tsKey(bookKey), updatedAt)
             .apply()
     }
+
+    /** 该书进度的最后写入时间；旧数据或从未写入时返回 null。 */
+    fun updatedAtOf(bookKey: String): Long? =
+        sp.getLong(tsKey(bookKey), 0L).takeIf { it > 0L }
 
     fun fractionOf(bookKey: String): Double =
         sp.getString(fracKey(bookKey), null)?.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 0.0
@@ -52,14 +68,17 @@ class ReaderProgressPrefs(context: Context) {
 
     /** 清除某本书的进度（删除书籍/清除数据时）。 */
     fun clear(bookKey: String) {
-        sp.edit().remove(key(bookKey)).remove(fracKey(bookKey)).apply()
+        sp.edit().remove(key(bookKey)).remove(fracKey(bookKey)).remove(tsKey(bookKey)).apply()
     }
 
     private fun key(bookKey: String): String = "cfi:$bookKey"
 
     private fun fracKey(bookKey: String): String = FRAC_PREFIX + bookKey
 
+    private fun tsKey(bookKey: String): String = TS_PREFIX + bookKey
+
     private companion object {
         const val FRAC_PREFIX = "frac:"
+        const val TS_PREFIX = "ts:"
     }
 }

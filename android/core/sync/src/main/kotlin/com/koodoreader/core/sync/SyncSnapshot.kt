@@ -12,6 +12,15 @@ data class ProgressSnapshot(
     val bookKey: String,
     val cfi: String?,
     val fraction: Double?,
+    /**
+     * Wall-clock millis of the last write, or null for snapshots written by a
+     * build that predates the field.
+     *
+     * Optional so the JSON stays backward/forward compatible: peers that do not
+     * know the field ignore it, and a row without it only ever causes a
+     * conflict prompt (never a silent overwrite).
+     */
+    val updatedAt: Long? = null,
 )
 
 data class AnnotationSnapshot(
@@ -21,6 +30,14 @@ data class AnnotationSnapshot(
     val text: String?,
     val notes: String?,
     val color: Long?,
+    /**
+     * EPUB CFI anchor (ADR-002). Optional because snapshots written before this
+     * field existed — and by peers that only ship the body — must still decode;
+     * without it a synced highlight has no position to reappear at.
+     */
+    val cfi: String? = null,
+    /** Desktop `percentage` payload, kept as a string for wire compatibility. */
+    val percentage: String? = null,
 )
 
 data class BookmarkSnapshot(

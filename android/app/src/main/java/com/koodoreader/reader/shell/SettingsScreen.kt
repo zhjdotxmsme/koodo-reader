@@ -90,6 +90,7 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
     onOpenDictionary: () -> Unit = {},
+    onOpenWordbook: () -> Unit = {},
     onOpenAppearance: () -> Unit = {},
     onOpenReading: () -> Unit = {},
     onOpenTranslate: () -> Unit = {},
@@ -162,6 +163,11 @@ fun SettingsScreen(
                 title = t("Dictionary"),
                 summary = t("Import and manage offline dictionaries"),
                 onClick = onOpenDictionary,
+            )
+            SettingRow(
+                title = t("Word list"),
+                summary = t("Words saved while reading"),
+                onClick = onOpenWordbook,
             )
         }
 

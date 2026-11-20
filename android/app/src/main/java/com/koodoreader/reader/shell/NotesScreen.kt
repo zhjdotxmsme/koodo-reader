@@ -10,13 +10,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,17 +52,22 @@ fun NotesScreen(
     modifier: Modifier = Modifier,
 ) {
     var filterIndex by remember { mutableIntStateOf(0) }
+    var query by remember { mutableStateOf("") }
     val filters = NotesFilter.entries
     val i18n = LocalI18n.current
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     val selected = filters[filterIndex]
-    val sections = remember(state.items, state.titles, selected) {
+    val sections = remember(state.items, state.titles, selected, query) {
         NotesAggregation.group(
-            NotesAggregation.filter(state.items, selected),
+            NotesAggregation.search(
+                NotesAggregation.filter(state.items, selected),
+                query,
+            ),
             state.titles,
         )
     }
+    val searched = query.isNotBlank()
 
     Column(modifier = modifier.fillMaxSize()) {
         Text(
@@ -90,6 +98,32 @@ fun NotesScreen(
             }
         }
 
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            placeholder = {
+                Text(
+                    text = i18n.localization.t("Search notes..."),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    TextButton(onClick = { query = "" }) {
+                        Text(i18n.localization.t("Clear"))
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                    end = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                )
+                .padding(bottom = SpaceTokens.md.dp),
+        )
+
         if (sections.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
@@ -97,7 +131,9 @@ fun NotesScreen(
                     verticalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp),
                 ) {
                     Text(
-                        text = i18n.localization.t("No notes yet"),
+                        text = i18n.localization.t(
+                            if (searched) "No results found" else "No notes yet",
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,

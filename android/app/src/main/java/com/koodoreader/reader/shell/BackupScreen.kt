@@ -2,6 +2,7 @@ package com.koodoreader.reader.shell
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,24 +13,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.koodoreader.core.sync.ProgressChoice
+import com.koodoreader.core.sync.ProgressConflict
+import kotlin.math.roundToInt
 
 /**
  * Backup / restore + data export/import (P7): 桌面 .db ⇄ native Room, both
@@ -263,19 +271,147 @@ fun BackupScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-            is BackupUiState.Finished -> Text(
-                s.message,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-            )
+            is BackupUiState.Finished -> Column {
+                // The wording comes from the locale catalogs; the counts come
+                // from the structured report. The ViewModel deliberately does
+                // not assemble a user-visible sentence.
+                Text(
+                    t(s.message),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+                s.report?.let { report ->
+                    Text(
+                        text = t("Sync applied") + ": " +
+                            "${report.progressApplied} · " +
+                            t("Notes") + " +${report.notesAdded}" +
+                            (if (report.notesKept > 0) " (${report.notesKept})" else "") +
+                            " · " +
+                            t("Bookmarks") + " +${report.bookmarksAdded}" +
+                            (if (report.bookmarksKept > 0) " (${report.bookmarksKept})" else ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
             is BackupUiState.Errored -> Text(
                 s.message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
+            is BackupUiState.Conflicts -> Text(
+                t("Reading positions differ"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+
+    (state as? BackupUiState.Conflicts)?.let { conflicts ->
+        SyncConflictDialog(
+            state = conflicts,
+            onConfirm = viewModel::resolveConflicts,
+            onCancel = viewModel::cancelSyncPull,
+        )
+    }
+}
+
+/**
+ * The pull parked by [BackupViewModel.syncPull] because a book would have moved
+ * backwards. Defaults never discard progress: each row starts on the side that
+ * is further into the book.
+ */
+@Composable
+private fun SyncConflictDialog(
+    state: BackupUiState.Conflicts,
+    onConfirm: (Map<String, ProgressChoice>) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val choices = remember(state) {
+        mutableStateMapOf<String, ProgressChoice>().apply {
+            state.conflicts.forEach { put(it.bookKey, it.suggested) }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(t("Reading positions differ")) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    t("Choose which position to keep for each book."),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                state.conflicts.forEach { conflict ->
+                    SyncConflictRow(
+                        conflict = conflict,
+                        title = state.titles[conflict.bookKey] ?: conflict.bookKey,
+                        choice = choices[conflict.bookKey] ?: conflict.suggested,
+                        onChoice = { choices[conflict.bookKey] = it },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(choices.toMap()) }) { Text(t("Apply")) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(t("Cancel")) }
+        },
+    )
+}
+
+@Composable
+private fun SyncConflictRow(
+    conflict: ProgressConflict,
+    title: String,
+    choice: ProgressChoice,
+    onChoice: (ProgressChoice) -> Unit,
+) {
+    Column {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ConflictOption(
+                label = t("This device") + " · " + percent(conflict.localFraction),
+                selected = choice == ProgressChoice.KEEP_LOCAL,
+                modifier = Modifier.weight(1f),
+                onClick = { onChoice(ProgressChoice.KEEP_LOCAL) },
+            )
+            ConflictOption(
+                label = t("Remote") + " · " + percent(conflict.remoteFraction),
+                selected = choice == ProgressChoice.TAKE_REMOTE,
+                modifier = Modifier.weight(1f),
+                onClick = { onChoice(ProgressChoice.TAKE_REMOTE) },
+            )
         }
     }
 }
+
+@Composable
+private fun ConflictOption(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = modifier.clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+private fun percent(fraction: Double): String =
+    "${(fraction.coerceIn(0.0, 1.0) * 100).roundToInt()}%"
 
 @Composable
 private fun DataExportRow(

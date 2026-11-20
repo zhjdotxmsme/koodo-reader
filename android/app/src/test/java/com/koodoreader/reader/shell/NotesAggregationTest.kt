@@ -248,4 +248,53 @@ class NotesAggregationTest {
         // ...and the aggregation still shows them rather than dropping them.
         assertEquals(1, NotesAggregation.totalCount(NotesAggregation.group(items, emptyMap())))
     }
+
+    @Test
+    fun `search matches highlight text case-insensitively`() {
+        val items = listOf(
+            highlight("1", "b1", "The Analects of Confucius"),
+            highlight("2", "b1", "Dao De Jing"),
+        )
+
+        assertEquals(listOf("1"), NotesAggregation.search(items, "analects").map { it.key })
+        assertEquals(listOf("2"), NotesAggregation.search(items, "DAO").map { it.key })
+    }
+
+    @Test
+    fun `search also looks inside note bodies and bookmark labels`() {
+        val items = listOf(
+            note("1", "b1", "selected", "my private thought"),
+            bookmark("2", "b1", "Chapter three"),
+        )
+
+        assertEquals(listOf("1"), NotesAggregation.search(items, "private").map { it.key })
+        assertEquals(listOf("2"), NotesAggregation.search(items, "three").map { it.key })
+    }
+
+    @Test
+    fun `search requires every term to match`() {
+        val items = listOf(
+            highlight("1", "b1", "孔子 论仁"),
+            highlight("2", "b1", "孔子 论礼"),
+        )
+
+        assertEquals(listOf("1"), NotesAggregation.search(items, "孔子 仁").map { it.key })
+        // Reversed order must behave the same — no ranking, just conjunction.
+        assertEquals(listOf("1"), NotesAggregation.search(items, "仁 孔子").map { it.key })
+    }
+
+    @Test
+    fun `blank query and whitespace are no-ops`() {
+        val items = listOf(highlight("1", "b1", "text"))
+
+        assertEquals(items, NotesAggregation.search(items, ""))
+        assertEquals(items, NotesAggregation.search(items, "   "))
+    }
+
+    @Test
+    fun `a query with no hits returns an empty list rather than everything`() {
+        val items = listOf(highlight("1", "b1", "text"))
+
+        assertTrue(NotesAggregation.search(items, "zzz").isEmpty())
+    }
 }

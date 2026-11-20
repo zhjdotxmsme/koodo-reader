@@ -8,7 +8,12 @@ import com.koodoreader.core.data.KoodoDatabase
 import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.dbio.DataExport
 import com.koodoreader.core.dbio.DataImport
+import com.koodoreader.core.sync.ProgressChoice
+import com.koodoreader.core.sync.ProgressConflict
+import com.koodoreader.core.sync.ProgressMergePlan
 import com.koodoreader.core.sync.SyncCoordinator
+import com.koodoreader.core.sync.SyncMerge
+import com.koodoreader.core.sync.SyncSnapshot
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,8 +26,28 @@ import kotlinx.coroutines.withContext
 sealed interface BackupUiState {
     data object Idle : BackupUiState
     data class Running(val label: String) : BackupUiState
-    data class Finished(val message: String) : BackupUiState
+    /**
+     * @param report what the pull actually changed, when the message is a
+     *   sync summary. The UI renders it through the catalogs; the ViewModel
+     *   must not bake user-visible wording into a string (the app ships 41
+     *   locales and every visible string goes through `t()`).
+     */
+    data class Finished(
+        val message: String,
+        val report: SyncSnapshotBuilder.ApplyReport? = null,
+    ) : BackupUiState
     data class Errored(val message: String) : BackupUiState
+
+    /**
+     * A pull downloaded successfully but some books would move backwards, and
+     * only the reader can decide. The snapshot is held in the ViewModel until
+     * [BackupViewModel.resolveConflicts] or [BackupViewModel.cancelSyncPull].
+     */
+    data class Conflicts(
+        val conflicts: List<ProgressConflict>,
+        /** bookKey → display title, for the dialog. */
+        val titles: Map<String, String>,
+    ) : BackupUiState
 }
 
 class BackupViewModel(app: Application) : AndroidViewModel(app) {
@@ -39,9 +64,31 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
     val state: StateFlow<BackupUiState> = _state
 
+    /** A pull waiting on the reader's conflict decisions. */
+    private data class PendingPull(
+        val snapshot: SyncSnapshot,
+        val plan: ProgressMergePlan,
+    )
+
+    private var pendingPull: PendingPull? = null
+
+    /**
+     * The fallback wording for a pull that changed nothing.
+     *
+     * A pull that DID change something is rendered by the screen from the
+     * structured [SyncSnapshotBuilder.ApplyReport], so the wording lives in
+     * the locale catalogs and not here.
+     */
+    private fun summarize(report: SyncSnapshotBuilder.ApplyReport): String =
+        if (report.progressApplied == 0 && report.notesAdded == 0 && report.bookmarksAdded == 0) {
+            "sync_no_changes"
+        } else {
+            "sync_applied"
+        }
+
     /** Push a JSON sync snapshot to the configured [SyncPrefs] target. */
     fun syncPush() {
-        if (_state.value is BackupUiState.Running) return
+        if (_state.value is BackupUiState.Running || _state.value is BackupUiState.Conflicts) return
         viewModelScope.launch {
             _state.value = BackupUiState.Running("Uploading sync snapshot…")
             val report = runCatching {
@@ -66,7 +113,11 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Pull a remote snapshot and merge notes/bookmarks/progress. */
     fun syncPull() {
-        if (_state.value is BackupUiState.Running) return
+        if (_state.value !is BackupUiState.Idle && _state.value !is BackupUiState.Finished &&
+            _state.value !is BackupUiState.Errored
+        ) {
+            return
+        }
         viewModelScope.launch {
             _state.value = BackupUiState.Running("Downloading sync snapshot…")
             val report = runCatching {
@@ -75,14 +126,61 @@ class BackupViewModel(app: Application) : AndroidViewModel(app) {
                         ?: error("Sync target is not configured")
                     val bytes = SyncCoordinator.import(target)
                         ?: error("Remote snapshot missing")
-                    SyncSnapshotBuilder.decodeAndApply(db, bytes, progressPrefs)
+                    val snapshot = SyncSnapshotBuilder.decode(bytes)
+                    val plan = SyncMerge.planProgress(
+                        local = SyncSnapshotBuilder.progressRows(db, progressPrefs),
+                        remote = snapshot.progress,
+                    )
+                    if (plan.isClean) {
+                        SyncSnapshotBuilder.apply(db, snapshot, progressPrefs, plan.applyRemote)
+                            .let { BackupUiState.Finished(summarize(it), it) }
+                    } else {
+                        pendingPull = PendingPull(snapshot, plan)
+                        BackupUiState.Conflicts(
+                            conflicts = plan.conflicts,
+                            titles = snapshot.books
+                                .mapNotNull { b -> b.name?.takeIf { it.isNotBlank() }?.let { b.bookKey to it } }
+                                .toMap(),
+                        )
+                    }
                 }
             }
             _state.value = report.fold(
-                onSuccess = { BackupUiState.Finished("Sync snapshot applied") },
+                onSuccess = { it },
                 onFailure = { BackupUiState.Errored(it.message ?: "sync pull failed") },
             )
         }
+    }
+
+    /**
+     * Applies the pull that [syncPull] parked because of conflicts.
+     *
+     * @param choices bookKey → keep-local / take-remote. A book missing from the
+     *   map falls back to "whichever side is further into the book", so the
+     *   default can never discard progress.
+     */
+    fun resolveConflicts(choices: Map<String, ProgressChoice>) {
+        val pending = pendingPull ?: return
+        pendingPull = null
+        viewModelScope.launch {
+            _state.value = BackupUiState.Running("Applying sync snapshot…")
+            val report = runCatching {
+                withContext(Dispatchers.IO) {
+                    val rows = SyncMerge.resolvedRows(pending.plan, choices)
+                    SyncSnapshotBuilder.apply(db, pending.snapshot, progressPrefs, rows)
+                }
+            }
+            _state.value = report.fold(
+                onSuccess = { BackupUiState.Finished(summarize(it), it) },
+                onFailure = { BackupUiState.Errored(it.message ?: "sync apply failed") },
+            )
+        }
+    }
+
+    /** Drops the parked pull — the device keeps its own reading positions. */
+    fun cancelSyncPull() {
+        pendingPull = null
+        if (_state.value is BackupUiState.Conflicts) _state.value = BackupUiState.Idle
     }
 
     fun syncPrefs(): SyncPrefs = syncPrefs

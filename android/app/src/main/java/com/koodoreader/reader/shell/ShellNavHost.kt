@@ -91,6 +91,7 @@ fun ShellNavHost(
                 onOpenBackup = { navController.navigate(ShellNav.BACKUP) },
                 onOpenTrash = { navController.navigate(ShellNav.TRASH) },
                 onOpenDictionary = { navController.navigate(ShellNav.DICTIONARY) },
+                onOpenWordbook = { navController.navigate(ShellNav.WORDBOOK) },
                 onOpenAppearance = { navController.navigate(ShellNav.APPEARANCE) },
                 onOpenReading = { navController.navigate(ShellNav.READING) },
                 onOpenTranslate = { navController.navigate(ShellNav.TRANSLATE) },
@@ -109,6 +110,12 @@ fun ShellNavHost(
         }
         composable(ShellNav.DICTIONARY) {
             DictionaryRoute(onBack = { navController.popBackStack() })
+        }
+        composable(ShellNav.WORDBOOK) {
+            WordbookScreen(
+                onBack = { navController.popBackStack() },
+                onOpenBook = { bookKey -> navController.navigate(ShellNav.reader(bookKey)) },
+            )
         }
         composable(ShellNav.APPEARANCE) {
             AppearanceRoute(onBack = { navController.popBackStack() })
