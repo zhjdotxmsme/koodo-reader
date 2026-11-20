@@ -41,6 +41,8 @@ data class StatsUiState(
     val formatShares: List<FormatShare> = emptyList(),
     val hourBuckets: List<Long> = List(24) { 0L },
     val ranking: List<BookReadingRank> = emptyList(),
+    /** Seconds read today, for the daily-goal card. */
+    val todaySeconds: Long = 0L,
 )
 
 /**
@@ -122,11 +124,17 @@ class StatsViewModel(
                     formatShares = derived.formatShares,
                     hourBuckets = derived.hourBuckets,
                     ranking = derived.ranking,
+                    todaySeconds = snapshot.secondsByDay[today] ?: 0L,
                 )
             } catch (failure: Exception) {
                 // Desktop `loadStats` swallows database errors and shows zeroes;
                 // the native screen keeps the reason for the log instead.
-                state.copy(isLoading = false, snapshot = StatsSnapshot.EMPTY, error = failure.message)
+                state.copy(
+                    isLoading = false,
+                    snapshot = StatsSnapshot.EMPTY,
+                    todaySeconds = 0L,
+                    error = failure.message,
+                )
             }
         }
     }
