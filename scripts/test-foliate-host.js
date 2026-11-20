@@ -382,6 +382,123 @@ async function main() {
     );
     check('readest getStyles night overrides nested colours', css.indexOf('!important') >= 0, css.slice(0, 200));
 
+    // ── Highlight re-anchoring ──────────────────────────────────────────────
+    {
+        const { spineIndexOf, findTextRange } = await import(pathToFileURL(ENGINE_MJS).href);
+
+        eq('spineIndexOf reads a point cfi', spineIndexOf('epubcfi(/6/2[cover]!/4/2:0)'), 1);
+        eq('spineIndexOf reads a range cfi', spineIndexOf('epubcfi(/6/4!/4/2:0,/4/2:50)'), 1);
+        eq('spineIndexOf rejects odd steps', spineIndexOf('epubcfi(/6/2!/3/1)'), null);
+        eq('spineIndexOf rejects no-indir cfis', spineIndexOf('epubcfi(/6/4)'), null);
+        eq('spineIndexOf rejects garbage', spineIndexOf(''), null);
+
+        function fakeDoc(texts) {
+            const body = { children: texts.map((data) => ({ data })) };
+            return {
+                body,
+                documentElement: body,
+                createTreeWalker(root) {
+                    let i = -1;
+                    return {
+                        nextNode() {
+                            i++;
+                            return i < root.children.length ? root.children[i] : null;
+                        },
+                    };
+                },
+                createRange() {
+                    const range = {};
+                    range.setStart = (node, offset) => { range.start = { node, offset }; };
+                    range.setEnd = (node, offset) => { range.end = { node, offset }; };
+                    return range;
+                },
+            };
+        }
+
+        const doc = fakeDoc(['前半段', '后半段继续这里', '尾部']);
+        const range = findTextRange(doc, '前半段 后半段');
+        check(
+            'findTextRange matches across text nodes with flexible whitespace',
+            range && range.start && range.start.node.data === '前半段' && range.start.offset === 0
+                && range.end.node.data === '后半段继续这里' && range.end.offset === 3,
+            JSON.stringify(range && range.end),
+        );
+        const punct = findTextRange(doc, '继续这里，尾部');
+        check(
+            'findTextRange rejects a needle the document does not contain',
+            punct === null,
+            JSON.stringify(punct),
+        );
+        eq('findTextRange needs a real needle', findTextRange(doc, '尾'), null);
+        eq('findTextRange tolerates a null doc', findTextRange(null, '前半段'), null);
+
+        const { createFoliateEngine } = await import(pathToFileURL(ENGINE_MJS).href);
+        const section0Doc = fakeDoc([
+            '重排前的第一段文字足够长可以被唯一找到。',
+            '第二段也有内容。',
+        ]);
+        const drawn = [];
+        const reanchorView = {
+            resolveCFI: async (cfi) => {
+                if (cfi.indexOf('dead') >= 0 || cfi.indexOf('/3/') >= 0) {
+                    throw new Error('cfi out of range');
+                }
+                return {};
+            },
+            addAnnotation: async (annotation) => {
+                drawn.push(annotation);
+                return {};
+            },
+            getCFI: (index, r) =>
+                `epubcfi(/6/4!/4/${2 + drawn.length}/1:0,/1:${r.end.offset})`,
+            book: {
+                sections: [{ createDocument: async () => section0Doc }, {}],
+            },
+        };
+        const anchorEngine = createFoliateEngine({
+            log: () => {},
+            fetchFile: async () => ({ name: 'b.epub', text: async () => '<html><body><p>x</p></body></html>' }),
+            openBook: async () => ({
+                metadata: { title: 'Fixture' },
+                sections: [
+                    { id: '1', createDocument: async () => section0Doc },
+                    { id: '2' },
+                ],
+            }),
+            view: reanchorView,
+        });
+        await anchorEngine.open('http://127.0.0.1:9/__books__/b.epub', 'epub');
+
+        const report = await anchorEngine.reAnchorHighlights([
+            { cfi: 'epubcfi(/6/4!/4/2:0)', text: '', color: '#ffe066' },
+            {
+                cfi: 'epubcfi(/6/2!/2/2:dead0,/2:99)',
+                text: '第一段文字足够长',
+                color: '#90ee90',
+            },
+            { cfi: 'epubcfi(/6/4!/3/9:0)', text: 'never matched anywhere', color: '#ff0000' },
+            { cfi: '', text: 'ignored' },
+        ]);
+        eq('reAnchor anchored the healthy cfi', report.anchored, 1);
+        eq('reAnchor remapped the dead cfi', report.reanchored.length, 1);
+        check(
+            'reAnchor kept the same section when remapping',
+            report.reanchored[0].cfi.indexOf('!/4/') >= 0
+                && report.reanchored[0].old.indexOf('dead') >= 0,
+            JSON.stringify(report.reanchored),
+        );
+        eq('reAnchor reported the unrepairable one', report.failed.length, 1);
+        eq('reAnchor ignored an empty cfi', report.failed[0], 'epubcfi(/6/4!/3/9:0)');
+        check(
+            'reAnchor drew with the requested colour',
+            drawn.some((d) => d.color === '#90ee90' && d.value === report.reanchored[0].cfi),
+            JSON.stringify(drawn),
+        );
+        const empty = await anchorEngine.reAnchorHighlights([]);
+        eq('reAnchor on no items is a clean report', empty.anchored + empty.failed.length, 0);
+    }
+
+
     if (failures.length) {
         console.log(`\n${failures.length} failed, ${passed} passed`);
         process.exit(1);

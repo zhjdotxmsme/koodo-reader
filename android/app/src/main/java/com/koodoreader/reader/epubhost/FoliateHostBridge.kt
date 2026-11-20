@@ -13,7 +13,10 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.reader.pdfhost.PdfEngineReadyLatch
+import com.koodoreader.reader.shell.HighlightAnchorRequest
+import com.koodoreader.reader.shell.HighlightRemap
 import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.ReAnchorReport
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
@@ -254,6 +257,36 @@ class FoliateHostBridge(
         runJs(method = "removeHighlight", args = listOf(JSONObject.quote(cfi)))
     }
 
+    /**
+     * Anchors every highlight and repairs the dead ones.
+     *
+     * Unlike [addHighlight] this call is awaited and its report is parsed: the
+     * whole point is to learn which CFIs died and what they became, so the
+     * caller can persist the repaired anchor. Returns null when the engine call
+     * itself failed (no report; the caller keeps the old anchors untouched).
+     */
+    fun reAnchorHighlights(requests: List<HighlightAnchorRequest>): ReAnchorReport? {
+        if (requests.isEmpty()) return null
+        val arr = JSONArray()
+        for (request in requests) {
+            arr.put(
+                JSONObject()
+                    .put("cfi", request.cfi)
+                    .put("text", request.text)
+                    .put("color", request.colorCss)
+            )
+        }
+        val raw = runCatching {
+            runJs(
+                method = "reAnchorHighlights",
+                args = listOf(arr.toString()),
+                timeoutMs = (requests.size * REANCHOR_MS_PER_ITEM)
+                    .coerceIn(REANCHOR_MIN_TIMEOUT_MS, REANCHOR_MAX_TIMEOUT_MS),
+            )
+        }.getOrNull() ?: return null
+        return parseReAnchorReport(raw)
+    }
+
     fun close() {
         runJsFireAndForget(method = "close", args = emptyList())
         webView.post { webView.destroy() }
@@ -347,8 +380,44 @@ class FoliateHostBridge(
         private const val JS_CALL_TIMEOUT_MS = 15_000L
         private const val OPEN_TIMEOUT_MS = 60_000L
         private const val SEARCH_TIMEOUT_MS = 30_000L
+        private const val REANCHOR_MS_PER_ITEM = 2_000L
+        private const val REANCHOR_MIN_TIMEOUT_MS = 5_000L
+        private const val REANCHOR_MAX_TIMEOUT_MS = 60_000L
         private const val BOOTSTRAP_PATH = "foliate/index.html"
         private const val TAG = "FoliateHostBridge"
+
+        /** Pure so tests can pin the wire format without a WebView. */
+        internal fun parseReAnchorReport(raw: String): ReAnchorReport {
+            if (raw.isBlank()) return ReAnchorReport()
+            return runCatching {
+                val o = JSONObject(raw)
+                val remaps = mutableListOf<HighlightRemap>()
+                val remapArr = o.optJSONArray("reanchored")
+                if (remapArr != null) {
+                    for (i in 0 until remapArr.length()) {
+                        val r = remapArr.optJSONObject(i) ?: continue
+                        val old = r.optString("old", "")
+                        val new = r.optString("cfi", "")
+                        if (old.isNotBlank() && new.isNotBlank() && old != new) {
+                            remaps.add(HighlightRemap(old, new))
+                        }
+                    }
+                }
+                val failed = mutableListOf<String>()
+                val failedArr = o.optJSONArray("failed")
+                if (failedArr != null) {
+                    for (i in 0 until failedArr.length()) {
+                        val f = failedArr.optString(i, "")
+                        if (f.isNotBlank()) failed.add(f)
+                    }
+                }
+                ReAnchorReport(
+                    anchored = o.optInt("anchored", 0),
+                    remaps = remaps,
+                    failed = failed,
+                )
+            }.getOrDefault(ReAnchorReport())
+        }
 
         @Suppress("unused")
         private val uiThreadCheck = Looper.getMainLooper()

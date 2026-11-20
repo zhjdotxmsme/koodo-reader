@@ -15,6 +15,7 @@
 //   setAppearance(opts)   -> { ok: true }
 //   setViewSettings(opts) -> { ok: true }
 //   selectedRange()       -> { cfi, excerpt } | null
+//   reAnchorHighlights(items) -> { anchored, reanchored: [{old,cfi}], failed }
 //   close()               -> void
 
 import { parseRules, applyRulesToHtml } from './text-rules.mjs';
@@ -24,6 +25,80 @@ export function selectionPayload(sel, cfi) {
     const excerpt = String(sel).trim();
     if (!excerpt) return { excerpt: '', cfi: '' };
     return { excerpt, cfi: String(cfi || '') };
+}
+
+/**
+ * Spine index encoded in an EPUB CFI.
+ *
+ * Both point and range CFIs carry the first content-document step right after
+ * the `!`: an even element step `/N`, where the spine index is `N / 2 - 1`.
+ * Returns null for anything that does not match (MOBI packdir CFIs, garbage),
+ * so callers treat the CFI as unlocatable rather than guessing a section.
+ */
+export function spineIndexOf(cfi) {
+    const m = /!\/([0-9]+)/.exec(String(cfi || ''));
+    if (!m) return null;
+    const step = Number(m[1]);
+    if (!step || step % 2) return null;
+    const index = step / 2 - 1;
+    return index >= 0 ? index : null;
+}
+
+/** Smallest excerpt we trust as a unique re-anchoring needle. */
+export const MIN_REANCHOR_CHARS = 4;
+/** Cap the needle: an 80-char prefix is unique enough and bounds regex cost. */
+export const MAX_REANCHOR_CHARS = 80;
+
+/**
+ * Locates `needle` inside a section document and returns a DOM range for it.
+ *
+ * Whitespace-flexible on purpose: saved excerpts carry the renderer's soft
+ * newlines while the document may break lines anywhere, so the needle's
+ * whitespace runs match any whitespace run (`\s+` → `\s+`).
+ *
+ * Works in Node: uses only TreeWalker/createRange and the literal
+ * NodeFilter.SHOW_TEXT (4), no DOM globals.
+ */
+export function findTextRange(doc, needle) {
+    const query = String(needle || '').trim();
+    if (query.length < MIN_REANCHOR_CHARS || !doc) return null;
+    const root = doc.body || doc.documentElement;
+    if (!root || typeof doc.createTreeWalker !== 'function') return null;
+    const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+    const nodes = [];
+    let raw = '';
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        nodes.push({ node: n, start: raw.length });
+        raw += String(n.data || '');
+    }
+    if (!raw) return null;
+    const pattern = query
+        .slice(0, MAX_REANCHOR_CHARS)
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\s+/g, '\\s*');
+    const m = new RegExp(pattern).exec(raw);
+    if (!m) return null;
+    const at = m.index;
+    const end = at + m[0].length;
+    const locate = (pos) => {
+        for (const entry of nodes) {
+            const len = String(entry.node.data || '').length;
+            if (pos < entry.start + len) return { node: entry.node, offset: pos - entry.start };
+        }
+        const last = nodes[nodes.length - 1];
+        return { node: last.node, offset: String(last.node.data || '').length };
+    };
+    const from = locate(at);
+    const to = locate(end);
+    if (!from || !to) return null;
+    const range = doc.createRange();
+    try {
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+    } catch (e) {
+        return null;
+    }
+    return range;
 }
 
 /** Same 1/3 split as ReaderPageGestures.onTap: edges turn pages, center toggles chrome. */
@@ -629,6 +704,63 @@ export function createFoliateEngine(options) {
         return { ok: true };
     }
 
+    /**
+     * Anchors every highlight, repairing the ones whose CFI no longer resolves.
+     *
+     * A CFI dies when the book file is re-imported or replaced: the DOM it
+     * pointed at is gone, `view.addAnnotation` rejects, and the old fire-and-
+     * forget path silently dropped the highlight forever. Here a dead CFI falls
+     * back to locating the saved excerpt inside the *same section* (a move
+     * across sections almost always means a different book), and the caller
+     * persists the new CFI via `reanchored`.
+     *
+     * Nothing is ever deleted: unrepairable highlights land in `failed` and
+     * stay in the user's notes list.
+     */
+    async function reAnchorHighlights(items) {
+        const report = { anchored: 0, reanchored: [], failed: [] };
+        if (!view) return report;
+        for (const item of Array.isArray(items) ? items : []) {
+            const value = String((item && item.cfi) || '');
+            if (!value) continue;
+            const color = (item && item.color) || '#ffe066';
+            try {
+                await view.resolveCFI(value);
+                await view.addAnnotation({ value, color });
+                report.anchored++;
+                continue;
+            } catch (e) { /* dead anchor — try the excerpt below */ }
+            const remapped = await reAnchorByText(value, item && item.text);
+            if (remapped) {
+                try {
+                    await view.addAnnotation({ value: remapped, color });
+                    report.reanchored.push({ old: value, cfi: remapped });
+                    continue;
+                } catch (e) { /* resolved but refused to draw */ }
+            }
+            report.failed.push(value);
+        }
+        return report;
+    }
+
+    async function reAnchorByText(oldCfi, text) {
+        const query = String(text || '').trim();
+        if (query.length < MIN_REANCHOR_CHARS) return null;
+        const index = spineIndexOf(oldCfi);
+        if (index == null) return null;
+        const sections = (book && book.sections) || [];
+        const section = sections[index];
+        if (!section || typeof section.createDocument !== 'function') return null;
+        const doc = await section.createDocument();
+        const range = findTextRange(doc, query.slice(0, MAX_REANCHOR_CHARS));
+        if (!range || typeof view.getCFI !== 'function') return null;
+        try {
+            return String(view.getCFI(index, range) || '') || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
     function close() {
         if (view && typeof view.close === 'function') {
             try { view.close(); } catch (e) { log('warn', 'view.close: ' + e); }
@@ -649,6 +781,7 @@ export function createFoliateEngine(options) {
         selectedRange,
         addHighlight,
         removeHighlight,
+        reAnchorHighlights,
         close,
         get isOpen() { return book !== null; },
         get lastTarget() { return lastTarget; },
@@ -674,6 +807,7 @@ export const METHODS = [
     'selectedRange',
     'addHighlight',
     'removeHighlight',
+    'reAnchorHighlights',
     'close',
 ];
 

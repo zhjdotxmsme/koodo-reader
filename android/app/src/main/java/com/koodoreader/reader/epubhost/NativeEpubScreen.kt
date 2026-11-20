@@ -150,6 +150,7 @@ import com.koodoreader.reader.AppLog
 import com.koodoreader.reader.BuildConfig
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.HighlightReAnchor
 import com.koodoreader.reader.shell.ReaderAppearance
 import com.koodoreader.reader.shell.ReaderAssetHost
 import com.koodoreader.reader.shell.ReaderBottomProgress
@@ -1461,13 +1462,25 @@ fun NativeEpubScreen(
         }
         appearanceApplied = true
     }
+    // Anchor every highlight once the engine can resolve CFIs. A CFI dies when
+    // the book file is re-imported or replaced; the engine repairs those by
+    // locating the saved excerpt inside the same section, and the repaired CFI
+    // is persisted so the repair happens once. Notes that cannot be repaired
+    // stay in the list untouched — re-anchoring never deletes user data.
     LaunchedEffect(useFoliate, foliateReady, bookNotes) {
         if (!useFoliate || !foliateReady) return@LaunchedEffect
         val host = foliateBridge ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            bookNotes.forEach { note ->
-                val cfi = note.cfi?.takeIf { it.isNotBlank() } ?: return@forEach
-                runCatching { host.addHighlight(cfi, highlightCss(note.color ?: HighlightColor.YELLOW.code.toLong())) }
+        val requests = HighlightReAnchor.requests(bookNotes) { note ->
+            highlightCss(note.color ?: HighlightColor.YELLOW.code.toLong())
+        }
+        if (requests.isEmpty()) return@LaunchedEffect
+        val report = withContext(Dispatchers.IO) {
+            runCatching { host.reAnchorHighlights(requests) }.getOrNull()
+        } ?: return@LaunchedEffect
+        val remapped = HighlightReAnchor.applyRemaps(bookNotes, report.remaps)
+        if (remapped.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                remapped.forEach { note -> runCatching { db.noteDao().upsert(note) } }
             }
         }
     }

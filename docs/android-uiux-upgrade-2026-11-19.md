@@ -548,6 +548,65 @@ scrollTop = ratio * (scrollHeight - clientHeight);
 3. PDF 重排模式下拖字号：画面立即变化（此前完全不动）；
 4. 深色主题切换：无白闪（WebView 背景色在 JS 之前就已设置，保持现状）。
 
+## 5.9 2026-11-20 第 8 轮：高亮重锚（P0/P1 收尾项）
+
+### 缺陷本身
+
+高亮的主键是 EPUB CFI（ADR-002）。当书文件被重新导入或替换（换封面、换版本、修目录），CFI 指向的 DOM 节点消失，`view.addAnnotation` 拒绝——而旧的注入路径是 **fire-and-forget**：
+
+```kotlin
+runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
+```
+
+后果：死锚点**无声消失**，用户永远不知道自己的高亮去哪了。这和同步覆盖进度是同一类问题——「用户资产静默丢失」。
+
+### 修复：主键 CFI + 摘要文本兜底
+
+**JS 侧（`engine.mjs` 新增 `reAnchorHighlights`）**，每个高亮三步：
+
+1. `resolveCFI(cfi)` —— 抛异常才算死（比 `addAnnotation` 更准：能区分「锚点死了」和「章节还没加载」，后者由 foliate 自己在章节渲染时重放标注）；
+2. 死锚 → 在**同一章节**内用保存的摘要在原文中定位（`findTextRange`，空白弹性匹配），用 `view.getCFI` 生成新 CFI 并重新画；
+3. 修不回的进 `failed`——**绝不删除**，用户数据只增不减。
+
+关键设计决定：
+
+- **只在原章节内找**（从 CFI 的 `!/N` 步长解析 spine index，点 CFI 和 range CFI 都适用）。跨章节的文本匹配几乎必然意味着「这不是同一本书」；
+- **空白弹性匹配用 `\s*` 而不是 `\s+`**——Node 测试抓出来的：`<p>a</p><p>b</p>` 的 textContent 是 `"ab"`，块级边界之间根本没有空白；
+- needle 截到 80 字符、最少 4 字符，短摘要有歧义时宁可失败也不误锚。
+
+**Kotlin 侧三段，职责分开：**
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 纯逻辑 | `shell/HighlightReAnchor.kt` | 从笔记构造请求；把 remap 应用回笔记（写回新 CFI、清掉死的 DOM `range`） |
+| 桥接 | `epubhost/FoliateHostBridge.reAnchorHighlights()` | 阻塞调用 + 解析报告（超时按条数 2s/条，夹在 5–60s） |
+| 集成 | `NativeEpubScreen` | `foliateReady` 后一次拉取 → 重锚 → 写回 `noteDao().upsert` |
+
+写回是幂等的：修过的笔记 CFI 已经是新的，下一轮 remap 匹配不到它，不会无限循环。集成点在 `foliateReady = true` 之后——那时 `open()` 已完成，resolve 失败才真的意味着锚点死了（章节未加载的场景 foliate 会在渲染时自行重放）。
+
+### 一个更正
+
+上一轮把这项标为「CFI 主键 + **文本哈希**兜底」。实做后发现**哈希是多余的**：WebView 轨里直接拿摘要文本做定位更准（软连字符、全半角都由 DOM 层处理），哈希只该出现在 native 文本轨。所以最终形态是「CFI 主键 + 摘要文本兜底」，没有哈希。
+
+### 验证（这一轮是全绿的）
+
+**JS：`node scripts/test-foliate-host.js` → 65/65 通过**（原有 51 + 新增 14）：
+
+- `spineIndexOf`：点 CFI / range CFI / 奇数步长 / 无 indir / 垃圾输入；
+- `findTextRange`：跨文本节点 + 空白弹性、不存在的句子、过短 needle、null doc；
+- `reAnchorHighlights`：健康的锚 → `anchored`；死锚 + 文本可找 → `reanchored[old→new]` 且留在原章节；死锚 + 文本找不到 → `failed`；空 CFI 忽略；颜色透传；空输入干净报告（用注入的 fake view + fake DOM，不需要 WebView）。
+
+**Kotlin（13 例，`:app` JVM 测试，待恢复构建后跑）：**
+
+- `HighlightReAnchorTest`（6）：跳过无 CFI 笔记、颜色回调、remap 写回 + 清 `range`、幂等、退化 remap 丢弃、first-wins；
+- `ReAnchorReportParsingTest`（4）：完整报告、空/坏载荷降级、线上丢 identity remap、缺数组解析为空（`org.json` 已有 `testImplementation`，JVM 可跑）。
+
+### 真机验收
+
+1. 打开一本有高亮的 EPUB：所有高亮正常显示；
+2. （构造性测试）修改书文件后重新导入：高亮仍在原位或附近，且**笔记列表里 CFI 已更新**；
+3. 彻底对不上的书：高亮缺失但笔记完整（可在笔记页看到原文），不崩溃、无静默删除。
+
 ---
 
 # 附录：源码参照
