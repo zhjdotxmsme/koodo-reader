@@ -211,6 +211,15 @@ class PagedDocumentSession private constructor(
                 marginHorizontalPx = options.marginHorizontalPx,
                 marginVerticalPx = options.marginVerticalPx,
                 paraSpacingPx = options.paraSpacingPx,
+                // CJK typography: justification, first-line indent and tracking
+                // come from PaginatorOptions so every pagination entry point
+                // (this paged session and the native text session) lays out
+                // identically.
+                textAlign = options.textAlign,
+                firstLineIndentPx = options.firstLineIndentPx,
+                letterSpacingPx = options.letterSpacingPx,
+                textJustify = options.textJustify,
+                quantizeColumnToCells = options.quantizeColumnToCells,
             )
             val result = LayoutEngine(measurer, options).layout(document, tokens)
             // P9-anr (round-3): 预计算 chapterStartPages（monotonic）

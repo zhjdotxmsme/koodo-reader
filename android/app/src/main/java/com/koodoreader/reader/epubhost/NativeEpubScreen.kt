@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
@@ -95,7 +96,10 @@ import com.koodoreader.reader.reader.FormatChapterLoaders
 import com.koodoreader.reader.reader.IncrementalBookSearch
 import com.koodoreader.reader.reader.LayoutSelection
 import com.koodoreader.reader.reader.SelectionController
+import com.koodoreader.reader.reader.TextLineRenderer
 import com.koodoreader.reader.reader.NativeTextReaderScreen
+import com.koodoreader.reader.shell.ReaderContentInsetPolicy
+import com.koodoreader.reader.shell.ReaderTypography
 import com.koodoreader.reader.reader.NoOpAnnotationStore
 import com.koodoreader.reader.reader.RoomNoteAnnotationStore
 import com.koodoreader.reader.reader.TextSearchHit
@@ -114,6 +118,7 @@ import com.koodoreader.reader.shell.ReaderFeaturePrefs
 import com.koodoreader.reader.shell.ReaderFeatureState
 import com.koodoreader.reader.shell.ReaderPurifiedText
 import com.koodoreader.reader.shell.ReaderTextPipeline
+import com.koodoreader.reader.shell.WordBank
 import com.koodoreader.engine.link.LinkAction
 import com.koodoreader.engine.link.LinkRouter
 import com.koodoreader.engine.toc.ChapterText
@@ -152,6 +157,7 @@ import com.koodoreader.reader.shell.ReaderFiles
 import com.koodoreader.reader.shell.ReaderHrefJump
 import com.koodoreader.reader.shell.ReaderPageGesture
 import com.koodoreader.reader.shell.ReaderGestureCodec
+import com.koodoreader.reader.shell.ReaderGestureMetrics
 import com.koodoreader.reader.shell.ReaderGestureRuntime
 import com.koodoreader.reader.shell.ReaderPageGestures
 import com.koodoreader.reader.shell.ReaderPageTurn
@@ -194,6 +200,8 @@ import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.component.ErrorState
+import com.koodoreader.core.ui.component.SelectionCountBadge
+import com.koodoreader.core.ui.component.selectionCharacterCount
 import com.koodoreader.core.ui.component.koodoPressScale
 import com.koodoreader.core.ui.theme.KoodoChipShape
 import com.koodoreader.core.ui.theme.KoodoMotion
@@ -231,7 +239,17 @@ fun NativeEpubScreen(
     )
     val chromeState by chromeViewModel.state.collectAsStateWithLifecycle()
     val contentInsets = rememberReaderContentInsets()
+    // Display density: converts the reader's sp/dp typography defaults into
+    // the pixel values the layout engine and the CSS injection need.
+    val density = LocalDensity.current.density
     val horizontalMarginPx = with(LocalDensity.current) { chromeState.horizontalMarginDp.dp.roundToPx() }
+    // The reader-page theme lives here (early in the composable) because the
+    // highlight painters below need to know whether the page is dark: the
+    // 30%-alpha highlight tints are chosen per mode so a yellow band stays
+    // visible on a night page.
+    val appearancePrefs = remember(context) { ShellAppearancePrefs(context) }
+    DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
+    val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
     val book by viewModel.book(bookKey).collectAsStateWithLifecycle(initialValue = null)
     // 阅读进度（bookKey → 位置 CFI）：非 Room 键值存储，schema.lock 五表保持干净。
     val progressPrefs = remember(context) { ReaderProgressPrefs(context) }
@@ -258,6 +276,11 @@ fun NativeEpubScreen(
         commitFeatures(features.copy(fontScale = v.coerceIn(ReaderFeatureCodec.FONT_SCALE_MIN, ReaderFeatureCodec.FONT_SCALE_MAX)))
     }
     val fontScale = features.fontScale
+    val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
+    // Whether the reader PAGE is dark. The highlight painters need this: a
+    // 30%-alpha yellow over a near-black page is nearly invisible, so the
+    // dark-mode tint table is applied instead.
+    val readerPageIsDark = readerScheme.background.luminance() < 0.5f
     DisposableEffect(featurePrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             features = featurePrefs.load()
@@ -287,6 +310,9 @@ fun NativeEpubScreen(
     var foliateReady by remember { mutableStateOf(false) }
     var foliateSearchHits by remember { mutableStateOf<List<FoliateHostBridge.SearchHit>>(emptyList()) }
     var selectionExcerpt by remember { mutableStateOf("") }
+    // Live character count of the selection while a handle is being dragged.
+    // 0 = no live selection (the badge is hidden).
+    var selectionCharCount by remember { mutableStateOf(0) }
     var selectionCfi by remember { mutableStateOf("") }
     var showSelectionMenu by remember { mutableStateOf(false) }
     var footnoteText by remember { mutableStateOf<String?>(null) }
@@ -364,19 +390,25 @@ fun NativeEpubScreen(
                     }
                     MotionEvent.ACTION_UP -> {
                         val gestureCfg = ReaderGestureRuntime.config
-                        val edge = ReaderGestureCodec.clampedTapEdge(gestureCfg)
-                        val tap = ReaderPageGestures.tapIfNotDrag(
-                            downX,
-                            downY,
-                            event.x,
-                            event.y,
-                            v.width.toFloat(),
-                            edgeFraction = edge,
+                        val density = v.resources.displayMetrics.density
+                        val tap = ReaderPageGestures.tapAtIfNotDrag(
+                            downX = downX,
+                            downY = downY,
+                            upX = event.x,
+                            upY = event.y,
+                            widthPx = v.width.toFloat(),
+                            heightPx = v.height.toFloat(),
+                            slopPx = ReaderGestureMetrics.tapSlopPx(density),
+                            layout = gestureCfg.tapZoneLayout,
+                            forwardRatio = ReaderGestureCodec.clampedTapEdge(gestureCfg),
+                            backwardRatio = ReaderGestureCodec.clampedTapBack(gestureCfg),
+                            mirrored = v.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL,
                         )
                         val swipe = if (tap == null) {
                             ReaderPageGestures.onHorizontalSwipe(
-                                event.x - downX,
-                                event.y - downY,
+                                dx = event.x - downX,
+                                dy = event.y - downY,
+                                minDx = ReaderGestureMetrics.swipeMinPx(density),
                                 enabled = gestureCfg.swipePageTurn,
                             )
                         } else {
@@ -395,7 +427,13 @@ fun NativeEpubScreen(
                 }
                 false
             }
-            onDispose { view.setOnTouchListener(null) }
+            // Android 10+ edge-back would otherwise swallow the left page-turn band.
+            val exclusion = com.koodoreader.reader.shell.ReaderGestureExclusion.install(view)
+            onDispose {
+                view.removeOnLayoutChangeListener(exclusion)
+                com.koodoreader.reader.shell.ReaderGestureExclusion.clear(view)
+                view.setOnTouchListener(null)
+            }
         }
     }
     // 会话按 (文件, 格式, 视口, 字号) 重建：尺寸/字号变化时重新分页。
@@ -483,13 +521,17 @@ fun NativeEpubScreen(
                         density,
                         FontManager.typefaceFor(context, features.fontKey.ifBlank { null }),
                     ),
-                    options = PaginatorOptions(
-                        columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
+                    options = ReaderTypography.paginatorOptions(
+                        density = density,
+                        fontScale = features.fontScale,
                         fontSizePx = ReaderFeatureCodec.fontSizePx(features),
                         lineHeightMultiple = ReaderFeatureCodec.clampedLineHeight(features),
                         marginHorizontalPx = margin,
                         marginVerticalPx = margin,
-                        paraSpacingPx = ReaderFeatureCodec.clampedParagraphSpacing(features),
+                        columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
+                        explicitParagraphSpacingPx =
+                            ReaderFeatureCodec.clampedParagraphSpacing(features),
+                        firstLineIndent = chromeState.firstLineIndent,
                     ),
                     progressiveEpub = fmt.equals("epub", ignoreCase = true),
                 )
@@ -787,7 +829,11 @@ fun NativeEpubScreen(
             val cfi = note.cfi ?: return@mapNotNull null
             val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
             val line = layout.lineAt(pos) ?: return@mapNotNull null
-            if (line.page == currentPage) line.blockIndex to HighlightPalette.paintArgb(note.color) else null
+            if (line.page == currentPage) {
+                line.blockIndex to HighlightPalette.paintArgb(note.color, readerPageIsDark)
+            } else {
+                null
+            }
         }.toMap()
     }
 
@@ -916,6 +962,9 @@ fun NativeEpubScreen(
     }
     var showDictDialog by remember { mutableStateOf(false) }
     var dictResultText by remember { mutableStateOf("") }
+    /** The word the current popup is about, and whether it is in the word list. */
+    var dictHeadword by remember { mutableStateOf("") }
+    var dictSaved by remember { mutableStateOf(false) }
     // 翻译弹窗（P6 feature/translate）：弹窗本身 stateless，这里是选词源宿主。
     // 控制器持有加密凭据库 + 历史库，选词菜单一键触发翻译。
     val translateController = rememberTranslationPopupController(context)
@@ -1077,7 +1126,7 @@ fun NativeEpubScreen(
         return selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
     }
 
-    fun highlightCss(color: Long): String = HighlightPalette.readerCss(color)
+    fun highlightCss(color: Long): String = HighlightPalette.readerCss(color, readerPageIsDark)
 
     fun saveHighlight(colorIdx: Int = 0) {
         val excerpt = currentSelectionText().trim()
@@ -1164,6 +1213,8 @@ fun NativeEpubScreen(
 
     fun lookupDictionary() {
         val word = currentSelectionText().trim().takeIf { it.isNotEmpty() } ?: return
+        dictHeadword = word
+        dictSaved = false
         readerScope.launch {
             val lookup = withContext(Dispatchers.IO) {
                 com.koodoreader.reader.reader.ReaderDictionaryLookup.lookup(dictRepo, word)
@@ -1300,6 +1351,20 @@ fun NativeEpubScreen(
         return LayoutSelection.globalOffsetAt(layout, currentPage, offset.x, offset.y, selectionMeasurePaint)
     }
 
+    /**
+     * The character count of the *current* selection range, computed live from
+     * the layout (the controller only stores offsets, not the text).
+     */
+    fun liveSelectionCharCount(): Int {
+        val sel = selectionController.state
+        val start = minOf(sel.start, sel.end)
+        val end = maxOf(sel.start, sel.end)
+        if (start < 0 || end <= start) return 0
+        val s = session ?: return 0
+        val layout = s.layoutResult() ?: return 0
+        return selectionCharacterCount(LayoutSelection.excerptBetween(layout, currentPage, start, end))
+    }
+
     fun commitTextSelection() {
         val sel = selectionController.state
         val start = minOf(sel.start, sel.end)
@@ -1351,10 +1416,6 @@ fun NativeEpubScreen(
     // （settings-page spec §8.3）——取「外观」设置选定的 ThemeKind 预设，
     // 未设置的默认预设 = 白底黑字（与桌面 themeUtil 默认一致）。
     // Canvas 的 DrawScope lambda 不是 composable 上下文，不能直接读 MaterialTheme。
-    val appearancePrefs = remember(context) { ShellAppearancePrefs(context) }
-    DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
-    val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
-    val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
     val bgColor = readerScheme.background
     val fgColor = readerScheme.onBackground
     val foliateFontDecl = remember(context, features.fontKey) {
@@ -1375,6 +1436,7 @@ fun NativeEpubScreen(
             extraUserStylesheet = foliateFontDecl?.css.orEmpty(),
             horizontalMarginPx = horizontalMarginPx,
             firstLineIndent = chromeState.firstLineIndent,
+            density = density,
         )
     }
     LaunchedEffect(useFoliate, foliateReady, viewSettings) {
@@ -1408,15 +1470,18 @@ fun NativeEpubScreen(
         } ?: ""
     }
 
-    val canvasLayoutOptions = remember(features) {
+    val canvasLayoutOptions = remember(features, density, chromeState.firstLineIndent) {
         val margin = ReaderFeatureCodec.clampedMargin(features)
-        PaginatorOptions(
-            columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
+        ReaderTypography.paginatorOptions(
+            density = density,
+            fontScale = features.fontScale,
             fontSizePx = ReaderFeatureCodec.fontSizePx(features),
             lineHeightMultiple = ReaderFeatureCodec.clampedLineHeight(features),
             marginHorizontalPx = margin,
             marginVerticalPx = margin,
-            paraSpacingPx = ReaderFeatureCodec.clampedParagraphSpacing(features),
+            columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
+            explicitParagraphSpacingPx = ReaderFeatureCodec.clampedParagraphSpacing(features),
+            firstLineIndent = chromeState.firstLineIndent,
         )
     }
 
@@ -1549,7 +1614,20 @@ fun NativeEpubScreen(
                 // Canvas（原来唯一设置 viewport 的地方）只在 session 非空时才
                 // 组合——挂在 Canvas 上是鸡生蛋死锁，首帧后永远空白。挂在
                 // 常驻的 Box 上，任何分支都能拿到尺寸并触发重组。
-                .onSizeChanged { viewport = it },
+                .onSizeChanged { size ->
+                    // The pagination engine derives the page height from the
+                    // viewport. The window is edge-to-edge, so the raw size
+                    // would let the last line of every page be laid out under
+                    // the navigation bar. Subtracting the immersive insets
+                    // keeps the page break and the drawn text in agreement.
+                    val (w, h) = ReaderContentInsetPolicy.contentSize(
+                        size.width,
+                        size.height,
+                        contentInsets.topPx,
+                        contentInsets.bottomPx,
+                    )
+                    viewport = IntSize(w, h)
+                },
         ) {
             when {
                 useFoliate && book == null -> Unit
@@ -1621,6 +1699,8 @@ fun NativeEpubScreen(
                         scrolled = features.scrolled,
                         fontScale = fontScale,
                         layoutOptions = canvasLayoutOptions,
+                        readerPageIsDark = readerPageIsDark,
+                        contentInsets = contentInsets,
                         annotationStore = nativeAnnotationStore ?: NoOpAnnotationStore,
                         notesForHighlights = bookNotes,
                         control = textReaderControl,
@@ -1698,7 +1778,18 @@ fun NativeEpubScreen(
                         retryText = t("Retry"),
                     )
                 }
-                else -> Box(Modifier.fillMaxSize()) {
+                else -> Box(
+                    Modifier
+                        .fillMaxSize()
+                        // Immersive margins: status bar + 8dp above, gesture
+                        // bar + 16dp below. The engine already reserved this
+                        // room (see the viewport calculation), so the text
+                        // lands exactly where the page break says it does.
+                        .padding(
+                            top = contentInsets.top,
+                            bottom = contentInsets.bottom,
+                        ),
+                ) {
                     if (expandingEpub) {
                         Surface(
                             modifier = Modifier
@@ -1736,7 +1827,11 @@ fun NativeEpubScreen(
                             val cfi = note.cfi ?: return@mapNotNull null
                             val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
                             val line = layout.lineAt(pos) ?: return@mapNotNull null
-                            if (line.page == page) line.blockIndex to HighlightPalette.paintArgb(note.color) else null
+                            if (line.page == page) {
+                        line.blockIndex to HighlightPalette.paintArgb(note.color, readerPageIsDark)
+                    } else {
+                        null
+                    }
                         }.toMap()
                     }
                     Canvas(
@@ -1748,17 +1843,25 @@ fun NativeEpubScreen(
                                         onDrag = { change, _ ->
                                             selectionOffsetAt(change.position)?.let {
                                                 selectionController.moveEnd(it)
+                                                // Live character count: the
+                                                // user watches the number grow
+                                                // as the handle moves instead of
+                                                // having to release and reopen
+                                                // the sheet to find out.
+                                                selectionCharCount = liveSelectionCharCount()
                                             }
                                         },
                                         onDragEnd = {
                                             extendingSelection = false
                                             selectionController.finish()
                                             commitTextSelection()
+                                            selectionCharCount = 0
                                             showSelectionMenu = true
                                         },
                                         onDragCancel = {
                                             extendingSelection = false
                                             selectionController.cancel()
+                                            selectionCharCount = 0
                                         },
                                     )
                                 }
@@ -1927,6 +2030,16 @@ fun NativeEpubScreen(
         delay(MotionTokens.HINT.toLong())
         chapterTipVisible = false
     }
+    // Live selection counter, shown while a selection handle is dragged.
+    // Sits at the bottom centre, clear of the drag finger.
+    SelectionCountBadge(
+        visible = selectionCharCount > 0,
+        characterCount = selectionCharCount,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = SpaceTokens.xl.dp),
+    )
+
     AnimatedVisibility(
         visible = chapterTipVisible,
         enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)),
@@ -2068,7 +2181,32 @@ fun NativeEpubScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showDictDialog = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (dictHeadword.isNotBlank()) {
+                        TextButton(
+                            enabled = !dictSaved,
+                            onClick = {
+                                dictSaved = true
+                                val entry = dictHeadword
+                                val sentence = currentSelectionText().trim()
+                                readerScope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        WordBank.add(
+                                            db = db,
+                                            bookKey = bookKey,
+                                            word = entry,
+                                            sentence = sentence,
+                                        )
+                                    }
+                                }
+                            },
+                            modifier = Modifier.koodoPressScale(),
+                        ) {
+                            Text(t(if (dictSaved) "Saved" else "Save to word list"))
+                        }
+                    }
+                    TextButton(onClick = { showDictDialog = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
+                }
             },
         )
     }
@@ -2409,7 +2547,7 @@ fun NativeEpubScreen(
                         val cfi = note.cfi
                         if (useFoliate && !cfi.isNullOrBlank()) {
                             withContext(Dispatchers.IO) {
-                                runCatching { foliateBridge?.addHighlight(cfi, HighlightPalette.readerCss(color)) }
+                                runCatching { foliateBridge?.addHighlight(cfi, HighlightPalette.readerCss(color, readerPageIsDark)) }
                             }
                         }
                     }
@@ -2466,7 +2604,10 @@ private fun DrawScope.drawLayoutLine(
 ) {
     // 高亮背景色（使用笔记存储的颜色，默认半透明黄）
     if (line.blockIndex in highlightColors && line.imageSrc == null) {
-        val color = HighlightPalette.paintArgb(highlightColors[line.blockIndex])
+        // The map already holds the final ARGB (the mode-aware tint and the
+        // 30% alpha were applied where the map was built) — re-applying the
+        // alpha here would double it.
+        val color = highlightColors[line.blockIndex] ?: 0L
         val canvas = drawContext.canvas.nativeCanvas
         val bg = android.graphics.Paint()
         bg.color = color.toInt()
@@ -2506,7 +2647,21 @@ private fun DrawScope.drawLayoutLine(
         }
         paint.isFakeBoldText = false
     } else {
-        canvas.drawText(line.text, line.x, line.baselineY, paint)
+        // Drawn through the shared renderer so the glyphs land exactly where
+        // the engine measured them: the same letter spacing, and the same
+        // justification slack. `Canvas.drawText` alone would apply neither,
+        // so a justified Chinese column would never reach the right edge.
+        TextLineRenderer.drawLine(
+            canvas = canvas,
+            text = line.text,
+            x = line.x,
+            baselineY = line.baselineY,
+            paint = paint,
+            letterSpacingPx = line.letterSpacingPx,
+            stretchPx = line.justifyStretchPx,
+            wordGaps = line.wordGaps,
+            ideographGaps = line.ideographGaps,
+        )
     }
 }
 

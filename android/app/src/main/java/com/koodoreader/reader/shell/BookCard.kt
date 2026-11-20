@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.koodoreader.core.data.entity.BookEntity
 import com.koodoreader.core.ui.component.BookCardModel
+import com.koodoreader.core.ui.component.KoodoBookCardShape
 import com.koodoreader.core.ui.component.KoodoBookCard
 import com.koodoreader.core.ui.component.KoodoBookRow
 import kotlinx.coroutines.Dispatchers
@@ -52,12 +53,16 @@ import kotlinx.coroutines.withContext
  * No business logic lives in this file; the placeholder palette it used to
  * define moved to `ColorTokens.COVER_PLACEHOLDERS`.
  */
-private fun BookEntity.toCardModel(isFavorite: Boolean) = BookCardModel(
+private fun BookEntity.toCardModel(
+    isFavorite: Boolean,
+    progressFraction: Float? = null,
+) = BookCardModel(
     title = name.orEmpty(),
     author = author,
     formatLabel = format?.uppercase(),
     coverSeed = key,
     isFavorite = isFavorite,
+    progressFraction = progressFraction,
 )
 
 /** Grid tile (view mode = grid). */
@@ -75,12 +80,14 @@ fun BookCard(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
+    /** Reading progress 0..1; shown as a badge on the cover. */
+    progressFraction: Float? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val coverState = rememberCoverState(book.cover, book.key, coverVersion)
     KoodoBookCard(
-        model = book.toCardModel(isFavorite),
+        model = book.toCardModel(isFavorite, progressFraction),
         cover = (coverState as? CoverState.Ready)?.painter,
         coverLoading = coverState is CoverState.Loading,
         selectionActive = selectionActive,
@@ -132,10 +139,13 @@ fun BookCard(
         },
         modifier = modifier.then(
             if (selected) {
+                // The selection ring follows the CARD's 12dp radius: a ring
+                // with different corners than the object it outlines reads as
+                // a misalignment, not as a selection.
                 Modifier.border(
                     2.dp,
                     MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(8.dp),
+                    KoodoBookCardShape,
                 )
             } else {
                 Modifier
@@ -159,13 +169,15 @@ fun BookListRow(
     onToggleSelection: () -> Unit = {},
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
+    /** Reading progress 0..1; shown as a badge on the cover. */
+    progressFraction: Float? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val hasMenu = onToggleFavorite != null || onMoveToTrash != null || onAddToShelf != null ||
         onShowDetails != null
     val coverState = rememberCoverState(book.cover, book.key, coverVersion)
     KoodoBookRow(
-        model = book.toCardModel(isFavorite),
+        model = book.toCardModel(isFavorite, progressFraction),
         cover = (coverState as? CoverState.Ready)?.painter,
         coverLoading = coverState is CoverState.Loading,
         selectionActive = selectionActive,
@@ -219,7 +231,7 @@ fun BookListRow(
                 Modifier.border(
                     2.dp,
                     MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(8.dp),
+                    KoodoBookCardShape,
                 )
             } else {
                 Modifier

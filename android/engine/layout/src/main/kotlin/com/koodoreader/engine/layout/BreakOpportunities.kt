@@ -76,6 +76,28 @@ fun breakEnds(text: String, wordBreak: WordBreak): IntArray {
 }
 
 /**
+ * Counts the gaps **between two ideographs** inside `text[start..end)`.
+ *
+ * These are the gaps that inter-ideograph justification stretches. Chinese
+ * text has no word gaps, so this is the only kind of gap available to
+ * distribute the leftover width of a justified Chinese line.
+ *
+ * The count is of *gaps*, so a run of N ideographs yields N-1 gaps.
+ *
+ * @return the number of adjacent ideograph pairs in the range.
+ */
+fun countIdeographGaps(text: String, start: Int, end: Int): Int {
+    val from = start.coerceIn(0, text.length)
+    val to = end.coerceIn(from, text.length)
+    if (to - from < 2) return 0
+    var count = 0
+    for (i in from until to - 1) {
+        if (isIdeograph(text[i]) && isIdeograph(text[i + 1])) count++
+    }
+    return count
+}
+
+/**
  * Trim the trailing whitespace of a line, since the browser moves a line-ending
  * space to the next line and drops it there.
  *

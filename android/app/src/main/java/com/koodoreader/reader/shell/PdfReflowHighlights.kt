@@ -9,7 +9,11 @@ import org.json.JSONObject
 /** Persistent highlight overlays inside the PDF reflow WebView (document pixel space). */
 object PdfReflowHighlights {
 
-    fun jsonForPage(notes: List<NoteEntity>, page: Int): String {
+    /**
+     * @param dark whether the reader page is in dark mode — selects the
+     *   highlight tint so the 30%-alpha band stays visible on a night page.
+     */
+    fun jsonForPage(notes: List<NoteEntity>, page: Int, dark: Boolean = false): String {
         val arr = JSONArray()
         notes.forEach { note ->
             val range = note.cfi?.let(CfiPdfMapper::parse)
@@ -22,7 +26,7 @@ object PdfReflowHighlights {
                     .put("t", range.y.toDouble())
                     .put("w", range.width.toDouble())
                     .put("h", range.height.toDouble())
-                    .put("c", HighlightPalette.readerCss(note.color)),
+                    .put("c", HighlightPalette.readerCss(note.color, dark)),
             )
         }
         return arr.toString()

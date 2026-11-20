@@ -75,13 +75,24 @@ class ThemePresetTest {
     // ─── Night preset ────────────────────────────────────────────────────────
 
     @Test
-    fun `NIGHT preset backgroundColor matches themeList backgroundList 1`() {
-        assertEquals("rgba(44, 47, 49,1)", ThemeSpec.NIGHT_PRESET.backgroundColor)
+    fun `NIGHT preset background is a dark grey, not pure black`() {
+        // #121212 rather than the desktop's #2C2F31 / pure black: a pure-black
+        // page next to a bright page smears the glyph edges (halation), which
+        // is exactly what a night theme exists to avoid.
+        assertEquals("rgba(18, 18, 18,1)", ThemeSpec.NIGHT_PRESET.backgroundColor)
     }
 
     @Test
-    fun `NIGHT preset foregroundColor matches themeList textList 1`() {
-        assertEquals("rgba(255,255,255,1)", ThemeSpec.NIGHT_PRESET.foregroundColor)
+    fun `NIGHT preset foreground is a dimmed off-white, not pure white`() {
+        // Full-brightness #FFFFFF on a dark field is the other half of the
+        // halation problem; #D8D6D1 keeps the contrast without the glare.
+        assertEquals("rgba(216, 214, 209,1)", ThemeSpec.NIGHT_PRESET.foregroundColor)
+    }
+
+    @Test
+    fun `NIGHT preset is not pure black on pure white`() {
+        assertTrue(ThemeSpec.NIGHT_PRESET.backgroundColor != "rgba(0,0,0,1)")
+        assertTrue(ThemeSpec.NIGHT_PRESET.foregroundColor != "rgba(255,255,255,1)")
     }
 
     @Test
@@ -160,13 +171,73 @@ class ThemePresetTest {
     // ─── ThemeKind enum values ───────────────────────────────────────────────
 
     @Test
-    fun `ThemeKind has exactly four values`() {
-        assertEquals(4, ThemeKind.entries.size)
+    fun `ThemeKind has exactly six values`() {
+        // DEFAULT, PROTECT_EYE, NIGHT, PAPER, SEPIA, CUSTOM
+        assertEquals(6, ThemeKind.entries.size)
     }
 
     @Test
     fun `ThemeKind CUSTOM is distinct from presets`() {
         val kinds = ThemeKind.entries.toSet()
         assertTrue(kinds.containsAll(listOf(ThemeKind.DEFAULT, ThemeKind.PROTECT_EYE, ThemeKind.NIGHT, ThemeKind.CUSTOM)))
+    }
+
+    // ─── Native-only paper presets ──────────────────────────────────────────
+
+    @Test
+    fun `PAPER preset is a warm cream page with brown ink`() {
+        assertEquals("rgba(233, 216, 188,1)", ThemeSpec.PAPER_PRESET.backgroundColor)
+        assertEquals("rgba(58, 42, 28,1)", ThemeSpec.PAPER_PRESET.foregroundColor)
+    }
+
+    @Test
+    fun `SEPIA preset is a warm page with brown ink`() {
+        assertEquals("rgba(244, 236, 216,1)", ThemeSpec.SEPIA_PRESET.backgroundColor)
+        assertEquals("rgba(61, 46, 30,1)", ThemeSpec.SEPIA_PRESET.foregroundColor)
+    }
+
+    @Test
+    fun `ALL_PRESETS contains the desktop three plus the two paper presets`() {
+        assertEquals(5, ThemeSpec.ALL_PRESETS.size)
+        assertEquals(
+            listOf(
+                ThemeKind.DEFAULT,
+                ThemeKind.PROTECT_EYE,
+                ThemeKind.NIGHT,
+                ThemeKind.PAPER,
+                ThemeKind.SEPIA,
+            ),
+            ThemeSpec.ALL_PRESETS.map { it.kind },
+        )
+    }
+
+    @Test
+    fun `BUILT_IN_PRESETS stays at three so the desktop wire indices do not shift`() {
+        // The desktop stores the preset by INDEX; appending to this list would
+        // silently re-theme every book on every other device.
+        assertEquals(3, ThemeSpec.BUILT_IN_PRESETS.size)
+    }
+
+    @Test
+    fun `every preset meets WCAG AA for body text`() {
+        for (preset in ThemeSpec.ALL_PRESETS) {
+            val bg = CssColor.parse(preset.backgroundColor)
+            val fg = CssColor.parse(preset.foregroundColor)
+            val ratio = Contrast.ratio(bg, fg)
+            assertTrue(
+                ratio >= Contrast.TEXT_MIN_RATIO,
+                "${preset.name} contrast ${ratio} < ${Contrast.TEXT_MIN_RATIO}",
+            )
+        }
+    }
+
+    @Test
+    fun `no preset uses a pure black background or a pure white foreground`() {
+        for (preset in ThemeSpec.ALL_PRESETS) {
+            assertTrue(
+                preset.backgroundColor != "rgba(0,0,0,1)",
+                "${preset.name} uses a pure black background",
+            )
+        }
     }
 }

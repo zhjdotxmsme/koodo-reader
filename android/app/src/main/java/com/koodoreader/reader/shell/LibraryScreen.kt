@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -141,6 +142,13 @@ fun LibraryScreen(
     var draggingKey by remember { mutableStateOf<String?>(null) }
 
     val loadError by viewModel.loadError.collectAsStateWithLifecycle()
+    // Reading progress per book, for the cover badge. Read once per library
+    // load: the fractions change as the user reads, and the library is not
+    // on screen then, so there is no need to observe them live here.
+    val progressFractions = remember(books) {
+        val prefs = ReaderProgressPrefs(context)
+        books.associate { book -> book.key to prefs.fractionOf(book.key).toFloat() }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showFailureDialog by remember { mutableStateOf(false) }
@@ -154,11 +162,16 @@ fun LibraryScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            // The selection bar enters and leaves symmetrically: 200ms of
+            // fade + a half-height slide. An asymmetric exit (fade only)
+            // makes the bar feel like it is being torn off rather than
+            // dismissed.
             AnimatedVisibility(
                 visible = selection.active,
                 enter = fadeIn(tween(MotionTokens.NORMAL, easing = KoodoMotion.Emphasized)) +
-                    slideInVertically(tween(MotionTokens.NORMAL)) { -it / 2 },
-                exit = fadeOut(tween(MotionTokens.FAST)),
+                    slideInVertically(tween(MotionTokens.NORMAL, easing = KoodoMotion.Decelerate)) { -it / 2 },
+                exit = fadeOut(tween(MotionTokens.NORMAL, easing = KoodoMotion.Accelerate)) +
+                    slideOutVertically(tween(MotionTokens.NORMAL, easing = KoodoMotion.Accelerate)) { -it / 2 },
             ) {
                 TopAppBar(
                     modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
@@ -450,11 +463,14 @@ fun LibraryScreen(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 112.dp),
                     modifier = Modifier.fillMaxSize(),
+                    // Grid metrics: 16dp screen margin, 12dp between
+                    // columns, 16dp between rows (a cover is a tall block, so
+                    // rows need more separation than columns).
                     contentPadding = PaddingValues(
                         start = SpaceTokens.SCREEN_HORIZONTAL.dp,
                         end = SpaceTokens.SCREEN_HORIZONTAL.dp,
-                        top = SpaceTokens.md.dp,
-                        bottom = SpaceTokens.md.dp,
+                        top = SpaceTokens.lg.dp,
+                        bottom = SpaceTokens.lg.dp,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),
                     verticalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_VERTICAL.dp),
@@ -476,6 +492,7 @@ fun LibraryScreen(
                             selectionActive = selection.active,
                             selected = book.key in selection.selected,
                             onToggleSelection = { viewModel.toggleSelection(book.key) },
+                            progressFraction = progressFractions[book.key],
                             onClick = {
                                 viewModel.markRecentOpened(book.key)
                                 onOpenBook(book.key)
@@ -533,6 +550,7 @@ fun LibraryScreen(
                                 selectionActive = selection.active,
                                 selected = book.key in selection.selected,
                                 onToggleSelection = { viewModel.toggleSelection(book.key) },
+                                progressFraction = progressFractions[book.key],
                                 onClick = {
                                     viewModel.markRecentOpened(book.key)
                                     onOpenBook(book.key)

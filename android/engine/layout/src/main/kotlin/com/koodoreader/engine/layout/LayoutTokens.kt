@@ -1,5 +1,7 @@
 package com.koodoreader.engine.layout
 
+import com.koodoreader.core.designsystem.CjkColumn
+
 /**
  * CSS `text-align` values the desktop reader exposes.
  *
@@ -53,6 +55,41 @@ enum class OverflowWrap {
 }
 
 /**
+ * How a justified line distributes its leftover width.
+ *
+ * CSS defines two relevant behaviours, and the difference matters enormously
+ * for Chinese text.
+ *
+ * ## [SPACES] — the CSS default
+ *
+ * The leftover width is spread over the **word gaps** (the spaces between
+ * words). A line with no spaces — which is every line of Chinese text, unless
+ * the author typed spaces — has nothing to stretch, so it stays ragged.
+ *
+ * ## [INTER_IDEOGRAPH] — what a Chinese book does
+ *
+ * The leftover width is spread over the **gaps between characters**. Chinese
+ * is written without spaces, so the only way to reach a flush right edge is
+ * to widen the inter-character spacing. This is what CSS calls
+ * `text-justify: inter-ideograph`, and it is what every Chinese book and
+ * every serious Chinese reader does.
+ *
+ * The stretch is applied to the character gaps only, never *inside* a word —
+ * a Latin word inside a Chinese sentence keeps its natural advance, and the
+ * slack goes to the ideographs around it.
+ */
+enum class TextJustify {
+    /** Spread the slack over word gaps only (the CSS default). */
+    SPACES,
+
+    /**
+     * Spread the slack over the gaps between characters, preferring the word
+     * gaps when the line has any (so a Latin word is never broken apart).
+     */
+    INTER_IDEOGRAPH,
+}
+
+/**
  * The layout inputs, aligned with the desktop reader settings.
  *
  * Every value is a **pixel** value at the device density: the settings layer
@@ -80,6 +117,42 @@ data class LayoutTokens(
     val textAlign: TextAlign = TextAlign.DEFAULT,
     val wordBreak: WordBreak = WordBreak.NORMAL,
     val overflowWrap: OverflowWrap = OverflowWrap.BREAK_WORD,
+    /**
+     * How a justified line distributes its leftover width.
+     *
+     * [TextJustify.INTER_IDEOGRAPH] is what the native reader uses: Chinese
+     * text has no word gaps, so without it a justified Chinese column stays
+     * ragged and the whole point of justification is lost.
+     */
+    val textJustify: TextJustify = TextJustify.SPACES,
+    /**
+     * Quantise the text column to a whole number of character cells.
+     *
+     * ## Why
+     *
+     * CJK glyphs sit on a fixed em grid: every character occupies exactly one
+     * em. When the column width is not a whole multiple of the em, each line
+     * ends with a few pixels of slack, and the justification engine has to
+     * distribute that slack into the gaps between glyphs. The result is the
+     * "假字距" problem — the letter spacing visibly changes from line to line,
+     * which is the single most common reason a Chinese page looks typeset by
+     * an amateur.
+     *
+     * KOReader solves the same problem with its `cjk-tailored` hint, which
+     * tailors the paragraph width and the text indent to a whole multiple of
+     * the font size precisely so that justification needs no extra gaps.
+     *
+     * ## The trade
+     *
+     * The column can end up nearly one character narrower than the space
+     * available. The leftover is split evenly between the two margins, so the
+     * text stays centred and the difference is not perceptible.
+     *
+     * Off by default: it is only correct for a script whose glyphs are exactly
+     * one em wide, and it changes the page geometry, so it is the reader's
+     * decision (and the app's) to switch it on.
+     */
+    val quantizeColumnToCells: Boolean = false,
 ) {
     init {
         require(viewportWidthPx > 0f) { "viewportWidthPx must be > 0 (was $viewportWidthPx)" }
@@ -110,14 +183,52 @@ data class LayoutTokens(
     fun columnWidthPx(columns: Int): Float {
         val n = columns.coerceAtLeast(1)
         val gaps = if (n > 1) (n - 1) * columnGapPx else 0f
-        return ((contentWidthPx - gaps) / n).coerceAtLeast(1f)
+        val raw = ((contentWidthPx - gaps) / n).coerceAtLeast(1f)
+        if (!quantizeColumnToCells) return raw
+        // A whole number of character cells, so that justification never has
+        // to stretch the gaps between glyphs. The leftover is split evenly
+        // between the two margins by `columnInsetPx`, which keeps the text
+        // centred in the available space.
+        // The maths lives in ONE place: `CjkColumn` in the token layer. A
+        // second copy here is how the quantised column and the column the
+        // engine paginates for would drift apart.
+        return CjkColumn.fit(
+            availablePx = raw,
+            fontSizePx = fontSizePx,
+            letterSpacingPx = letterSpacingPx,
+            minCells = MIN_QUANTISED_CELLS,
+        ).widthPx.coerceAtLeast(1f)
+    }
+
+    /**
+     * The horizontal inset a quantised column adds on **each** side.
+     *
+     * Zero when the column is not quantised, and zero when it divides exactly
+     * — the text is simply centred in whatever space is left over.
+     */
+    fun columnInsetPx(columns: Int): Float {
+        if (!quantizeColumnToCells) return 0f
+        val n = columns.coerceAtLeast(1)
+        val gaps = if (n > 1) (n - 1) * columnGapPx else 0f
+        val raw = ((contentWidthPx - gaps) / n).coerceAtLeast(1f)
+        return ((raw - columnWidthPx(columns)) / 2f).coerceAtLeast(0f)
     }
 
     /** Left edge of column [index] (0-based) on a [columns]-wide page. */
     fun columnLeftPx(index: Int, columns: Int): Float =
-        marginHorizontalPx + index * (columnWidthPx(columns) + columnGapPx)
+        marginHorizontalPx +
+            columnInsetPx(columns) +
+            index * (columnWidthPx(columns) + columnGapPx)
 
     companion object {
+        /**
+         * The smallest number of character cells a quantised column may have.
+         *
+         * Below this the column would hold only a handful of characters, and
+         * quantising it would be worse than leaving it alone.
+         */
+        const val MIN_QUANTISED_CELLS = 4
+
         fun defaults(viewportWidthPx: Float, viewportHeightPx: Float): LayoutTokens =
             LayoutTokens(viewportWidthPx, viewportHeightPx)
     }

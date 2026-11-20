@@ -177,9 +177,20 @@ class LayoutEngineTest {
         )
         assertEquals(2, result.lineCount)
         assertEquals("abcdef", line(result, 0).text)
+        // 6 chars: 6×10 + 5×2 = 70 — the tracking sits BETWEEN characters,
+        // so a run of N is N×font + (N-1)×tracking.
         assertEquals(70f, line(result, 0).width, EPS)
         assertEquals("ghij", line(result, 1).text)
-        assertEquals(48f, line(result, 1).width, EPS) // 4×10 + 3×2
+        // 4 chars: 4×10 + 3×2 = 46.
+        //
+        // This used to assert 48 (N×cell). The comment in the original test
+        // said 46 — that was the intent, and the assertion did not match it:
+        // the width of a slice that starts in the middle of a block was one
+        // tracking value too wide, because the measurer's prefix difference
+        // counts the tracking that follows the slice's last character. The
+        // engine now subtracts it, so the measured width is the width the
+        // canvas actually draws.
+        assertEquals(46f, line(result, 1).width, EPS)
     }
 
     // ── pagination ──────────────────────────────────────────────────────────

@@ -39,4 +39,22 @@ data class KoodoSpacing(
 
     /** Default horizontal reader inset. */
     val readerHorizontalDefault: Dp = SpaceTokens.READER_HORIZONTAL_DEFAULT.dp,
+
+    /** Extra space between the status bar and the first body-text line. */
+    val readerTopExtra: Dp = SpaceTokens.READER_TOP_EXTRA.dp,
+
+    /** Extra space between the last body-text line and the navigation bar. */
+    val readerBottomExtra: Dp = SpaceTokens.READER_BOTTOM_EXTRA.dp,
+
+    /** Inset between the reader page and the navigation-bar gesture area. */
+    val readerNavBarClearance: Dp = SpaceTokens.READER_NAV_BAR_CLEARANCE.dp,
+
+    /** Horizontal padding inside a cover badge (format label / progress %). */
+    val badgeHorizontalPadding: Dp = SpaceTokens.BADGE_HORIZONTAL_PADDING.dp,
+
+    /** Vertical padding inside a cover badge. */
+    val badgeVerticalPadding: Dp = SpaceTokens.BADGE_VERTICAL_PADDING.dp,
+
+    /** Inset between a cover badge and the cover's edge. */
+    val badgeEdgeInset: Dp = SpaceTokens.BADGE_EDGE_INSET.dp,
 )

@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +62,16 @@ data class BookCardModel(
     /** Stable identity used to pick a placeholder colour. */
     val coverSeed: String,
     val isFavorite: Boolean = false,
+    /**
+     * Reading progress as a 0..1 fraction, or null when the book has not been
+     * opened yet.
+     *
+     * The card shows this as a percentage badge in the cover's bottom-right
+     * corner, so the user can see at a glance which books are half-read. The
+     * value is passed in rather than looked up, because `:core:ui` must not
+     * depend on the data layer.
+     */
+    val progressFraction: Float? = null,
 ) {
     /** `"Author · FORMAT"`, skipping blanks — the subtitle rule the library used. */
     val subtitle: String
@@ -103,13 +114,20 @@ fun KoodoBookCard(
     } else {
         Modifier
     }
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Box(modifier = modifier) {
         Column(
             modifier = clickableModifier
                 .koodoPressScale()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
-            Box {
+            Box(
+                // The cover is a physical object on a shelf: a 12dp radius and
+                // a soft contact shadow make it read as a book rather than as
+                // a coloured rectangle. The shadow is clipped to the same
+                // shape as the artwork, so the two edges are one line.
+                modifier = Modifier.bookCardShadow(KoodoBookCardShape, dark),
+            ) {
                 KoodoBookCover(
                     model = model,
                     cover = cover,
@@ -117,8 +135,29 @@ fun KoodoBookCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(COVER_ASPECT)
-                        .clip(KoodoCoverShape),
+                        .clip(KoodoBookCardShape),
                 )
+                // Format label, top-left: what kind of file this is, at a
+                // glance, without spending a line of text below the cover.
+                model.formatLabel?.takeIf { it.isNotBlank() }?.let { label ->
+                    CoverBadge(
+                        text = label,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(SpaceTokens.BADGE_EDGE_INSET.dp),
+                    )
+                }
+                // Reading progress, bottom-right: which books are half-read.
+                model.progressFraction
+                    ?.takeIf { it > 0f }
+                    ?.let { fraction ->
+                        CoverBadge(
+                            text = formatProgressBadge(fraction),
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(SpaceTokens.BADGE_EDGE_INSET.dp),
+                        )
+                    }
                 if (model.isFavorite) {
                     Icon(
                         imageVector = Icons.Filled.Star,
@@ -198,7 +237,7 @@ fun KoodoBookRow(
                 modifier = Modifier
                     .width(48.dp)
                     .aspectRatio(COVER_ASPECT)
-                    .clip(KoodoCoverShape),
+                    .clip(KoodoBookCardShape),
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(

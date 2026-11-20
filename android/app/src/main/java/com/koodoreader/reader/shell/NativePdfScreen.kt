@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.ActionMode
 import android.view.MotionEvent
 import android.webkit.WebViewClient
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import com.koodoreader.core.data.KoodoDatabaseProvider
@@ -159,6 +160,9 @@ fun NativePdfScreen(
     DisposableEffect(appearancePrefs) { onDispose { appearancePrefs.close() } }
     val readerThemeKind by appearancePrefs.readerThemeKindFlow.collectAsStateWithLifecycle()
     val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
+    // Whether the reader PAGE is dark — selects the highlight tint table so a
+    // 30%-alpha band stays visible on a night page.
+    val readerPageIsDark = readerScheme.background.luminance() < 0.5f
 
     val readerActivity = context as? android.app.Activity
     DisposableEffect(readerActivity) {
@@ -286,11 +290,12 @@ fun NativePdfScreen(
     }
     val reflowPaintSink = remember { ReflowPaintSink() }
     val reflowHighlightsJson = remember(annotationNotes, state.page) {
-        PdfReflowHighlights.jsonForPage(annotationNotes, state.page)
+        PdfReflowHighlights.jsonForPage(annotationNotes, state.page, readerPageIsDark)
     }
     val reflowCss = ReaderFeatureCodec.userStylesheet(
         features,
         firstLineIndent = chromeState.firstLineIndent,
+        density = LocalDensity.current.density,
     ) + "\nbody{line-height:${ReaderFeatureCodec.clampedLineHeight(features)};font-size:${ReaderFeatureCodec.fontSizePx(features)}px;margin:0;}"
     val currentReflowCss by rememberUpdatedState(reflowCss)
     val reflowWeb = remember(features.pdfReflow) {
@@ -694,7 +699,7 @@ fun NativePdfScreen(
                                     drawnWidthPx,
                                     drawnHeightPx,
                                 ) ?: return@mapNotNull null
-                                rect to HighlightPalette.paintArgb(note.color)
+                                rect to HighlightPalette.paintArgb(note.color, readerPageIsDark)
                             }
                         }
                         LaunchedEffect(pdfHighlights, features.pdfReflow) {

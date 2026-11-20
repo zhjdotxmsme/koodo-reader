@@ -54,6 +54,19 @@ internal object TextLayoutDraw {
             color = textColor.toArgb()
             textSize = line.fontSizePx
         }
-        canvas.drawText(line.text, line.x, line.baselineY, paint)
+        // Drawn through the shared renderer so the glyphs land exactly where
+        // the engine measured them: the same letter spacing, and the same
+        // justification slack. `Canvas.drawText` alone would apply neither.
+        TextLineRenderer.drawLine(
+            canvas = canvas,
+            text = line.text,
+            x = line.x,
+            baselineY = line.baselineY,
+            paint = paint,
+            letterSpacingPx = line.letterSpacingPx,
+            stretchPx = line.justifyStretchPx,
+            wordGaps = line.wordGaps,
+            ideographGaps = line.ideographGaps,
+        )
     }
 }

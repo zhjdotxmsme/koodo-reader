@@ -1,5 +1,7 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.core.designsystem.CjkTypography
+
 /**
  * Native reading typography + P6 enhancement switches.
  *
@@ -93,7 +95,6 @@ object ReaderFeatureCodec {
     const val SPEED_WPM_MIN = 100
     const val SPEED_WPM_MAX = 900
     const val SPEED_WPM_DEFAULT = 300
-    private const val PARAGRAPH_LINE_HEIGHT_FACTOR = 1.2f
 
     fun fromMap(map: Map<String, String>): ReaderFeatureState = ReaderFeatureState(
         fontScale = floatOf(map[KEY_FONT_SCALE], 1.0f),
@@ -152,20 +153,79 @@ object ReaderFeatureCodec {
         KEY_CUSTOM_BACKGROUND to state.customBackgroundArgb?.toString().orEmpty(),
     )
 
-    fun effectiveParagraphSpacingPx(state: ReaderFeatureState): Float {
+    /**
+     * The paragraph gap actually applied, in **dp**.
+     *
+     * This is the value the slider shows and the settings store persists — a
+     * display-independent number, so the same setting looks the same on a
+     * 2.0-density phone and a 3.5-density tablet. The two rendering tracks then
+     * convert it themselves: the native engine multiplies by density (see
+     * [effectiveParagraphSpacingPx]), the WebView uses it as CSS px, where one
+     * CSS px *is* one dp.
+     *
+     * When the user has not touched the control, the CJK default applies
+     * (10dp) — a fixed, comfortable gap between paragraphs. The older
+     * derivation (1.2 × the line height) grew with the font size and pushed
+     * paragraphs further apart the larger the text became, which is not what a
+     * reader wants.
+     */
+    fun effectiveParagraphSpacingDp(state: ReaderFeatureState): Float {
         val explicit = clampedParagraphSpacing(state)
-        return if (explicit > 0f) explicit
-        else fontSizePx(state) * clampedLineHeight(state) * PARAGRAPH_LINE_HEIGHT_FACTOR
+        return if (explicit > 0f) explicit else CjkTypography.PARAGRAPH_SPACING_DP
     }
+
+    /**
+     * The paragraph gap in **px** for the native layout engine.
+     *
+     * @param density display density, used to turn the dp setting into px.
+     */
+    fun effectiveParagraphSpacingPx(state: ReaderFeatureState, density: Float = 1f): Float =
+        effectiveParagraphSpacingDp(state) * density
+
+    /**
+     * The paragraph gap for the WebView track, in CSS px.
+     *
+     * CSS px and dp are the same unit inside a WebView, so this is the dp value
+     * unchanged — passing density-scaled px here (the old behaviour) made the
+     * same setting render three times wider in EPUB than in a TXT file on a
+     * 3× screen.
+     */
+    fun effectiveParagraphSpacingCssPx(state: ReaderFeatureState): Float =
+        effectiveParagraphSpacingDp(state)
 
     private fun cssPx(value: Float): String =
         if (value % 1f == 0f) value.toInt().toString() else "%.2f".format(java.util.Locale.US, value)
 
-    fun userStylesheet(state: ReaderFeatureState, firstLineIndent: Boolean = false): String {
+    /**
+     * The user stylesheet injected into the Foliate (WebView) track.
+     *
+     * The WebView track lays the book out in a real browser, so the same
+     * typography intent the native engine expresses in pixels has to be
+     * expressed here as CSS. The two must agree, otherwise the same book
+     * breaks its lines differently depending on which track renders it —
+     * which is exactly what [ReaderTypography] exists to prevent.
+     *
+     * @param state the reader's feature state (font scale, paragraph spacing).
+     * @param firstLineIndent whether to indent the first line of a paragraph.
+     * @param density display density, needed to convert sp of tracking into px.
+     */
+    fun userStylesheet(
+        state: ReaderFeatureState,
+        firstLineIndent: Boolean = false,
+        density: Float = 1f,
+    ): String {
         val custom = if (state.customBookCssEnabled) state.customBookCss.trim() else ""
-        val indent = if (firstLineIndent) "text-indent:2em !important;" else ""
-        val paragraph = "p{margin-bottom:${cssPx(effectiveParagraphSpacingPx(state))}px;$indent}"
-        return listOf(paragraph, custom).filter { it.isNotEmpty() }.joinToString("\n")
+        val base = ReaderTypography.userStylesheet(
+            density = density,
+            fontScale = state.fontScale,
+            firstLineIndent = firstLineIndent,
+            justify = true,
+            explicitParagraphSpacingPx = effectiveParagraphSpacingCssPx(state),
+        )
+        // A real newline between rule blocks. The previous "\\n" wrote a
+        // literal backslash-n into the stylesheet whenever custom CSS was
+        // enabled — a stray token between rules that WebKit swallows at best.
+        return listOf(base, custom).filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     fun fontSizePx(state: ReaderFeatureState): Float =

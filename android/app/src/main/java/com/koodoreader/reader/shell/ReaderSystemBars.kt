@@ -23,7 +23,22 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.koodoreader.core.ui.theme.LocalKoodoShellColorScheme
 
-data class ReaderContentInsets(val top: Dp, val bottom: Dp)
+/**
+ * The reader page's immersive insets.
+ *
+ * @property top clearance above the first body-text line (status bar + 8dp).
+ * @property bottom clearance below the last body-text line (gesture bar + 16dp).
+ * @property topPx / bottomPx the same values in pixels — the pagination
+ *   engine works in px, and the viewport it is given must already exclude the
+ *   insets, otherwise the last line of a page is laid out under the
+ *   navigation bar.
+ */
+data class ReaderContentInsets(
+    val top: Dp,
+    val bottom: Dp,
+    val topPx: Int = 0,
+    val bottomPx: Int = 0,
+)
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -36,7 +51,12 @@ fun rememberReaderContentInsets(): ReaderContentInsets {
         WindowInsets.navigationBarsIgnoringVisibility.getBottom(density), density.density,
     )
     return remember(top, bottom, density) {
-        ReaderContentInsets(with(density) { top.toDp() }, with(density) { bottom.toDp() })
+        ReaderContentInsets(
+            top = with(density) { top.toDp() },
+            bottom = with(density) { bottom.toDp() },
+            topPx = top,
+            bottomPx = bottom,
+        )
     }
 }
 

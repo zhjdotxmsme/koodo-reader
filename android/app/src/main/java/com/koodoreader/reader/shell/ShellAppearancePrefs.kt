@@ -55,6 +55,8 @@ fun ThemeKind.builtInPreset(): ThemeSpec = when (this) {
     ThemeKind.DEFAULT -> ThemeSpec.DEFAULT_PRESET
     ThemeKind.PROTECT_EYE -> ThemeSpec.PROTECT_EYE_PRESET
     ThemeKind.NIGHT -> ThemeSpec.NIGHT_PRESET
+    ThemeKind.PAPER -> ThemeSpec.PAPER_PRESET
+    ThemeKind.SEPIA -> ThemeSpec.SEPIA_PRESET
     ThemeKind.CUSTOM -> ThemeSpec.DEFAULT_PRESET
 }
 
@@ -119,5 +121,7 @@ class ShellAppearancePrefs(context: Context) {
 val READER_THEME_OPTIONS: List<ThemeKind> = listOf(
     ThemeKind.DEFAULT,
     ThemeKind.PROTECT_EYE,
+    ThemeKind.PAPER,
+    ThemeKind.SEPIA,
     ThemeKind.NIGHT,
 )

@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -310,11 +311,14 @@ fun AdvancedSection(
             }
         }
         Text(t("Paragraph spacing"), style = MaterialTheme.typography.labelLarge)
-        val paragraphGap = ReaderFeatureCodec.effectiveParagraphSpacingPx(state)
+        val paragraphGap = ReaderFeatureCodec.effectiveParagraphSpacingDp(state)
         Slider(
-            value = paragraphGap,
+            value = paragraphGap.coerceIn(ReaderFeatureCodec.PARAGRAPH_SPACING_MIN, ReaderFeatureCodec.PARAGRAPH_SPACING_MAX),
             onValueChange = { onChange(state.copy(paragraphSpacingPx = it)) },
-            valueRange = 0f..maxOf(ReaderFeatureCodec.PARAGRAPH_SPACING_MAX, paragraphGap),
+            valueRange = ReaderFeatureCodec.PARAGRAPH_SPACING_MIN..ReaderFeatureCodec.PARAGRAPH_SPACING_MAX,
+            // 4dp increments: a continuous slider cannot be dragged back to the
+            // value the reader just liked, and the gap only matters in steps.
+            steps = 11,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t("Brightness"), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))

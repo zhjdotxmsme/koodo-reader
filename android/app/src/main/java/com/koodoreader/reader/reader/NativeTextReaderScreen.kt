@@ -8,11 +8,13 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import com.koodoreader.core.designsystem.MotionTokens
+import com.koodoreader.reader.shell.ReaderContentInsets
 import com.koodoreader.core.ui.theme.KoodoMotion
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.koodoreader.core.data.entity.NoteEntity
@@ -52,6 +55,20 @@ fun NativeTextReaderScreen(
     onLocationChanged: (TextLocation, ReaderFrame?) -> Unit = { _, _ -> },
     onLineSelected: () -> Unit = {},
     onToggleChrome: () -> Unit = {},
+    /**
+     * Whether the reader page is in dark mode. Drives the highlight tint:
+     * a 30%-alpha yellow over a near-black page is effectively invisible, so
+     * dark mode uses a darker, more saturated tint table instead.
+     */
+    readerPageIsDark: Boolean = false,
+    /**
+     * The immersive insets to subtract from the viewport before paginating.
+     *
+     * The engine derives the page height from the viewport it is given, so the
+     * status-bar and navigation-bar clearance must be removed here — otherwise
+     * the last line of every page is laid out under the gesture bar.
+     */
+    contentInsets: ReaderContentInsets = ReaderContentInsets(0.dp, 0.dp),
 ) {
     val density = LocalDensity.current.density
     val measurer = remember(density) { AndroidTextMeasurer(density) }
@@ -60,9 +77,22 @@ fun NativeTextReaderScreen(
     }
     var readerView by remember { mutableStateOf<ReaderView?>(null) }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier
+            .fillMaxSize()
+            // The text is drawn inside the immersive area the engine
+            // paginated for; the horizontal margin belongs to the engine.
+            .padding(top = contentInsets.top, bottom = contentInsets.bottom),
+    ) {
+        // The viewport the engine paginates for: the container minus the
+        // immersive insets, so the page break and the drawn text agree.
+        // The width is NOT reduced: the horizontal page margin is the engine's
+        // job (marginHorizontalPx), and the immersive insets are vertical.
         val widthPx = constraints.maxWidth.toFloat()
-        val heightPx = constraints.maxHeight.toFloat()
+        val heightPx = (constraints.maxHeight - contentInsets.topPx - contentInsets.bottomPx)
+            .toInt()
+            .coerceAtLeast(1)
+            .toFloat()
         LaunchedEffect(widthPx, heightPx, initialLocation, scrolled, fontScale, layoutOptions) {
             if (widthPx <= 0f || heightPx <= 0f) return@LaunchedEffect
             viewModel.setViewport(widthPx, heightPx)
@@ -172,6 +202,7 @@ fun NativeTextReaderScreen(
                             notesForHighlights,
                             pageView.layout,
                             pageView.page,
+                            readerPageIsDark,
                         ),
                         pageImages = pageImages,
                         onLongPressLine = { line ->
@@ -197,6 +228,7 @@ fun NativeTextReaderScreen(
                 val scrollHighlights = NativeNoteHighlights.blockColorsForLayout(
                     notesForHighlights,
                     view.layout,
+                    readerPageIsDark,
                 )
                 TextScrollView(
                     view = view,

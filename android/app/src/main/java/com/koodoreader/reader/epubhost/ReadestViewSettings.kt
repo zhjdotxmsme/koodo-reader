@@ -33,6 +33,7 @@ object ReadestViewSettings {
         extraUserStylesheet: String = "",
         horizontalMarginPx: Int? = null,
         firstLineIndent: Boolean = false,
+        density: Float = 1f,
     ): Snapshot {
         val preset = kind.builtInPreset()
         val dark = kind == ThemeKind.NIGHT
@@ -44,7 +45,7 @@ object ReadestViewSettings {
             else -> "serif"
         }
         val userCss = listOf(
-            ReaderFeatureCodec.userStylesheet(features, firstLineIndent),
+            ReaderFeatureCodec.userStylesheet(features, firstLineIndent, density),
             extraUserStylesheet.trim(),
         ).filter { it.isNotEmpty() }.joinToString("\n")
         return Snapshot(

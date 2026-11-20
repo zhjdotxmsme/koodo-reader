@@ -32,6 +32,8 @@ object FoliateAppearance {
         ThemeKind.DEFAULT -> "Default"
         ThemeKind.PROTECT_EYE -> "Eye protection"
         ThemeKind.NIGHT -> "Night"
+        ThemeKind.PAPER -> "Paper"
+        ThemeKind.SEPIA -> "Sepia"
         ThemeKind.CUSTOM -> "Custom"
     }
 

@@ -36,6 +36,14 @@ class NativeTextSession(
             fontSizePx = options.fontSizePx,
             lineHeightMultiple = options.lineHeightMultiple,
             paraSpacingPx = options.paraSpacingPx,
+            // CJK typography: justification, first-line indent and tracking are
+            // carried by PaginatorOptions so both pagination entry points (the
+            // paged session and the native text session) lay out identically.
+            textAlign = options.textAlign,
+            firstLineIndentPx = options.firstLineIndentPx,
+            letterSpacingPx = options.letterSpacingPx,
+            textJustify = options.textJustify,
+            quantizeColumnToCells = options.quantizeColumnToCells,
         )
         val layout = LayoutEngine(measurer, options).layout(document, tokens)
         viewportWidthPx = width

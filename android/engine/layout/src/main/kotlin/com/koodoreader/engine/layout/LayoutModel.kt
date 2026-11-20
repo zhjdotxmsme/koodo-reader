@@ -95,6 +95,21 @@ data class LayoutLine(
     val imageSrc: String? = null,
     /** First `<a href>` of the source block; null when the line is not a link. */
     val linkHref: String? = null,
+    /**
+     * The letter spacing this line was shaped with, in px.
+     *
+     * The renderer MUST apply it: `Canvas.drawText` does no tracking, so
+     * without this the drawn line would be narrower than the measured one and
+     * a justified column would never reach the right edge.
+     */
+    val letterSpacingPx: Float = 0f,
+    /**
+     * The number of gaps between two ideographs in this line.
+     *
+     * Used by the renderer to distribute the justification slack over the
+     * ideograph gaps — the only gaps a Chinese line has.
+     */
+    val ideographGaps: Int = 0,
 ) {
     /** The length in characters. */
     val length: Int get() = end - start

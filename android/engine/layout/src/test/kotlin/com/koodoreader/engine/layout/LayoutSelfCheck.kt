@@ -297,7 +297,14 @@ fun main() {
         checkEq("letterSpacing l0 text", "abcdef", result.lines[0].text, failures)
         checkEq("letterSpacing l0 width", 70f, result.lines[0].width, failures)
         checkEq("letterSpacing l1 text", "ghij", result.lines[1].text, failures)
-        checkEq("letterSpacing l1 width", 48f, result.lines[1].width, failures)
+        // 4 chars: 4×10 + 3×2 = 46 — the tracking sits BETWEEN characters.
+        //
+        // This used to assert 48 (N×cell). The width of a slice that starts
+        // in the middle of a block was one tracking value too wide, because
+        // the measurer's prefix difference counts the tracking that follows
+        // the slice's last character. The engine now subtracts it, so the
+        // measured width is the width the canvas actually draws.
+        checkEq("letterSpacing l1 width", 46f, result.lines[1].width, failures)
     }
 
     // ── LayoutEngine: pagination fills columns then pages ──────────────────

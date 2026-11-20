@@ -10,6 +10,14 @@ package com.koodoreader.engine.layout
  *   of a block that must stay on the same page. 0 disables the rule.
  * @property chapterStartsNewPage whether a spine item starts on a fresh page
  *   (the desktop EPUB reader's default).
+ * @property textAlign the fallback alignment for blocks whose own CSS does not
+ *   set one. [TextAlign.JUSTIFY] is what makes a Chinese column flush on the
+ *   right — see [com.koodoreader.core.designsystem.CjkTypography] for why the
+ *   native reader defaults to it.
+ * @property firstLineIndentPx the fallback first-line indent, in px, applied to
+ *   every block that does not declare its own `text-indent`. The Chinese
+ *   convention is two character widths (2em), which scales with the font size.
+ * @property letterSpacingPx the fallback letter spacing, in px.
  */
 data class PaginatorOptions(
     val columnsPerPage: Int = 1,
@@ -24,11 +32,47 @@ data class PaginatorOptions(
     val marginVerticalPx: Float = DesktopReaderConfig.MARGIN_DEFAULT,
     /** Extra gap between paragraphs, in px. 0 keeps the book's own spacing. */
     val paraSpacingPx: Float = 0f,
+    /**
+     * Fallback alignment for blocks that do not declare `text-align`.
+     *
+     * [TextAlign.DEFAULT] means "let the book's CSS decide, else left" — the
+     * browser-compatible default. The native reader passes
+     * [TextAlign.JUSTIFY] instead, because a justified column is what makes
+     * Chinese body text look typeset.
+     */
+    val textAlign: TextAlign = TextAlign.DEFAULT,
+    /**
+     * Fallback first-line indent in px (0 = none).
+     *
+     * Added to the block's own `text-indent`, so a book that already sets an
+     * indent keeps it and the reader's default only fills the gap.
+     */
+    val firstLineIndentPx: Float = 0f,
+    /** Fallback letter spacing in px (0 = none). */
+    val letterSpacingPx: Float = 0f,
+    /**
+     * How a justified line distributes its leftover width.
+     *
+     * [TextJustify.INTER_IDEOGRAPH] is what the native reader uses: Chinese
+     * text has no word gaps, so the plain CSS rule would leave a justified
+     * Chinese column permanently ragged.
+     */
+    val textJustify: TextJustify = TextJustify.SPACES,
+    /**
+     * Quantise the text column to a whole number of character cells.
+     *
+     * See [LayoutTokens.quantizeColumnToCells]: it is what keeps a justified
+     * Chinese column from having to stretch the gaps between glyphs, which is
+     * what makes the letter spacing change from line to line.
+     */
+    val quantizeColumnToCells: Boolean = false,
 ) {
     init {
         require(columnsPerPage in 1..8) { "columnsPerPage must be 1..8 (was $columnsPerPage)" }
         require(widowsOrphans in 0..4) { "widowsOrphans must be 0..4 (was $widowsOrphans)" }
         require(fontSizePx > 0f) { "fontSizePx must be > 0 (was $fontSizePx)" }
+        require(firstLineIndentPx >= 0f) { "firstLineIndentPx must be >= 0 (was $firstLineIndentPx)" }
+        require(letterSpacingPx >= 0f) { "letterSpacingPx must be >= 0 (was $letterSpacingPx)" }
     }
 }
 
@@ -47,6 +91,14 @@ private data class ShapedLine(
     /** Carried from [TextBlock.imageSrc]; null for text-only lines. */
     val imageSrc: String? = null,
     val linkHref: String? = null,
+    /**
+     * The number of gaps between two *ideographs* in this line.
+     *
+     * These are the gaps that [TextJustify.INTER_IDEOGRAPH] stretches. A line
+     * of Chinese text has no word gaps at all, so without this count the
+     * justification of a Chinese column could never reach the right edge.
+     */
+    val ideographGaps: Int = 0,
 )
 
 /**
@@ -148,9 +200,23 @@ class LayoutEngine(
                 val lineAlign = if (align == TextAlign.JUSTIFY && lastOfBlock) TextAlign.LEFT else align
                 // CSS stretches the gaps between words; a single word has no gap
                 // to stretch, so it stays at its natural width.
-                val stretch = if (align == TextAlign.JUSTIFY && !lastOfBlock && sl.wordGaps > 0) {
+                //
+                // Chinese text has no word gaps, so with the plain CSS rule a
+                // justified Chinese column would stay ragged forever. With
+                // [TextJustify.INTER_IDEOGRAPH] the slack is spread over the
+                // gaps between ideographs instead — which is what a printed
+                // Chinese book does, and what `text-justify: inter-ideograph`
+                // specifies.
+                val canStretch = align == TextAlign.JUSTIFY && !lastOfBlock
+                val stretch = if (canStretch && sl.wordGaps > 0) {
                     (columnWidth - sl.indentPx - sl.width).coerceAtLeast(0f)
-                } else 0f
+                } else if (canStretch && tokens.textJustify == TextJustify.INTER_IDEOGRAPH &&
+                    sl.ideographGaps > 0
+                ) {
+                    (columnWidth - sl.indentPx - sl.width).coerceAtLeast(0f)
+                } else {
+                    0f
+                }
                 placed.add(
                     LayoutLine(
                         page = pageIdx,
@@ -173,6 +239,8 @@ class LayoutEngine(
                         forced = sl.forced,
                         imageSrc = sl.imageSrc,
                         linkHref = sl.linkHref,
+                        letterSpacingPx = tokens.letterSpacingPx,
+                        ideographGaps = sl.ideographGaps,
                     ),
                 )
                 yy += sl.heightPx
@@ -386,9 +454,39 @@ class LayoutEngine(
         val lineHeightMul = style.lineHeightMultiple ?: tokens.lineHeightMultiple
         val lineH = lineHeightMul * measurer.lineHeightPx(fontSize)
         val baseline = lineHeightMul * measurer.ascentPx(fontSize)
-        val firstLineIndent = tokens.firstLineIndentPx + style.textIndentEm * fontSize
-        val breakSet = breakEnds(text, tokens.wordBreak)
+        val rawFirstLineIndent = tokens.firstLineIndentPx + style.textIndentEm * fontSize
         val ls = tokens.letterSpacingPx
+        // In a quantised column the first-line indent must itself be a whole
+        // number of character cells, or the first line would end with a few
+        // pixels of slack that the justification engine would have to spread
+        // into the glyph gaps — the "假字距" the quantisation exists to avoid.
+        //
+        // KOReader's `cjk-tailored` hint adjusts the width AND the indent for
+        // exactly this reason. The indent is rounded UP so that the indent is
+        // never *narrower* than the reader asked for.
+        val firstLineIndent = if (tokens.quantizeColumnToCells) {
+            // The indent is subtracted from the available width, so it has to
+            // be a whole number of cells for the first line to end on the
+            // same grid as the rest. Rounded UP, so the indent is never
+            // narrower than the reader asked for.
+            val cell = fontSize + ls
+            if (cell.isFinite() && cell > 0f && rawFirstLineIndent > 0f) {
+                // M character slots of blank space, measured the same way a
+                // run of M characters is measured: M × fontSize + (M-1) ×
+                // tracking. With the indent expressed this way, a first line
+                // holding (N - M) characters is exactly as wide as the other
+                // lines, so every line of the block ends on the same grid.
+                // Rounded UP, so the indent is never narrower than the reader
+                // asked for.
+                val cells = kotlin.math.ceil(rawFirstLineIndent / cell).toInt().coerceAtLeast(1)
+                cells * fontSize + (cells - 1).coerceAtLeast(0) * ls
+            } else {
+                rawFirstLineIndent
+            }
+        } else {
+            rawFirstLineIndent
+        }
+        val breakSet = breakEnds(text, tokens.wordBreak)
 
         val out = ArrayList<ShapedLine>()
         var start = 0
@@ -397,7 +495,31 @@ class LayoutEngine(
             val indent = if (lineNo == 0) firstLineIndent else 0f
             val available = (columnWidthPx - indent).coerceAtLeast(1f)
             val base = measurer.prefixWidth(text, start, fontSize, ls)
-            val sliceWidth: (Int) -> Float = { e -> measurer.prefixWidth(text, e, fontSize, ls) - base }
+            // The width of the slice `text[start until e]`, measured the way
+            // the renderer will draw it: every character occupies one CELL
+            // (font size + tracking), so a slice of N characters is N cells
+            // wide. The renderer advances by the same amount, which is what
+            // keeps the measured line and the drawn line identical.
+            // The width of the slice `text[start until e]`.
+            //
+            // Tracking is added BETWEEN characters, so a run of N characters
+            // is N × fontSize + (N-1) × tracking wide — which is what the
+            // canvas renderer actually draws.
+            //
+            // The measurer's prefix difference does not give that on its own:
+            // `prefixWidth(n)` is the right edge of the first n characters and
+            // includes the tracking that follows character n, so the
+            // difference of two prefix widths counts one tracking value too
+            // many (the tracking before `start` is subtracted even though it
+            // is not part of this slice, and the tracking after `e` is counted
+            // even though it is not part of it either).
+            //
+            // A slice that starts at 0 is measured correctly already — the
+            // prefix of an empty range is 0, so nothing is over-counted there.
+            val sliceWidth: (Int) -> Float = { e ->
+                val raw = measurer.prefixWidth(text, e, fontSize, ls) - base
+                if (start == 0) raw else raw - ls
+            }
 
             val decision = decideBreak(text, start, available, sliceWidth, breakSet, tokens.overflowWrap)
             val end = decision.end
@@ -422,6 +544,7 @@ class LayoutEngine(
                         heightPx = lineH,
                         baselinePx = baseline,
                         wordGaps = text.substring(start, trimmedEnd).count { isCollapsibleWhitespace(it) },
+                        ideographGaps = countIdeographGaps(text, start, trimmedEnd),
                         forced = forced,
                         linkHref = block.linkHref,
                     ),

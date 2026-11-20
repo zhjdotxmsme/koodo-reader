@@ -125,8 +125,8 @@ class AppearanceCodecTest {
         )
         val decoded = AppearanceCodec.decode(AppearanceCodec.encode(config))
         assertEquals(ThemeKind.NIGHT, decoded.theme.kind)
-        assertEquals("rgba(44, 47, 49,1)", decoded.theme.backgroundColor)
-        assertEquals("rgba(255,255,255,1)", decoded.theme.foregroundColor)
+        assertEquals("rgba(18, 18, 18,1)", decoded.theme.backgroundColor)
+        assertEquals("rgba(216, 214, 209,1)", decoded.theme.foregroundColor)
     }
 
     // ─── JSON key names preserved ───────────────────────────────────────────

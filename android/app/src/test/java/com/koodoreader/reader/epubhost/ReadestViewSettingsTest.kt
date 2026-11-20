@@ -17,8 +17,11 @@ class ReadestViewSettingsTest {
         assertTrue(s.isDarkMode)
         assertTrue(s.overrideColor)
         assertEquals("dark", s.colorScheme)
-        assertEquals("rgba(44, 47, 49,1)", s.bg)
-        assertEquals("rgba(255,255,255,1)", s.fg)
+        // #121212 + a dimmed off-white: a pure-black page next to a bright
+        // one smears the glyph edges (halation), which a night theme exists
+        // to avoid.
+        assertEquals("rgba(18, 18, 18,1)", s.bg)
+        assertEquals("rgba(216, 214, 209,1)", s.fg)
     }
 
     @Test
@@ -53,12 +56,14 @@ class ReadestViewSettingsTest {
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = true),
         )
-        assertEquals("p{margin-bottom:32.64px;}\n$css", on.userStylesheet)
+        assertTrue(on.userStylesheet, on.userStylesheet.contains("p{margin-bottom:10px;}"))
+        assertTrue(on.userStylesheet, on.userStylesheet.contains(css))
         val off = ReadestViewSettings.from(
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = false),
         )
-        assertEquals("p{margin-bottom:32.64px;}", off.userStylesheet)
+        assertTrue(off.userStylesheet, off.userStylesheet.contains("p{margin-bottom:10px;}"))
+        assertFalse(off.userStylesheet, off.userStylesheet.contains(css))
     }
 
     @Test
@@ -98,7 +103,7 @@ class ReadestViewSettingsTest {
             firstLineIndent = true,
         )
         assertEquals(60, snapshot.marginPx)
-        assertTrue(snapshot.userStylesheet.contains("text-indent:2em !important;"))
+        assertTrue(snapshot.userStylesheet, snapshot.userStylesheet.contains("text-indent:2em;"))
     }
 
     @Test

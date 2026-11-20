@@ -35,6 +35,17 @@ dependencies {
     // string stays the single address format shared with the desktop app).
     implementation project(':engine:cfi')
 
+    // The token layer, for CJK column quantisation (CjkColumn). It is a PURE
+    // KOTLIN JVM module with ZERO dependencies, so this introduces no cycle
+    // and no Android/Compose coupling into the layout engine.
+    //
+    // Why the engine needs it: the column-width maths for CJK (a whole number
+    // of character cells) is a LAYOUT rule, but the rule itself has to be
+    // defined in exactly one place — if the token layer and the engine each
+    // carried a copy, they would drift and the quantised column would stop
+    // matching the column the engine paginates for.
+    implementation project(':core:designsystem')
+
     // Test only.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

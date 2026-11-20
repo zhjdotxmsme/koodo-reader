@@ -75,14 +75,19 @@ fun main(args: Array<String>) {
         }
     }.onFailure { failures.add(it) }
 
-    runCheck("NIGHT preset backgroundColor == rgba(44, 47, 49,1)") {
-        check(ThemeSpec.NIGHT_PRESET.backgroundColor == "rgba(44, 47, 49,1)") {
+    runCheck("NIGHT preset backgroundColor == rgba(18, 18, 18,1)") {
+        // #121212 rather than the desktop's #2C2F31 / pure black: a
+        // pure-black page next to a bright page smears the glyph edges
+        // (halation), which is what a night theme exists to avoid.
+        check(ThemeSpec.NIGHT_PRESET.backgroundColor == "rgba(18, 18, 18,1)") {
             "Got ${ThemeSpec.NIGHT_PRESET.backgroundColor}"
         }
     }.onFailure { failures.add(it) }
 
-    runCheck("NIGHT preset foregroundColor == rgba(255,255,255,1)") {
-        check(ThemeSpec.NIGHT_PRESET.foregroundColor == "rgba(255,255,255,1)") {
+    runCheck("NIGHT preset foregroundColor == rgba(216, 214, 209,1)") {
+        // A dimmed off-white, not #FFFFFF: full brightness on a dark field is
+        // the other half of the halation problem.
+        check(ThemeSpec.NIGHT_PRESET.foregroundColor == "rgba(216, 214, 209,1)") {
             "Got ${ThemeSpec.NIGHT_PRESET.foregroundColor}"
         }
     }.onFailure { failures.add(it) }

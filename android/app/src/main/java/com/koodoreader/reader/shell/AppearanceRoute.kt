@@ -227,6 +227,8 @@ private fun readerThemeLabel(kind: ThemeKind): String = when (kind) {
     ThemeKind.DEFAULT -> t("Default")
     ThemeKind.PROTECT_EYE -> t("Eye protection")
     ThemeKind.NIGHT -> t("Night")
+    ThemeKind.PAPER -> t("Paper")
+    ThemeKind.SEPIA -> t("Sepia")
     ThemeKind.CUSTOM -> t("Custom")
 }
 
