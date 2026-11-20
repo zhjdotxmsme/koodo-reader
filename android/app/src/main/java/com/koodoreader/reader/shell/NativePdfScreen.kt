@@ -87,6 +87,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -361,6 +362,8 @@ fun NativePdfScreen(
             longPress?.let(v::removeCallbacks)
             longPress = null
         }
+        // Edge-back would otherwise swallow the left page-turn band.
+        val reflowExclusion = reflowWeb?.let { com.koodoreader.reader.shell.ReaderGestureExclusion.install(it) }
         reflowWeb?.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -371,11 +374,12 @@ fun NativePdfScreen(
                     val y = downY
                     longPress = Runnable {
                         reflowWeb?.evaluateJavascript(reflowSelectAtPointJs(x, y), null)
-                    }.also { v.postDelayed(it, 500) }
+                    }.also { v.postDelayed(it, ReaderGestureMetrics.LONG_PRESS_MS) }
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (kotlin.math.abs(event.x - downX) > 24f ||
-                        kotlin.math.abs(event.y - downY) > 24f
+                    val slop = ReaderGestureMetrics.tapSlopPx(v.resources.displayMetrics.density)
+                    if (kotlin.math.abs(event.x - downX) > slop ||
+                        kotlin.math.abs(event.y - downY) > slop
                     ) {
                         cancelLongPress(v)
                     }
@@ -385,11 +389,22 @@ fun NativePdfScreen(
                     // A long-press is text selection, not a tap: without the
                     // timeout check the ACTION_UP would page-turn and reload
                     // the reflow HTML, destroying the fresh selection.
-                    if (event.eventTime - event.downTime >= 500) return@setOnTouchListener false
-                    val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
-                    val tap = ReaderPageGestures.tapIfNotDrag(
-                        downX, downY, event.x, event.y,
-                        v.width.toFloat(), edgeFraction = edge,
+                    if (event.eventTime - event.downTime >= ReaderGestureMetrics.LONG_PRESS_MS) {
+                        return@setOnTouchListener false
+                    }
+                    val cfg = ReaderGestureRuntime.config
+                    val tap = ReaderPageGestures.tapAtIfNotDrag(
+                        downX = downX,
+                        downY = downY,
+                        upX = event.x,
+                        upY = event.y,
+                        widthPx = v.width.toFloat(),
+                        heightPx = v.height.toFloat(),
+                        slopPx = ReaderGestureMetrics.tapSlopPx(v.resources.displayMetrics.density),
+                        layout = cfg.tapZoneLayout,
+                        forwardRatio = ReaderGestureCodec.clampedTapEdge(cfg),
+                        backwardRatio = ReaderGestureCodec.clampedTapBack(cfg),
+                        mirrored = v.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL,
                     )
                     when (tap) {
                         ReaderPageGesture.TOGGLE_CHROME -> v.post { showChrome = !showChrome }
@@ -402,7 +417,13 @@ fun NativePdfScreen(
             }
             false
         }
-        onDispose { reflowWeb?.setOnTouchListener(null) }
+        onDispose {
+            reflowWeb?.let { web ->
+                web.setOnTouchListener(null)
+                reflowExclusion?.let(web::removeOnLayoutChangeListener)
+                com.koodoreader.reader.shell.ReaderGestureExclusion.clear(web)
+            }
+        }
     }
     DisposableEffect(reflowWeb) {
         onDispose {
@@ -573,21 +594,39 @@ fun NativePdfScreen(
             )
         },
     ) { _ ->
+        val readerLayoutDirection = LocalLayoutDirection.current
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 // Chrome overlays the content; Scaffold padding would resize
                 // the page on every toggle and leave large blank bands.
                 .background(MaterialTheme.colorScheme.background)
-                // Tap zones: the outer quarters page back/forward. The middle is
-                // deliberately inert so the P2 gesture layer can take it.
+                // Keep the page-turn bands reachable on gesture-navigation
+                // devices; the chrome band stays usable for the back gesture.
+                .then(
+                    rememberReaderGestureExclusion(
+                        edgeFraction = ReaderGestureCodec.clampedTapBack(
+                            ReaderGestureRuntime.config,
+                        ),
+                    ),
+                )
+                // Tap zones follow the user's layout choice (edges / vertical
+                // bands / desktop grid); the chrome band toggles the toolbar.
                 .pointerInput(state.pageCount) {
                     detectTapGestures(
                         onLongPress = { showPageMenu = true },
                     ) { offset ->
-                        val width = size.width.toFloat()
-                        val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
-                        when (ReaderPageGestures.onTap(offset.x, width, edgeFraction = edge)) {
+                        val cfg = ReaderGestureRuntime.config
+                        when (
+                            ReaderPageGestures.onTapAt(
+                                x = offset.x,
+                                y = offset.y,
+                                widthPx = size.width.toFloat(),
+                                heightPx = size.height.toFloat(),
+                                config = cfg,
+                                mirrored = readerLayoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl,
+                            )
+                        ) {
                             ReaderPageGesture.PREV_PAGE -> controller.previousPage()
                             ReaderPageGesture.NEXT_PAGE -> controller.nextPage()
                             ReaderPageGesture.TOGGLE_CHROME -> showChrome = !showChrome
@@ -605,6 +644,7 @@ fun NativePdfScreen(
                                 ReaderPageGestures.onHorizontalSwipe(
                                     dx,
                                     dy,
+                                    minDx = ReaderGestureMetrics.swipeMinPx(density.density),
                                     enabled = ReaderGestureRuntime.config.swipePageTurn,
                                 )
                             ) {

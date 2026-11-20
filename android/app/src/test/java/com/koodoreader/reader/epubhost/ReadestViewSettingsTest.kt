@@ -56,13 +56,13 @@ class ReadestViewSettingsTest {
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = true),
         )
-        assertTrue(on.userStylesheet, on.userStylesheet.contains("p{margin-bottom:10px;}"))
+        assertTrue(on.userStylesheet, on.userStylesheet.contains("margin-bottom:10px !important;"))
         assertTrue(on.userStylesheet, on.userStylesheet.contains(css))
         val off = ReadestViewSettings.from(
             ThemeKind.DEFAULT,
             ReaderFeatureState(customBookCss = css, customBookCssEnabled = false),
         )
-        assertTrue(off.userStylesheet, off.userStylesheet.contains("p{margin-bottom:10px;}"))
+        assertTrue(off.userStylesheet, off.userStylesheet.contains("margin-bottom:10px !important;"))
         assertFalse(off.userStylesheet, off.userStylesheet.contains(css))
     }
 
@@ -103,7 +103,7 @@ class ReadestViewSettingsTest {
             firstLineIndent = true,
         )
         assertEquals(60, snapshot.marginPx)
-        assertTrue(snapshot.userStylesheet, snapshot.userStylesheet.contains("text-indent:2em;"))
+        assertTrue(snapshot.userStylesheet, snapshot.userStylesheet.contains("text-indent:2em !important;"))
     }
 
     @Test

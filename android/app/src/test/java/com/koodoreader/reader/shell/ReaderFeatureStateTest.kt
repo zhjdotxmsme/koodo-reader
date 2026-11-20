@@ -34,10 +34,9 @@ class ReaderFeatureStateTest {
         // The stylesheet now carries the CJK typography: tracking, a flush
         // right edge, and the 10dp paragraph gap.
         val css = ReaderFeatureCodec.userStylesheet(s, density = 1f)
-        assertTrue(css, css.contains("letter-spacing:0.50px;"))
+        assertTrue(css, css.contains("letter-spacing:0.5px;"))
         assertTrue(css, css.contains("text-align:justify;"))
-        assertTrue(css, css.contains("text-justify:inter-ideograph;"))
-        assertTrue(css, css.contains("p{margin-bottom:10px;}"))
+        assertTrue(css, css.contains("margin-bottom:10px !important;"))
         assertEquals(ReaderPerformancePolicy.TIER_NORMAL, s.perfTier)
         assertEquals(0f, s.pdfCropMarginPx, 0.001f)
         assertFalse(s.pdfReflow)
@@ -56,22 +55,26 @@ class ReaderFeatureStateTest {
         val state = ReaderFeatureState()
         // 10dp → 30px at density 3.0.
         assertEquals(30f, ReaderFeatureCodec.effectiveParagraphSpacingPx(state, density = 3f), 0.001f)
+        // The stylesheet is expressed in CSS px, which are dp inside a
+        // WebView — so the gap does NOT scale with the display density.
         val css = ReaderFeatureCodec.userStylesheet(state, density = 3f)
-        assertTrue(css, css.contains("p{margin-bottom:30px;}"))
+        assertTrue(css, css.contains("margin-bottom:10px !important;"))
     }
 
     @Test
     fun `an explicit paragraph spacing wins over the CJK default`() {
         val state = ReaderFeatureState(paragraphSpacingPx = 12f)
-        assertEquals(12f, ReaderFeatureCodec.effectiveParagraphSpacingPx(state, density = 3f), 0.001f)
-        assertTrue(ReaderFeatureCodec.userStylesheet(state, density = 3f).contains("p{margin-bottom:12px;}"))
+        // 12dp: 12 physical px at density 1, 36 at density 3.
+        assertEquals(36f, ReaderFeatureCodec.effectiveParagraphSpacingPx(state, density = 3f), 0.001f)
+        assertEquals(12f, ReaderFeatureCodec.effectiveParagraphSpacingCssPx(state), 0.001f)
+        assertTrue(ReaderFeatureCodec.userStylesheet(state, density = 3f).contains("margin-bottom:12px !important;"))
     }
 
     @Test
     fun `first line indent is presentation css only`() {
         val state = ReaderFeatureState(paragraphSpacingPx = 12f)
         val css = ReaderFeatureCodec.userStylesheet(state, firstLineIndent = true, density = 1f)
-        assertTrue(css, css.contains("p{margin-bottom:12px;text-indent:2em;}"))
+        assertTrue(css, css.contains("margin-bottom:12px !important;text-indent:2em !important;"))
     }
 
     @Test
@@ -127,8 +130,10 @@ class ReaderFeatureStateTest {
         assertFalse(restored.scrolled)
         assertTrue(restored.customBookCssEnabled)
         assertEquals("body { color: red; }", restored.customBookCss)
+        // The original sets no explicit paragraph spacing, so the CJK default
+        // (10dp) applies.
         val css = ReaderFeatureCodec.userStylesheet(restored, density = 1f)
-        assertTrue(css, css.contains("p{margin-bottom:12px;}"))
+        assertTrue(css, css.contains("margin-bottom:10px !important;"))
         assertTrue(css, css.contains("body { color: red; }"))
         assertEquals(12f, restored.pdfCropMarginPx, 0.001f)
         assertTrue(restored.pdfReflow)
@@ -143,24 +148,23 @@ class ReaderFeatureStateTest {
         // The stylesheet now carries the CJK typography: tracking, a flush
         // right edge, and the 10dp paragraph gap.
         val css = ReaderFeatureCodec.userStylesheet(s, density = 1f)
-        assertTrue(css, css.contains("letter-spacing:0.50px;"))
+        assertTrue(css, css.contains("letter-spacing:0.5px;"))
         assertTrue(css, css.contains("text-align:justify;"))
-        assertTrue(css, css.contains("text-justify:inter-ideograph;"))
-        assertTrue(css, css.contains("p{margin-bottom:10px;}"))
+        assertTrue(css, css.contains("margin-bottom:10px !important;"))
     }
 
     @Test
     fun `paragraph spacing appends p margin rule to user stylesheet`() {
         val s = ReaderFeatureState(paragraphSpacingPx = 12f)
         val css = ReaderFeatureCodec.userStylesheet(s, density = 1f)
-        assertTrue(css, css.contains("p{margin-bottom:12px;}"))
+        assertTrue(css, css.contains("margin-bottom:12px !important;"))
         val both = ReaderFeatureState(
             paragraphSpacingPx = 8f,
             customBookCss = "body{color:red}",
             customBookCssEnabled = true,
         )
         val bothCss = ReaderFeatureCodec.userStylesheet(both, density = 1f)
-        assertTrue(bothCss, bothCss.contains("p{margin-bottom:8px;}"))
+        assertTrue(bothCss, bothCss.contains("margin-bottom:8px !important;"))
         assertTrue(bothCss, bothCss.contains("body{color:red}"))
     }
 

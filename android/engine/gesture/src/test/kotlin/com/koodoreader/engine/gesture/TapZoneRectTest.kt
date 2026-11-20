@@ -112,8 +112,10 @@ class TapZoneRectTest {
     @Test
     fun `tiny ratios still leave a usable edge target`() {
         val zones = TapZoneGeometry.zones(TapZoneLayout.EDGES, forwardRatio = 0f, backwardRatio = 0f)
-        assertEquals(TapZoneGeometry.MIN_RATIO, zones.next.width)
-        assertEquals(TapZoneGeometry.MIN_RATIO, zones.previous.width)
+        // The width is computed as `1 - (1 - MIN_RATIO)`, so it differs from
+        // MIN_RATIO by one float rounding step. Compared with a tolerance.
+        assertEquals(TapZoneGeometry.MIN_RATIO, zones.next.width, 1e-6f)
+        assertEquals(TapZoneGeometry.MIN_RATIO, zones.previous.width, 1e-6f)
     }
 
     @Test
