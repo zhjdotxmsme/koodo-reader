@@ -69,3 +69,9 @@ android/app/src/main/assets/webapp/
 
 # Local Gradle user home used by sandboxed agent builds (not the wrapper default)
 .gradle-home/
+
+# Local tooling scratch (agent/DSH workspace state, not project files)
+.tools/
+.rea/
+.reverse/
+.dsh-acl-recovery/
