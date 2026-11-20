@@ -81,18 +81,26 @@ fun NativeTextReaderScreen(
         modifier
             .fillMaxSize()
             // The text is drawn inside the immersive area the engine
-            // paginated for; the horizontal margin belongs to the engine.
-            .padding(top = contentInsets.top, bottom = contentInsets.bottom),
+            // paginated for. `start`/`end` only ever clear a landscape
+            // navigation bar or a display cutout — the portrait page margin
+            // still belongs to the engine (marginHorizontalPx).
+            .padding(
+                start = contentInsets.left,
+                end = contentInsets.right,
+                top = contentInsets.top,
+                bottom = contentInsets.bottom,
+            ),
     ) {
-        // The viewport the engine paginates for: the container minus the
-        // immersive insets, so the page break and the drawn text agree.
-        // The width is NOT reduced: the horizontal page margin is the engine's
-        // job (marginHorizontalPx), and the immersive insets are vertical.
+        // The viewport the engine paginates for.
+        //
+        // `padding` above already removed the insets from these constraints —
+        // BoxWithConstraints reports the constraints it was *measured* with,
+        // after the padding modifier. Subtracting topPx/bottomPx a second time
+        // (as this used to) made the engine paginate for a page ~2× the inset
+        // shorter than the box it draws into, which showed up as a large blank
+        // band under the last line.
         val widthPx = constraints.maxWidth.toFloat()
-        val heightPx = (constraints.maxHeight - contentInsets.topPx - contentInsets.bottomPx)
-            .toInt()
-            .coerceAtLeast(1)
-            .toFloat()
+        val heightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
         LaunchedEffect(widthPx, heightPx, initialLocation, scrolled, fontScale, layoutOptions) {
             if (widthPx <= 0f || heightPx <= 0f) return@LaunchedEffect
             viewModel.setViewport(widthPx, heightPx)

@@ -11,11 +11,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import com.koodoreader.reader.shell.ReaderGestureCodec
+import com.koodoreader.reader.shell.ReaderGestureMetrics
 import com.koodoreader.reader.shell.ReaderGestureRuntime
 import com.koodoreader.engine.layout.LayoutLine
 import com.koodoreader.engine.layout.reader.ReaderView
 import com.koodoreader.reader.shell.ReaderPageGesture
+import com.koodoreader.reader.shell.rememberReaderGestureExclusion
 import com.koodoreader.reader.shell.ReaderPageGestures
 
 /**
@@ -38,9 +42,16 @@ fun TextPageView(
     val lines = remember(view.layout, view.page) {
         view.layout.lines.filter { it.page == view.page }
     }
+    val readerLayoutDirection = LocalLayoutDirection.current
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            // Gesture-nav devices must not steal the page-turn bands.
+            .then(
+                rememberReaderGestureExclusion(
+                    edgeFraction = ReaderGestureCodec.clampedTapBack(ReaderGestureRuntime.config),
+                ),
+            )
             .pointerInput(view.page, canGoNext, canGoPrevious, onLongPressLine) {
                 detectTapGestures(
                     onLongPress = { offset ->
@@ -50,9 +61,15 @@ fun TextPageView(
                         if (line != null && line.imageSrc == null) onLongPressLine?.invoke(line)
                     },
                 ) { offset ->
-                    val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
                     when (
-                        ReaderPageGestures.onTap(offset.x, size.width.toFloat(), edge)
+                        ReaderPageGestures.onTapAt(
+                            x = offset.x,
+                            y = offset.y,
+                            widthPx = size.width.toFloat(),
+                            heightPx = size.height.toFloat(),
+                            config = ReaderGestureRuntime.config,
+                            mirrored = readerLayoutDirection == LayoutDirection.Rtl,
+                        )
                     ) {
                         ReaderPageGesture.PREV_PAGE -> if (canGoPrevious) onPageTurn(false)
                         ReaderPageGesture.NEXT_PAGE -> if (canGoNext) onPageTurn(true)
@@ -73,6 +90,7 @@ fun TextPageView(
                             ReaderPageGestures.onHorizontalSwipe(
                                 dx,
                                 dy,
+                                minDx = ReaderGestureMetrics.swipeMinPx(density),
                                 enabled = ReaderGestureRuntime.config.swipePageTurn,
                             )
                         ) {

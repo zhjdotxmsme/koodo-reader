@@ -38,6 +38,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import com.koodoreader.reader.shell.ReaderGestureRuntime
+import com.koodoreader.reader.shell.ReaderPageGesture
+import com.koodoreader.reader.shell.ReaderPageGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -128,10 +131,21 @@ fun ComicViewerHost(
                         if (zoom.isZoomed) {
                             zoom = ZoomPanState.FIT
                         } else {
-                            when (tapZone(at.x, viewport.width)) {
-                                TapZone.LEFT -> model.previous()?.let { snapshot = it }
-                                TapZone.RIGHT -> model.next()?.let { snapshot = it } ?: onExitRequested()
-                                TapZone.CENTER -> onUiToggle()
+                            when (
+                                ReaderPageGestures.onTapAt(
+                                    x = at.x,
+                                    y = at.y,
+                                    widthPx = viewport.width,
+                                    heightPx = viewport.height,
+                                    config = ReaderGestureRuntime.config,
+                                )
+                            ) {
+                                ReaderPageGesture.PREV_PAGE ->
+                                    model.previous()?.let { snapshot = it }
+                                ReaderPageGesture.NEXT_PAGE ->
+                                    model.next()?.let { snapshot = it } ?: onExitRequested()
+                                ReaderPageGesture.TOGGLE_CHROME -> onUiToggle()
+                                ReaderPageGesture.SELECT -> Unit
                             }
                         }
                     },
@@ -219,15 +233,3 @@ private fun PagePane(
     }
 }
 
-private enum class TapZone { LEFT, CENTER, RIGHT }
-
-/** 左右各 1/3 翻页、中间 1/3 呼出 UI —— 与桌面漫画阅读器的点击区一致。 */
-private fun tapZone(x: Float, width: Float): TapZone {
-    if (width <= 0f) return TapZone.CENTER
-    val ratio = x / width
-    return when {
-        ratio < 1f / 3f -> TapZone.LEFT
-        ratio > 2f / 3f -> TapZone.RIGHT
-        else -> TapZone.CENTER
-    }
-}

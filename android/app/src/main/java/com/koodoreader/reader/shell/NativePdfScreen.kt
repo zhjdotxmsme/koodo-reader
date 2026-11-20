@@ -18,6 +18,7 @@ import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.engine.pdf.CfiPdfMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
@@ -310,9 +311,7 @@ fun NativePdfScreen(
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     view?.evaluateJavascript(
-                        "document.getElementById('koodo-reader-typography')?.remove();" +
-                            "var s=document.createElement('style');s.id='koodo-reader-typography';" +
-                            "s.textContent=${JSONObject.quote(currentReflowCss)};document.head.appendChild(s);",
+                        ReaderAppearance.swapStyleJs(currentReflowCss),
                         null,
                     )
                     view?.evaluateJavascript(REFLOW_SELECTION_RELAY_JS, null)
@@ -433,6 +432,20 @@ fun NativePdfScreen(
                 webView.destroy()
             }
         }
+    }
+    // Live typography for PDF reflow.
+    //
+    // Before this, the typography stylesheet was injected only from
+    // `onPageFinished`, so dragging the font-size / line-height slider in
+    // reflow mode did nothing visible until the document reloaded. Swapping the
+    // single <style> element re-lays-out in place and keeps the reader's place
+    // by ratio (see ReaderAppearance.swapStyleJs), which is what makes the
+    // control panel's "live preview" actually live.
+    LaunchedEffect(reflowCss, features.pdfReflow) {
+        val web = reflowWeb ?: return@LaunchedEffect
+        if (!features.pdfReflow || state.reflowHtml.isNullOrBlank()) return@LaunchedEffect
+        delay(ReaderAppearance.SETTLE_MS)
+        web.evaluateJavascript(ReaderAppearance.swapStyleJs(reflowCss), null)
     }
     LaunchedEffect(features.pdfReflow, state.reflowHtml, features.fontKey) {
         val raw = state.reflowHtml
@@ -705,7 +718,12 @@ fun NativePdfScreen(
                             factory = { checkNotNull(reflowWeb) },
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(top = contentInsets.top, bottom = contentInsets.bottom)
+                                .padding(
+                                    start = contentInsets.left,
+                                    end = contentInsets.right,
+                                    top = contentInsets.top,
+                                    bottom = contentInsets.bottom,
+                                )
                                 .padding(
                                     start = chromeState.horizontalMarginDp.dp,
                                     end = chromeState.horizontalMarginDp.dp,
@@ -754,7 +772,12 @@ fun NativePdfScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(top = contentInsets.top, bottom = contentInsets.bottom)
+                                .padding(
+                                    start = contentInsets.left,
+                                    end = contentInsets.right,
+                                    top = contentInsets.top,
+                                    bottom = contentInsets.bottom,
+                                )
                                 .verticalScroll(rememberScrollState())
                                 .horizontalScroll(rememberScrollState()),
                         ) {

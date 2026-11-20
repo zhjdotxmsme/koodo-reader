@@ -61,12 +61,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -148,6 +150,7 @@ import com.koodoreader.reader.AppLog
 import com.koodoreader.reader.BuildConfig
 import com.koodoreader.reader.R
 import com.koodoreader.reader.shell.LocalI18n
+import com.koodoreader.reader.shell.ReaderAppearance
 import com.koodoreader.reader.shell.ReaderAssetHost
 import com.koodoreader.reader.shell.ReaderBottomProgress
 import com.koodoreader.reader.shell.ReaderChromeAction
@@ -239,6 +242,9 @@ fun NativeEpubScreen(
     )
     val chromeState by chromeViewModel.state.collectAsStateWithLifecycle()
     val contentInsets = rememberReaderContentInsets()
+    // Right-to-left reading order (manga / Arabic / Hebrew) mirrors the
+    // horizontal tap bands once, in the geometry layer.
+    val readerLayoutDirection = LocalLayoutDirection.current
     // Display density: converts the reader's sp/dp typography defaults into
     // the pixel values the layout engine and the CSS injection need.
     val density = LocalDensity.current.density
@@ -1439,13 +1445,21 @@ fun NativeEpubScreen(
             density = density,
         )
     }
+    // Every push re-paginates the whole book, and a slider emits dozens of
+    // values per drag. `LaunchedEffect(viewSettings)` cancels the pending push
+    // when the value changes again, so the trailing delay collapses a drag to
+    // one re-layout. The first push after the view is ready stays immediate so
+    // opening a book never waits on the debounce.
+    var appearanceApplied by remember(bookKey, foliateReady) { mutableStateOf(false) }
     LaunchedEffect(useFoliate, foliateReady, viewSettings) {
         if (!useFoliate || !foliateReady) return@LaunchedEffect
         val host = foliateBridge ?: return@LaunchedEffect
+        if (appearanceApplied) delay(ReaderAppearance.SETTLE_MS)
         val bgArgb = CssColor.parse(viewSettings.bg).toInt()
         withContext(Dispatchers.IO) {
             runCatching { host.setViewSettings(viewSettings, bgArgb) }
         }
+        appearanceApplied = true
     }
     LaunchedEffect(useFoliate, foliateReady, bookNotes) {
         if (!useFoliate || !foliateReady) return@LaunchedEffect
@@ -1621,10 +1635,12 @@ fun NativeEpubScreen(
                     // the navigation bar. Subtracting the immersive insets
                     // keeps the page break and the drawn text in agreement.
                     val (w, h) = ReaderContentInsetPolicy.contentSize(
-                        size.width,
-                        size.height,
-                        contentInsets.topPx,
-                        contentInsets.bottomPx,
+                        widthPx = size.width,
+                        heightPx = size.height,
+                        topPx = contentInsets.topPx,
+                        bottomPx = contentInsets.bottomPx,
+                        leftPx = contentInsets.startPx,
+                        rightPx = contentInsets.endPx,
                     )
                     viewport = IntSize(w, h)
                 },
@@ -1673,6 +1689,8 @@ fun NativeEpubScreen(
                     AndroidView(
                         factory = { foliateBridge?.view ?: android.view.View(it) },
                         modifier = Modifier.fillMaxSize().padding(
+                            start = contentInsets.left,
+                            end = contentInsets.right,
                             top = contentInsets.top,
                             bottom = contentInsets.bottom,
                         ),
@@ -1786,6 +1804,8 @@ fun NativeEpubScreen(
                         // room (see the viewport calculation), so the text
                         // lands exactly where the page break says it does.
                         .padding(
+                            start = contentInsets.left,
+                            end = contentInsets.right,
                             top = contentInsets.top,
                             bottom = contentInsets.bottom,
                         ),
@@ -1912,8 +1932,17 @@ fun NativeEpubScreen(
                                             ReaderTapKind.None -> Unit
                                         }
                                     }
-                                    val edge = ReaderGestureCodec.clampedTapEdge(ReaderGestureRuntime.config)
-                                    when (ReaderPageGestures.onTap(offset.x, size.width.toFloat(), edge)) {
+                                    val cfg = ReaderGestureRuntime.config
+                                    when (
+                                        ReaderPageGestures.onTapAt(
+                                            x = offset.x,
+                                            y = offset.y,
+                                            widthPx = size.width.toFloat(),
+                                            heightPx = size.height.toFloat(),
+                                            config = cfg,
+                                            mirrored = readerLayoutDirection == LayoutDirection.Rtl,
+                                        )
+                                    ) {
                                         ReaderPageGesture.PREV_PAGE ->
                                             if (currentPage > 0) currentPage--
                                         ReaderPageGesture.NEXT_PAGE ->

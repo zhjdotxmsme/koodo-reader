@@ -342,11 +342,211 @@ fun contentHeight(windowPx: Int, insets: Insets): Int =
 | 缺口 | 证据 |
 |---|---|
 | 生词本 UI | 本轮已补；此前 `words` 表只有备份导入会写 |
-| 收藏夹 / 系列 / 标签 | `app/`、`feature/`、`core/` 内无任何数据模型（仅 Kotlin 标准库 `Collection` 命中） |
+| 系列 / 标签 | 无数据模型（仅 Kotlin 标准库 `Collection` 命中） |
+| ~~收藏夹~~ | **已存在**：`LibraryPrefs.shelves()`（桌面 `shelfList` 键）+ `ShelfLogic` + 书库书架 chips + 收藏开关 + 加入书架；`favorites` 还带回收站联动 |
 | OPDS 目录 | 全仓库无 `opds` 引用 |
 | 跨书笔记搜索 | 本轮已补（此前只能按类型过滤） |
 
 教训：能力盘点必须先列**路由表与屏幕文件**再下结论。第 2 部分基于关键词 grep 得出的「缺失」结论不可靠，后续应以 `ShellNavHost` 的路由清单为基线。
+
+## 5.6 2026-11-20 第 5 轮：触控区几何（P0-5/6）+ 系统手势冲突
+
+前四轮都在「内容呈现」。这一轮改「输入」：三个阅读器（EPUB、PDF、漫画）此前各自实现了点击区，语义、阈值和单位都不一致。
+
+| 事项 | 文件 |
+|---|---|
+| 新增比例式触控区模型：`TapZoneRect` / `TapZoneLayout` / `TapZoneGeometry`（纯 JVM，可测） | `engine/gesture/.../TapZoneRect.kt` |
+| 四种布局：`EDGES`（默认，等同旧版）/ `DESKTOP`（九宫格桌面 parity）/ `TOP_BOTTOM` / `BOTTOM_TOP` | 同上 |
+| 前后翻页带**宽度独立**（`tapBackFraction`，0 = 跟随 `tapEdgeFraction`），比例夹在 8%–45%，两条带永不重叠 | 同上 |
+| RTL 只做一次 `x' = 1 - x` 镜像；满宽带天然是恒等变换，不需要分支 | `TapZoneRect.mirroredHorizontally()` |
+| 手势阈值 dp 化：点击容差 8dp、横滑 24dp、长按 500ms | 新增 `ReaderGestureMetrics` |
+| 触控区配置新增 `tapZoneLayout` / `tapBackFraction`，旧配置（只有 `tapEdgeFraction`）仍可解码 | `ReaderGestureConfig.kt` |
+| 设置页新增布局选择与「上一页区域」独立滑杆 | `ReadingSettingsRoute.kt` |
+| EPUB WebView、EPUB Canvas、PDF 翻页、PDF 重排 WebView、漫画宿主全部改走同一套判定 | `NativeEpubScreen.kt`、`TextPageView.kt`、`NativePdfScreen.kt`、`ComicViewerHost.kt` |
+| 手势导航冲突：仅排除左右两条翻页带（上限 32dp），chrome 区保留返回手势 | 新增 `ReaderGestureExclusion.kt` |
+| 漫画宿主此前**完全忽略**用户设置，固定 1/3 | `ComicViewerHost.kt`（私有 `tapZone()` 已删除） |
+
+### 为什么 8dp / 24dp 这两个数
+
+旧代码是 `minDx = 48f`（px）、`24f`（px）、`24f`（px）。在 xxhdpi 上分别等于 16dp / 8dp：
+
+- 8dp 的「点击容差」意味着手指落下时轻微侧移就把点击判成拖拽，点击失灵；
+- 8dp 的「下滑揭示工具栏」意味着几乎任何向下微动都会弹出 chrome，这就是「工具栏乱弹」的另一半原因。
+
+统一为 8dp 容差 + 24dp 横滑 + 24dp 下滑后，三档 density 行为一致。
+
+### 为什么不整体排除屏幕
+
+系统对 edge-back 的排除额度约为**每边 200dp**。整屏排除会让用户无法用返回手势退出书库，属于「修一个 bug 造一个更严重的」。因此只排除两条翻页带，并把宽度上限压到 32dp（读数：实际带略窄于视觉带，不完美但可接受），chrome 区永远保留返回手势。
+
+### 兼容性
+
+- `EDGES` + `tapBackFraction = 0` 的行为与改动前逐像素一致（1/3 边带、中间 chrome），老用户不会感到变化；
+- 新增设置项都是可选字段，`ReaderGesturePrefs` 按 `toMap(defaultConfig)` 的键集合读写，缺键即默认值；
+- `ReaderPageGestures.onTap(x, width, edge)` / `tapIfNotDrag(...)` 保留为薄封装，既有单测不需要改。
+
+### 待验证（未编译）
+
+- `ReaderGestureExclusion` 使用 `View.systemGestureExclusionRects`（API 29+，已按 `Build.VERSION.SDK_INT` 守卫）；
+- Compose 侧通过 `LocalView` 注册排除矩形，理论上等价于 `Modifier.systemGestureExclusion`，但依赖 `AndroidComposeView` 作为触摸目标，需真机确认；
+- 新增单测：`TapZoneRectTest`（12 例，engine 模块 JUnit5）、`ReaderPageGesturesTest`（+5 例）、`ReaderGestureConfigTest`（+4 例）。
+
+## 5.7 2026-11-20 第 6 轮：沉浸式边距的两个真 bug
+
+这一轮先核实再动手。原计划里写的「工具栏动画生硬」经查**并不成立**：`ReaderChrome.ReaderTopBar` 早已是 `fadeIn + slideInVertically` 200ms（`MotionTokens.NORMAL` + `KodoMotion.Decelerate`），退出用 `Accelerate`，且 chrome 是**浮层**、不改变内容尺寸（所以不会触发重新分页）。真正的问题在别处，而且是两个会让排版错位的硬 bug。
+
+### bug 1：`contentSize()` 把纵向 inset 减到了宽度上
+
+```kotlin
+// 修复前
+fun contentSize(widthPx: Int, heightPx: Int, topPx: Int, bottomPx: Int): Pair<Int, Int> =
+    (widthPx - topPx) to (heightPx - bottomPx)
+```
+
+调用方传的是 `(size.width, size.height, contentInsets.topPx, contentInsets.bottomPx)`。后果：
+
+- 每一页都**窄了约一个状态栏高度**（~30px），而且是随状态栏高度变化的宽度；
+- 高度只减了底部 inset，所以**第一行文字压在状态栏下面**；
+- 越是大状态栏/刘海屏，错位越明显。
+
+正确形式：每个轴只减自己的 inset。
+
+```kotlin
+fun contentSize(widthPx, heightPx, topPx, bottomPx, leftPx = 0, rightPx = 0) =
+    (widthPx - leftPx - rightPx).coerceAtLeast(1) to
+    (heightPx - topPx - bottomPx).coerceAtLeast(1)
+```
+
+### bug 2：Canvas 阅读器把同一份 inset 减了两次
+
+```kotlin
+// 修复前
+BoxWithConstraints(
+    modifier.fillMaxSize().padding(top = contentInsets.top, bottom = contentInsets.bottom),
+) {
+    val heightPx = (constraints.maxHeight - contentInsets.topPx - contentInsets.bottomPx)...
+```
+
+`Modifier.padding` 在内层节点测量之前就已生效，`BoxWithConstraintsScope.constraints` 是**已被 padding 收缩过**的约束。再减一次的结果是：引擎按 `H - 2×(top+bottom)` 分页，却画在 `H - (top+bottom)` 的盒子里 —— 页底出现一条**约 40dp 的空白带**，且每页的字数比实际能放下的少两三行。
+
+修复后：`padding` 负责「画在哪里」，`constraints` 负责「能画多少」，两者各管一件事，不再重复扣减。
+
+### 顺带补上的横向 inset
+
+`ReaderContentInsets` 原来只有 top/bottom。横屏时导航栏跑到侧边、刘海在另一侧，正文会压到导航栏下面。新增 `left` / `right`（`startPx` / `endPx`），取自 `WindowInsets.navigationBarsIgnoringVisibility` 的左右分量：
+
+- 竖屏为 0，行为完全不变；
+- 横屏时 foliate WebView、Canvas 轨、PDF 重排与翻页视图统一加 `start`/`end` padding；
+- `contentSize()` 同时减去左右，保证分页结果与绘制区域一致。
+
+### 教训
+
+「双重扣减」这类 bug 不会崩、不会报错，只会让页面**看起来排版差一点**——这正是最难被自动化发现的一类。它同时也是上一轮报告的更正：**P0 的「工具栏动画」不需要做，P0 的「沉浸式边距」比我原先描述的更严重**（不是差一点，是宽度和首行都错）。
+
+### 验证
+
+新增 3 个单测（`ReaderSystemBarPolicyTest`）：
+
+- 纵向 inset 只影响高度（回归用例：`1080×2280` − top 96 − bottom 30 → `1080×2154`）；
+- 横向 inset 只影响宽度（横屏 `2280×1080` − left 40 − right 30 → `2210×984`）；
+- 极端 inset 不会把视口压成 0（最小 1px）。
+
+需在真机确认（未编译）：
+
+1. 竖屏打开 EPUB：首行不再压状态栏，页宽恢复正常；
+2. 竖屏打开 TXT：页底空白带消失，每页行数增加；
+3. 横屏打开任意格式：正文不再压到侧边导航栏；
+4. 旋转屏幕：不出现一次「页面跳动」。
+
+## 5.8 2026-11-20 第 7 轮：外观设置的「实时预览」与抖动的根因
+
+### 先说核实结果
+
+原计划 P1 写的「主题切换应改为单次 `setStyles`」——**桥接层早已是单次快照**：`FoliateHostBridge.setViewSettings(snapshot)` 把 bg/fg/字号/行高/边距/分栏/自定义 CSS 打包成一个 JSON，一次 `runJs("setViewSettings", ...)`。这一点与 Readest 的 `getStyles() → setStyles()` 架构一致，不需要改。
+
+所以问题不在「怎么注入」，而在**注入的频率**和**注入后丢位置**。
+
+### 问题 1：拖滑杆时每帧都在重排整本书
+
+```kotlin
+LaunchedEffect(useFoliate, foliateReady, viewSettings) { host.setViewSettings(...) }
+```
+
+`Slider` 在手指按住期间每帧都会发出新值，`viewSettings` 每帧都变，`LaunchedEffect` 每帧都重启 —— 也就是**每秒几十次整书重排**。表现就是：字号拖动时文字抖、滚动位置跳、长章节明显掉帧。
+
+KOReader 的做法是面板关闭时才应用；Readest 是每次变更推一次样式表，但它没有 Android 滑杆这种高频输入。两者共同的原则是 **先合并，再应用一次**。
+
+修法利用 `LaunchedEffect` 的取消语义（新值进来会取消上一个协程）：
+
+```kotlin
+var appearanceApplied by remember(bookKey, foliateReady) { mutableStateOf(false) }
+LaunchedEffect(useFoliate, foliateReady, viewSettings) {
+    if (!useFoliate || !foliateReady) return@LaunchedEffect
+    val host = foliateBridge ?: return@LaunchedEffect
+    if (appearanceApplied) delay(ReaderAppearance.SETTLE_MS)   // 120ms 尾沿
+    …
+    appearanceApplied = true
+}
+```
+
+关键细节：**首次应用不加延迟**。否则每次打开书都要多等 120ms 才看到正文。
+
+### 问题 2：PDF 重排模式的「实时预览」根本不实时
+
+```kotlin
+// 修复前：样式只在 onPageFinished 注入
+webViewClient = object : WebViewClient() {
+    override fun onPageFinished(...) { inject(typographyStyle) }
+}
+```
+
+后果：在 PDF 重排模式下拖字号/行高滑杆，**画面毫无变化**，必须退出重进才生效。用户会认为滑杆坏了。
+
+修法：把「注入」从生命周期回调里拆出来，改成随 CSS 变化就地替换那一个 `<style>` 元素：
+
+```kotlin
+LaunchedEffect(reflowCss, features.pdfReflow) {
+    val web = reflowWeb ?: return@LaunchedEffect
+    if (!features.pdfReflow || state.reflowHtml.isNullOrBlank()) return@LaunchedEffect
+    delay(ReaderAppearance.SETTLE_MS)
+    web.evaluateJavascript(ReaderAppearance.swapStyleJs(reflowCss), null)
+}
+```
+
+### 问题 3：换样式时丢失阅读位置
+
+只替换样式、不处理滚动，WebView 会保持原来的**像素**偏移。但字号一变，同一个像素偏移落在完全不同的句子上——读者会觉得「刚才那行跑了」。
+
+`swapStyleJs()` 因此按**比例**保位：
+
+```js
+var ratio = scrollTop / (scrollHeight - clientHeight);
+/* …换 <style>… */
+scrollTop = ratio * (scrollHeight - clientHeight);
+```
+
+比例保位不是完美解（段落重排后同一比例可能差半行），但比像素保位好一个量级：像素保位在字号从 16→24 时会直接跳到后面几十行。
+
+### 为什么手写 JS 字符串转义
+
+`ReaderAppearance.jsString()` 自己转义而不是用 `org.json.JSONObject.quote`：这个文件要被 **纯 JVM 单测**覆盖，而 `org.json` 在本地单测里是未实现的 Android stub，一调用就抛异常。转义规则覆盖 `\ " \n \r \t` 以及 `\u2028/\u2029`（ES2019 前会截断 JS 字符串字面量，而中文排版 CSS 里经常出现这两个字符附近的内容）。
+
+### 验证
+
+新增 `ReaderAppearanceTest`（5 例，纯 JVM）：
+
+- 转义 `\`、`"`、换行、制表符、行分隔符；
+- 含中文引号的 CSS 经过引用后不残留裸换行；
+- 脚本确实只替换一个元素、按比例恢复滚动；
+- 自定义元素 id 生效；
+- 防抖窗口落在 80–180ms（既能把一次拖动合并成一次，又不至于被感知为卡顿）。
+
+### 仍需真机确认（未编译）
+
+1. 拖动字号滑杆：只在松手后重排一次，不再抖动；
+2. 松手后阅读位置仍停在原来那段；
+3. PDF 重排模式下拖字号：画面立即变化（此前完全不动）；
+4. 深色主题切换：无白闪（WebView 背景色在 JS 之前就已设置，保持现状）。
 
 ---
 

@@ -1,5 +1,6 @@
 package com.koodoreader.reader.shell
 
+import com.koodoreader.engine.gesture.TapZoneLayout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -145,6 +146,79 @@ class ReaderPageGesturesTest {
     fun `horizontal swipe can be disabled`() {
         org.junit.Assert.assertNull(
             ReaderPageGestures.onHorizontalSwipe(-80f, 10f, enabled = false),
+        )
+    }
+
+    @Test
+    fun `tap thresholds scale with density instead of raw pixels`() {
+        // 8dp / 24dp at three common densities.
+        assertEquals(16f, ReaderGestureMetrics.tapSlopPx(2f), 0.001f)
+        assertEquals(22f, ReaderGestureMetrics.tapSlopPx(2.75f), 0.001f)
+        assertEquals(28f, ReaderGestureMetrics.tapSlopPx(3.5f), 0.001f)
+        assertEquals(48f, ReaderGestureMetrics.swipeMinPx(2f), 0.001f)
+        assertEquals(84f, ReaderGestureMetrics.swipeMinPx(3.5f), 0.001f)
+        // Degenerate density must not zero the thresholds.
+        assertEquals(ReaderGestureMetrics.TAP_SLOP_DP, ReaderGestureMetrics.tapSlopPx(0f), 0.001f)
+        assertEquals(ReaderGestureMetrics.SWIPE_MIN_DP, ReaderGestureMetrics.swipeMinPx(Float.NaN), 0.001f)
+    }
+
+    @Test
+    fun `two dimensional tap resolves vertical layouts`() {
+        val w = 1000f
+        val h = 2000f
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onTapAt(500f, 50f, w, h, TapZoneLayout.TOP_BOTTOM),
+        )
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onTapAt(500f, 1950f, w, h, TapZoneLayout.TOP_BOTTOM),
+        )
+        assertEquals(
+            ReaderPageGesture.TOGGLE_CHROME,
+            ReaderPageGestures.onTapAt(500f, 1000f, w, h, TapZoneLayout.TOP_BOTTOM),
+        )
+    }
+
+    @Test
+    fun `right to left mirrors only the horizontal axis`() {
+        val w = 1000f
+        val h = 2000f
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onTapAt(950f, 1000f, w, h, TapZoneLayout.EDGES, mirrored = true),
+        )
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onTapAt(50f, 1000f, w, h, TapZoneLayout.EDGES, mirrored = true),
+        )
+    }
+
+    @Test
+    fun `live config drives the tap layout`() {
+        val cfg = ReaderGestureConfig(
+            tapEdgeFraction = 0.2f,
+            tapZoneLayout = TapZoneLayout.BOTTOM_TOP,
+        )
+        assertEquals(
+            ReaderPageGesture.NEXT_PAGE,
+            ReaderPageGestures.onTapAt(500f, 50f, 1000f, 2000f, cfg),
+        )
+        assertEquals(
+            ReaderPageGesture.PREV_PAGE,
+            ReaderPageGestures.onTapAt(500f, 1950f, 1000f, 2000f, cfg),
+        )
+    }
+
+    @Test
+    fun `two dimensional tap ignores drags`() {
+        org.junit.Assert.assertNull(
+            ReaderPageGestures.tapAtIfNotDrag(
+                downX = 500f, downY = 1000f,
+                upX = 500f, upY = 1100f,
+                widthPx = 1000f, heightPx = 2000f,
+                slopPx = 20f,
+            ),
         )
     }
 

@@ -24,6 +24,7 @@ object ReaderSystemBarPolicy {
  *
  *  - top    = status-bar height + 8dp
  *  - bottom = navigation-bar (gesture) height + 16dp
+ *  - left / right = display-cutout / side navigation-bar width (landscape)
  *
  * The bottom gets more room than the top on purpose. The top inset only has
  * to clear the clock and battery icons; the bottom has to clear the gesture
@@ -57,6 +58,11 @@ object ReaderContentInsetPolicy {
      * The viewport the pagination engine should use: the window size minus the
      * immersive insets.
      *
+     * Each axis loses **only its own** insets. The earlier implementation
+     * subtracted [topPx] from the *width*, which made every page ~30px too
+     * narrow (the status-bar height) and left the first line under the status
+     * bar, because the height only lost the bottom inset.
+     *
      * @return the reduced size, never smaller than 1px on either axis.
      */
     fun contentSize(
@@ -64,5 +70,8 @@ object ReaderContentInsetPolicy {
         heightPx: Int,
         topPx: Int,
         bottomPx: Int,
-    ): Pair<Int, Int> = (widthPx - topPx).coerceAtLeast(1) to (heightPx - bottomPx).coerceAtLeast(1)
+        leftPx: Int = 0,
+        rightPx: Int = 0,
+    ): Pair<Int, Int> = (widthPx - leftPx - rightPx).coerceAtLeast(1) to
+        (heightPx - topPx - bottomPx).coerceAtLeast(1)
 }

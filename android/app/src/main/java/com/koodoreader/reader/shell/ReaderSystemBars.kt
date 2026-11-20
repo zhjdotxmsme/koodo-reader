@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.core.view.WindowCompat
@@ -28,16 +29,22 @@ import com.koodoreader.core.ui.theme.LocalKoodoShellColorScheme
  *
  * @property top clearance above the first body-text line (status bar + 8dp).
  * @property bottom clearance below the last body-text line (gesture bar + 16dp).
- * @property topPx / bottomPx the same values in pixels — the pagination
- *   engine works in px, and the viewport it is given must already exclude the
- *   insets, otherwise the last line of a page is laid out under the
+ * @property left / right clearance for a landscape navigation bar or a display
+ *   cutout. These are **zero in portrait**, so nothing changes there.
+ * @property topPx / bottomPx / startPx / endPx the same values in pixels — the
+ *   pagination engine works in px, and the viewport it is given must already
+ *   exclude the insets, otherwise the last line of a page is laid out under the
  *   navigation bar.
  */
 data class ReaderContentInsets(
     val top: Dp,
     val bottom: Dp,
+    val left: Dp = Dp(0f),
+    val right: Dp = Dp(0f),
     val topPx: Int = 0,
     val bottomPx: Int = 0,
+    val startPx: Int = 0,
+    val endPx: Int = 0,
 )
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -50,12 +57,21 @@ fun rememberReaderContentInsets(): ReaderContentInsets {
     val bottom = ReaderContentInsetPolicy.bottomPx(
         WindowInsets.navigationBarsIgnoringVisibility.getBottom(density), density.density,
     )
-    return remember(top, bottom, density) {
+    // Landscape: the navigation bar moves to one side and the cutout may sit on
+    // the other. Portrait reports 0 here, so this is a no-op there.
+    val layoutDirection = LocalLayoutDirection.current
+    val left = WindowInsets.navigationBarsIgnoringVisibility.getLeft(density, layoutDirection)
+    val right = WindowInsets.navigationBarsIgnoringVisibility.getRight(density, layoutDirection)
+    return remember(top, bottom, left, right, density) {
         ReaderContentInsets(
             top = with(density) { top.toDp() },
             bottom = with(density) { bottom.toDp() },
+            left = with(density) { left.toDp() },
+            right = with(density) { right.toDp() },
             topPx = top,
             bottomPx = bottom,
+            startPx = left,
+            endPx = right,
         )
     }
 }

@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.engine.feature.TextRule
 import com.koodoreader.engine.feature.TextRuleJson
+import com.koodoreader.engine.gesture.TapZoneLayout
 
 /**
  * Settings → Reading: font, line height, margin, and the P6 enhancements
@@ -133,14 +135,51 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
             }
 
             Text(t("Reader gestures"), style = MaterialTheme.typography.titleMedium)
+
+            Text(t("Tap zone layout"), style = MaterialTheme.typography.bodyMedium)
+            val layoutLabels = listOf(
+                TapZoneLayout.EDGES to t("Left and right edges"),
+                TapZoneLayout.TOP_BOTTOM to t("Top back, bottom forward"),
+                TapZoneLayout.BOTTOM_TOP to t("Top forward, bottom back"),
+                TapZoneLayout.DESKTOP to t("Desktop grid"),
+            )
+            layoutLabels.forEach { (layout, label) ->
+                TextButton(
+                    onClick = { commitGesture(gesture.copy(tapZoneLayout = layout)) },
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Text(label + if (gesture.tapZoneLayout == layout) " ✓" else "")
+                }
+            }
+
+            val forwardPercent = ReaderGestureCodec.clampedTapEdge(gesture) * 100
             Text(
-                text = "${t("Tap zone width")} · ${"%.0f".format(ReaderGestureCodec.clampedTapEdge(gesture) * 100)}%",
+                text = "${t("Next page band")} · ${"%.0f".format(forwardPercent)}%",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Slider(
                 value = gesture.tapEdgeFraction,
                 onValueChange = {
                     commitGesture(gesture.copy(tapEdgeFraction = it))
+                },
+                valueRange = ReaderGestureCodec.TAP_EDGE_MIN..ReaderGestureCodec.TAP_EDGE_MAX,
+                steps = 5,
+            )
+
+            // Independent previous-page band: reading back is a different
+            // gesture in the hand (thumb reaches one edge more comfortably),
+            // so KOReader lets the two bands differ. 0 keeps them equal.
+            val backRatio = ReaderGestureCodec.clampedTapBack(gesture)
+                .takeIf { it > 0f }
+                ?: ReaderGestureCodec.clampedTapEdge(gesture)
+            Text(
+                text = "${t("Previous page band")} · ${"%.0f".format(backRatio * 100)}%",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = backRatio,
+                onValueChange = {
+                    commitGesture(gesture.copy(tapBackFraction = it))
                 },
                 valueRange = ReaderGestureCodec.TAP_EDGE_MIN..ReaderGestureCodec.TAP_EDGE_MAX,
                 steps = 5,
