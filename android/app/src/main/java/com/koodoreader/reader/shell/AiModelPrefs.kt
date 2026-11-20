@@ -10,7 +10,10 @@ import com.koodoreader.feature.translate.EncryptedSecretStore
  */
 class AiModelPrefs(context: Context) {
 
-    private val store = EncryptedSecretStore(context.applicationContext)
+    // Opened defensively: an unreadable encrypted store (a different signing
+    // identity, an invalidated Keystore key) must not stop the settings screen
+    // from opening — it just means there are no saved credentials.
+    private val store = EncryptedSecretStore.open(context.applicationContext)
 
     fun load(): AiModelConfig = AiModelConfig(
         endpoint = store.getString(KEY_ENDPOINT).orEmpty(),
