@@ -253,6 +253,19 @@ class ReaderFeatureStateTest {
     }
 
     @Test
+    fun `stored line height is already on the slider grid`() {
+        // An older build's continuous slider could leave 1.6327498 in the store;
+        // persisting the snapped value keeps the slider from showing a stop it
+        // cannot reach.
+        val stored = ReaderFeatureCodec.toMap(ReaderFeatureState(lineHeightRatio = 1.6327498f))
+        assertEquals(
+            ReaderFeatureCodec.snappedLineHeight(1.6327498f),
+            stored.getValue(ReaderFeatureCodec.KEY_LINE_HEIGHT).toFloat(),
+            0.0001f,
+        )
+    }
+
+    @Test
     fun `font scale snaps to whole pixel sizes`() {
         // 17px default: 17.34px rounds back to 17, 18.02px rounds up to 18 —
         // the slider must not leave the body on a fractional size, because a

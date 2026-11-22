@@ -138,7 +138,7 @@ object ReaderFeatureCodec {
 
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
         KEY_FONT_SCALE to state.fontScale.toString(),
-        KEY_LINE_HEIGHT to state.lineHeightRatio.toString(),
+        KEY_LINE_HEIGHT to snappedLineHeight(state.lineHeightRatio).toString(),
         KEY_LETTER_SPACING to clampedLetterSpacing(state).toString(),
         KEY_MARGIN to state.marginHorizontalPx.toString(),
         KEY_BIONIC to state.bionic.toString(),
