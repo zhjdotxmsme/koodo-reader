@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,7 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.designsystem.CssColor
+import com.koodoreader.core.designsystem.CjkTypography
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.koodoreader.engine.annotate.HighlightColor
@@ -203,6 +205,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
+import com.koodoreader.core.designsystem.ReaderCjkColumn
 import com.koodoreader.core.ui.component.ErrorState
 import com.koodoreader.core.ui.component.SelectionCountBadge
 import com.koodoreader.core.ui.component.selectionCharacterCount
@@ -1698,12 +1701,33 @@ fun NativeEpubScreen(
                     useFoliate = useFoliate,
                     hasFile = file != null,
                     assetsAvailable = assets.available,
-                ) -> Box(Modifier.fillMaxSize()) {
+                ) -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // P0-2 (WebView track): the native engine quantises its
+                    // column itself, but foliate lays the book out in a real
+                    // browser — the only lever is symmetric side padding, which
+                    // narrows the page so the text column lands on a whole
+                    // number of character cells. It is measured in dp (= CSS px
+                    // inside the WebView) and depends only on the width and the
+                    // body font, so it never changes with toolbar visibility and
+                    // cannot cause a re-pagination flash.
+                    val cjkSidePad = remember(
+                        maxWidth, contentInsets.left, contentInsets.right,
+                        features.fontScale, viewSettings.marginPx, viewSettings.maxInlineSizePx,
+                    ) {
+                        ReaderCjkColumn.foliateSidePadFor(
+                            viewportPx = (maxWidth - contentInsets.left - contentInsets.right).value,
+                            fontSizePx = ReaderFeatureCodec.fontSizePx(features),
+                            letterSpacingPx = CjkTypography.LETTER_SPACING_SP *
+                                features.fontScale.coerceAtLeast(0.5f),
+                            marginPx = viewSettings.marginPx.toFloat(),
+                            maxInlineSizePx = viewSettings.maxInlineSizePx.toFloat(),
+                        ).dp
+                    }
                     AndroidView(
                         factory = { foliateBridge?.view ?: android.view.View(it) },
                         modifier = Modifier.fillMaxSize().padding(
-                            start = contentInsets.left,
-                            end = contentInsets.right,
+                            start = contentInsets.left + cjkSidePad,
+                            end = contentInsets.right + cjkSidePad,
                             top = contentInsets.top,
                             bottom = contentInsets.bottom,
                         ),

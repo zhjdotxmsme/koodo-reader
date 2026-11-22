@@ -116,3 +116,116 @@ object CjkColumn {
         )
     }
 }
+
+/**
+ * WebView-track entry point to the same quantisation — see [CjkColumn.fit].
+ *
+ * The native track quantises inside the engine, but the foliate track lays the
+ * text out in a real browser and can only *narrow* the column from the outside:
+ * symmetric side padding pushes the text box onto the cell grid without moving
+ * its centre, so the page stays centred and the change is invisible.
+ *
+ * Never NaN: the value is added to a Compose padding, and a NaN there blanks
+ * the whole WebView.
+ */
+object ReaderCjkColumn {
+
+    /**
+     * The foliate paginator's `gap` attribute, as set by `engine.mjs` (`'5%'`).
+     *
+     * It is a percentage of the page width and it is split between the two side
+     * paddings, so it eats width the text column never sees — the foliate
+     * variant below has to account for it.
+     */
+    const val FOLIATE_GAP_PERCENT = 5f
+
+    /**
+     * Padding to add to *each* side of a box of [contentWidthPx] so the text
+     * column inside it is a whole number of cells.
+     *
+     * @param contentWidthPx the width the column would otherwise fill.
+     * @param fontSizePx body font size in px.
+     * @param letterSpacingPx tracking in px.
+     */
+    fun sidePadFor(
+        contentWidthPx: Float,
+        fontSizePx: Float,
+        letterSpacingPx: Float = 0f,
+    ): Float = positiveOrZero(
+        CjkColumn.fit(
+            availablePx = contentWidthPx,
+            fontSizePx = fontSizePx,
+            letterSpacingPx = letterSpacingPx,
+        ).sidePadPx,
+    )
+
+    /**
+     * [sidePadFor] for the foliate track, where the browser — not we — own the
+     * inside of the page.
+     *
+     * The paginator lays the book out as one column page whose usable width is
+     *
+     *     column = pageWidth − margin − gap,  gap = pageWidth × g / (1 − g)
+     *
+     * (`getHorizontalColumnMetrics`; `g` is the renderer's `gap` attribute, 5%
+     * in `engine.mjs`). Two consequences the plain [sidePadFor] cannot express:
+     *
+     *  - the column is narrower than the page by the margin **and** the gap, so
+     *    quantising against the raw width aims at the wrong number;
+     *  - padding the box shrinks the page the gap is a percentage *of*, so the
+     *    padding cannot be read off directly — it has to be solved for:
+     *    `pageWidth = (column + margin) / (1 − g / (1 − g))`.
+     *
+     * All values are CSS px (inside a WebView one CSS px is one dp).
+     *
+     * @param viewportPx the WebView's own width.
+     * @param fontSizePx body font size.
+     * @param letterSpacingPx tracking.
+     * @param marginPx the reader's horizontal margin, the value the paginator
+     *   applies to each side of the page.
+     * @param maxInlineSizePx the renderer's `max-inline-size`: the paginator
+     *   splits the viewport into `ceil(width / maxInlineSizePx)` columns, so
+     *   above that width the page is a *spread* and its gutter metrics differ.
+     *   Quantising a spread is out of scope (and padding could itself drop the
+     *   spread back to one column), so that case returns 0.
+     * @return padding for *each* side, or 0 when there is nothing to gain.
+     */
+    fun foliateSidePadFor(
+        viewportPx: Float,
+        fontSizePx: Float,
+        letterSpacingPx: Float = 0f,
+        marginPx: Float = 0f,
+        maxInlineSizePx: Float = Float.MAX_VALUE,
+        gapPercent: Float = FOLIATE_GAP_PERCENT,
+    ): Float {
+        val cell = fontSizePx + letterSpacingPx
+        if (!viewportPx.isFinite() || viewportPx <= 0f) return 0f
+        if (!cell.isFinite() || cell <= 0f) return 0f
+        // Single page only — see maxInlineSizePx.
+        if (viewportPx >= maxInlineSizePx) return 0f
+        // The gap as a fraction of the page width: 5% of the *remaining* width,
+        // i.e. 5/95 of the page (see the comment on `#beforeRender`).
+        val share = gapPercent / 100f
+        val gapFactor =
+            if (!share.isFinite() || share <= 0f || share >= 1f) 0f else share / (1f - share)
+        val margin = if (marginPx.isFinite()) marginPx.coerceAtLeast(0f) else 0f
+        val usable = viewportPx * (1f - gapFactor) - margin
+        val fit = CjkColumn.fit(
+            availablePx = usable,
+            fontSizePx = fontSizePx,
+            letterSpacingPx = letterSpacingPx,
+        )
+        // Degenerate, or too narrow to quantise: leave the page alone rather
+        // than squeeze the text into a handful of characters.
+        if (fit.cells == 0) return 0f
+        val pageWidth = (fit.widthPx + margin) / (1f - gapFactor)
+        return positiveOrZero((viewportPx - pageWidth) / 2f)
+    }
+
+    /**
+     * A NaN reaching a Compose padding blanks the whole WebView, and a negative
+     * one makes Compose throw; both are reported as "no padding".
+     */
+    private fun positiveOrZero(pad: Float): Float =
+        if (pad.isFinite() && pad > 0f) pad else 0f
+}
