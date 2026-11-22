@@ -34,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,25 @@ import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeatureState
 import com.koodoreader.reader.shell.builtInPreset
 import com.koodoreader.reader.shell.t
+import kotlin.math.roundToInt
+
+/**
+ * `Slider.steps` = stops *between* the ends, so a 0.05 grid from 1.00 to 2.00
+ * (21 values) has 19 intermediate stops. Rounded, not truncated: float division
+ * of 1.00 by 0.05 is 19.9999997, and truncating would drop a whole stop.
+ */
+private val LINE_HEIGHT_STEPS =
+    ((ReaderFeatureCodec.LINE_HEIGHT_MAX - ReaderFeatureCodec.LINE_HEIGHT_MIN) /
+        ReaderFeatureCodec.LINE_HEIGHT_STEP).roundToInt() - 1
+
+/** 14…22px in whole pixels — nine values, so seven stops between the ends. */
+private val FONT_SIZE_STEPS = ((ReaderFeatureCodec.FONT_SCALE_MAX - ReaderFeatureCodec.FONT_SCALE_MIN) *
+    ReaderFeatureCodec.FONT_SIZE_DEFAULT).roundToInt() - 1
+
+/** ±0.1 in 0.01 steps — nineteen stops between the ends. */
+private val LETTER_SPACING_STEPS =
+    ((ReaderFeatureCodec.LETTER_SPACING_MAX - ReaderFeatureCodec.LETTER_SPACING_MIN) /
+        ReaderFeatureCodec.LETTER_SPACING_STEP).roundToInt() - 1
 
 @Composable
 fun AppearanceSection(
@@ -61,10 +82,13 @@ fun AppearanceSection(
     onFontScale: (Float) -> Unit,
     lineHeight: Float,
     onLineHeight: (Float) -> Unit,
+    letterSpacingSp: Float,
+    onLetterSpacing: (Float) -> Unit,
     marginDp: Int,
     onMarginDp: (Int) -> Unit,
     pdfReflow: Boolean,
 ) {
+    val haptics = LocalHapticFeedback.current
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         if (format != ReaderFormatKind.PDF && FoliateAppearance.showInReaderSheet(useFoliate)) {
             Text(t("Theme"), style = MaterialTheme.typography.labelLarge)
@@ -111,14 +135,25 @@ fun AppearanceSection(
         val showTypography = format != ReaderFormatKind.PDF || pdfReflow
         if (showTypography) {
             Text(
-                "${t("Font size")} · ${(fontScale * 100).toInt()}%",
+                "${t("Font size")} · ${ReaderFeatureCodec.fontSizePx(ReaderFeatureState(fontScale = fontScale)).toInt()} px",
                 style = MaterialTheme.typography.titleMedium,
             )
             Slider(
-                value = fontScale,
-                onValueChange = onFontScale,
+                value = fontScale.coerceIn(
+                    ReaderFeatureCodec.FONT_SCALE_MIN, ReaderFeatureCodec.FONT_SCALE_MAX,
+                ),
+                onValueChange = { raw ->
+                    // One stop per whole pixel of the 17px default: a fractional
+                    // body size makes the CJK cell grid and the glyph advances
+                    // disagree, and the reader cannot dial the value back.
+                    val snapped = ReaderFeatureCodec.snappedFontScale(raw)
+                    if (snapped != fontScale) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    onFontScale(snapped)
+                },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-                steps = 17,
+                steps = FONT_SIZE_STEPS,
             )
             if (format != ReaderFormatKind.PDF) {
                 Text(
@@ -126,10 +161,37 @@ fun AppearanceSection(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Slider(
-                    value = lineHeight,
-                    onValueChange = onLineHeight,
+                    value = lineHeight.coerceIn(
+                        ReaderFeatureCodec.LINE_HEIGHT_MIN, ReaderFeatureCodec.LINE_HEIGHT_MAX,
+                    ),
+                    onValueChange = { raw ->
+                        val snapped = ReaderFeatureCodec.snappedLineHeight(raw)
+                        if (snapped != lineHeight) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        onLineHeight(snapped)
+                    },
                     valueRange = ReaderFeatureCodec.LINE_HEIGHT_MIN..ReaderFeatureCodec.LINE_HEIGHT_MAX,
-                    steps = 9,
+                    steps = LINE_HEIGHT_STEPS,
+                )
+                Text(
+                    "${t("Letter spacing")} · ${"%.2f".format(letterSpacingSp)}",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Slider(
+                    value = letterSpacingSp.coerceIn(
+                        ReaderFeatureCodec.LETTER_SPACING_MIN,
+                        ReaderFeatureCodec.LETTER_SPACING_MAX,
+                    ),
+                    onValueChange = { raw ->
+                        val snapped = ReaderFeatureCodec.snappedLetterSpacing(raw)
+                        if (snapped != letterSpacingSp) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        onLetterSpacing(snapped)
+                    },
+                    valueRange = ReaderFeatureCodec.LETTER_SPACING_MIN..ReaderFeatureCodec.LETTER_SPACING_MAX,
+                    steps = LETTER_SPACING_STEPS,
                 )
                 Text(t("Margin"), style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp)) {
@@ -267,7 +329,7 @@ fun AdvancedSection(
         val fonts = remember(context) { FontManager.systemFonts(context) }
         var fontMenuOpen by remember { mutableStateOf(false) }
         Text(
-            t("Font size") + "  ${(state.fontScale * 100).toInt()}%",
+            t("Font size") + "  ${ReaderFeatureCodec.fontSizePx(state).toInt()} px",
             style = MaterialTheme.typography.labelLarge,
         )
         Slider(
@@ -275,9 +337,9 @@ fun AdvancedSection(
                 ReaderFeatureCodec.FONT_SCALE_MIN,
                 ReaderFeatureCodec.FONT_SCALE_MAX,
             ),
-            onValueChange = { onChange(state.copy(fontScale = it)) },
+            onValueChange = { onChange(state.copy(fontScale = ReaderFeatureCodec.snappedFontScale(it))) },
             valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-            steps = 7,
+            steps = FONT_SIZE_STEPS,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t("Font"), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))

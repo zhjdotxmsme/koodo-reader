@@ -1,6 +1,7 @@
 package com.koodoreader.reader.shell
 
 import com.koodoreader.core.designsystem.CjkTypography
+import kotlin.math.roundToInt
 
 /**
  * Native reading typography + P6 enhancement switches.
@@ -13,6 +14,8 @@ import com.koodoreader.core.designsystem.CjkTypography
 data class ReaderFeatureState(
     val fontScale: Float = 1.0f,
     val lineHeightRatio: Float = 1.6f,
+    /** Extra tracking on top of the CJK default, in **sp** (negative = tighter). */
+    val letterSpacingSp: Float = 0f,
     val marginHorizontalPx: Float = 0f,
     val bionic: Boolean = false,
     val ruler: Boolean = false,
@@ -54,6 +57,7 @@ object ReaderFeatureCodec {
 
     const val KEY_FONT_SCALE = "fontScale"
     const val KEY_LINE_HEIGHT = "lineHeightRatio"
+    const val KEY_LETTER_SPACING = "letterSpacingSp"
     const val KEY_MARGIN = "marginHorizontalPx"
     const val KEY_BIONIC = "bionic"
     const val KEY_RULER = "ruler"
@@ -90,6 +94,11 @@ object ReaderFeatureCodec {
     const val FONT_SCALE_MAX = 22f / 17f
     const val LINE_HEIGHT_MIN = 1f
     const val LINE_HEIGHT_MAX = 2f
+    /** Slider granularity for the line height — 21 stops between min and max. */
+    const val LINE_HEIGHT_STEP = 0.05f
+    const val LETTER_SPACING_MIN = -0.1f
+    const val LETTER_SPACING_MAX = 0.1f
+    const val LETTER_SPACING_STEP = 0.01f
     const val MARGIN_MIN = -40f
     const val MARGIN_MAX = 80f
     const val SPEED_WPM_MIN = 100
@@ -99,6 +108,7 @@ object ReaderFeatureCodec {
     fun fromMap(map: Map<String, String>): ReaderFeatureState = ReaderFeatureState(
         fontScale = floatOf(map[KEY_FONT_SCALE], 1.0f),
         lineHeightRatio = floatOf(map[KEY_LINE_HEIGHT], 1.6f),
+        letterSpacingSp = floatOf(map[KEY_LETTER_SPACING], 0f),
         marginHorizontalPx = floatOf(map[KEY_MARGIN], 0f),
         bionic = boolOf(map[KEY_BIONIC]),
         ruler = boolOf(map[KEY_RULER]),
@@ -129,6 +139,7 @@ object ReaderFeatureCodec {
     fun toMap(state: ReaderFeatureState): Map<String, String> = mapOf(
         KEY_FONT_SCALE to state.fontScale.toString(),
         KEY_LINE_HEIGHT to state.lineHeightRatio.toString(),
+        KEY_LETTER_SPACING to clampedLetterSpacing(state).toString(),
         KEY_MARGIN to state.marginHorizontalPx.toString(),
         KEY_BIONIC to state.bionic.toString(),
         KEY_RULER to state.ruler.toString(),
@@ -221,6 +232,7 @@ object ReaderFeatureCodec {
             firstLineIndent = firstLineIndent,
             justify = true,
             explicitParagraphSpacingPx = effectiveParagraphSpacingCssPx(state),
+            letterSpacingSp = clampedLetterSpacing(state),
         )
         // A real newline between rule blocks. The previous "\\n" wrote a
         // literal backslash-n into the stylesheet whenever custom CSS was
@@ -231,8 +243,62 @@ object ReaderFeatureCodec {
     fun fontSizePx(state: ReaderFeatureState): Float =
         FONT_SIZE_DEFAULT * state.fontScale.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
 
+    /**
+     * Tracking as the WebView track sees it, in **CSS px** (= dp): the CJK
+     * default plus the reader's adjustment, scaled with the font size.
+     *
+     * Also what the foliate column quantisation needs: a cell is the font size
+     * plus this value.
+     */
+    fun letterSpacingCssPx(state: ReaderFeatureState): Float =
+        (CjkTypography.LETTER_SPACING_SP + clampedLetterSpacing(state)) *
+            state.fontScale.coerceAtLeast(0.5f)
+
     fun clampedLineHeight(state: ReaderFeatureState): Float =
-        state.lineHeightRatio.coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX)
+        snappedLineHeight(state.lineHeightRatio.coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX))
+
+    fun clampedLetterSpacing(state: ReaderFeatureState): Float =
+        state.letterSpacingSp.coerceIn(LETTER_SPACING_MIN, LETTER_SPACING_MAX)
+
+    fun snappedLetterSpacing(value: Float): Float {
+        if (!value.isFinite()) return 0f
+        val snapped = (value / LETTER_SPACING_STEP).roundToInt() * LETTER_SPACING_STEP
+        return snapped.coerceIn(LETTER_SPACING_MIN, LETTER_SPACING_MAX)
+    }
+
+    /**
+     * Line height rounded to the slider's [LINE_HEIGHT_STEP] grid, then clamped.
+     *
+     * A continuous slider leaves values like 1.6327498, which makes the same
+     * setting impossible to dial back to and prints eight digits next to the
+     * slider. Snapping is also applied on load, so a store written by an older
+     * build lands on the grid instead of producing a half-step.
+     */
+    fun snappedLineHeight(value: Float): Float {
+        if (!value.isFinite()) return LINE_HEIGHT_MIN
+        val snapped = (value / LINE_HEIGHT_STEP).roundToInt() * LINE_HEIGHT_STEP
+        return snapped.coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX)
+    }
+
+    /**
+     * Font scale snapped so the rendered body lands on a whole pixel size.
+     *
+     * The slider moves in one-pixel steps of the 17px default (14…22px): a
+     * fractional size makes the CJK column grid and the glyph advances
+     * disagree, which is exactly the uneven tracking the quantisation exists
+     * to avoid.
+     */
+    fun snappedFontScale(value: Float): Float {
+        val clamped = if (value.isFinite()) {
+            value.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
+        } else {
+            1f
+        }
+        val px = (FONT_SIZE_DEFAULT * clamped).roundToInt()
+            .coerceIn((FONT_SIZE_DEFAULT * FONT_SCALE_MIN).roundToInt(),
+                (FONT_SIZE_DEFAULT * FONT_SCALE_MAX).roundToInt())
+        return px / FONT_SIZE_DEFAULT
+    }
 
     fun clampedMargin(state: ReaderFeatureState): Float =
         state.marginHorizontalPx.coerceIn(MARGIN_MIN, MARGIN_MAX)

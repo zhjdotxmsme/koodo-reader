@@ -46,9 +46,12 @@ object ReaderTypography {
 
     /**
      * The fallback letter spacing, in px, for the given density and font scale.
+     *
+     * @param extraSp the reader's own tracking adjustment on top of the CJK
+     *   default (see [ReaderFeatureState.letterSpacingSp]).
      */
-    fun letterSpacingPx(density: Float, fontScale: Float = 1f): Float =
-        CjkTypography.letterSpacingPx(density, fontScale)
+    fun letterSpacingPx(density: Float, fontScale: Float = 1f, extraSp: Float = 0f): Float =
+        (CjkTypography.LETTER_SPACING_SP + extraSp) * density * fontScale.coerceAtLeast(0.5f)
 
     /**
      * The fallback first-line indent, in px, for the given font size.
@@ -93,6 +96,8 @@ object ReaderTypography {
         /** Explicit paragraph gap in **dp**, or 0 when the user has not set one. */
         explicitParagraphSpacingPx: Float = 0f,
         firstLineIndent: Boolean = true,
+        /** Extra tracking on top of the CJK default, in **sp**. */
+        letterSpacingSp: Float = 0f,
     ): PaginatorOptions = PaginatorOptions(
         columnsPerPage = columnsPerPage,
         fontSizePx = fontSizePx,
@@ -119,7 +124,7 @@ object ReaderTypography {
         } else {
             0f
         },
-        letterSpacingPx = letterSpacingPx(density, fontScale),
+        letterSpacingPx = letterSpacingPx(density, fontScale, letterSpacingSp),
         // Chinese has no word gaps, so the CSS default (stretch the spaces)
         // would leave a justified Chinese column ragged. Spread the slack over
         // the gaps between ideographs instead.
@@ -150,6 +155,8 @@ object ReaderTypography {
         firstLineIndent: Boolean = true,
         justify: Boolean = true,
         explicitParagraphSpacingPx: Float = 0f,
+        /** Extra tracking on top of the CJK default, in **sp** (= CSS px here). */
+        letterSpacingSp: Float = 0f,
     ): String = CjkStyleSheet.build(
         CjkStyleSheet.Rule(
             // CSS px, not physical px: inside a WebView one CSS px is one dp.
@@ -162,7 +169,8 @@ object ReaderTypography {
             },
             firstLineIndentEm = CjkTypography.FIRST_LINE_INDENT_EM,
             // CSS px again: 0.5sp of tracking is 0.5 CSS px, not 0.5 × density.
-            letterSpacingPx = CjkTypography.LETTER_SPACING_SP * fontScale.coerceAtLeast(0.5f),
+            letterSpacingPx = (CjkTypography.LETTER_SPACING_SP + letterSpacingSp) *
+                fontScale.coerceAtLeast(0.5f),
             justify = justify,
             indentFirstLine = firstLineIndent,
         ),

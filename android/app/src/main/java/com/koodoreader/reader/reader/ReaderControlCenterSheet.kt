@@ -117,6 +117,10 @@ fun ReaderControlCenterSheet(
                         onFontScale = onFontScale,
                         lineHeight = ReaderFeatureCodec.clampedLineHeight(state),
                         onLineHeight = { onFeatureChange(state.copy(lineHeightRatio = it)) },
+                        letterSpacingSp = ReaderFeatureCodec.clampedLetterSpacing(state),
+                        onLetterSpacing = {
+                            onFeatureChange(state.copy(letterSpacingSp = it))
+                        },
                         marginDp = marginDp,
                         onMarginDp = onMarginDp,
                         pdfReflow = state.pdfReflow,

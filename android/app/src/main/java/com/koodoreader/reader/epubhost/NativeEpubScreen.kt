@@ -78,7 +78,6 @@ import com.koodoreader.core.data.KoodoDatabaseProvider
 import com.koodoreader.core.data.entity.BookmarkEntity
 import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.designsystem.CssColor
-import com.koodoreader.core.designsystem.CjkTypography
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.koodoreader.engine.annotate.HighlightColor
@@ -283,7 +282,7 @@ fun NativeEpubScreen(
         ReaderTextPipeline.setRulesJson(next.textRulesJson)
     }
     fun setFontScale(v: Float) {
-        commitFeatures(features.copy(fontScale = v.coerceIn(ReaderFeatureCodec.FONT_SCALE_MIN, ReaderFeatureCodec.FONT_SCALE_MAX)))
+        commitFeatures(features.copy(fontScale = ReaderFeatureCodec.snappedFontScale(v)))
     }
     val fontScale = features.fontScale
     val readerScheme = rememberReaderColorScheme(readerThemeKind, features.customBackgroundArgb)
@@ -492,6 +491,7 @@ fun NativeEpubScreen(
             format,
             features.fontScale,
             features.lineHeightRatio,
+            features.letterSpacingSp,
             features.marginHorizontalPx,
             features.textRulesJson,
             features.columnsPerPage,
@@ -542,6 +542,7 @@ fun NativeEpubScreen(
                         explicitParagraphSpacingPx =
                             ReaderFeatureCodec.clampedParagraphSpacing(features),
                         firstLineIndent = chromeState.firstLineIndent,
+                        letterSpacingSp = ReaderFeatureCodec.clampedLetterSpacing(features),
                     ),
                     progressiveEpub = fmt.equals("epub", ignoreCase = true),
                 )
@@ -1433,7 +1434,7 @@ fun NativeEpubScreen(
     }
     val viewSettings = remember(
         readerThemeKind, features.fontScale, features.fontKey,
-        features.lineHeightRatio, features.marginHorizontalPx,
+        features.lineHeightRatio, features.letterSpacingSp, features.marginHorizontalPx,
         features.columnsPerPage, features.scrolled, features.doublePage,
         features.textRulesJson, features.customBookCss, features.customBookCssEnabled,
         features.paragraphSpacingPx, features.perfTier, foliateFontDecl,
@@ -1512,6 +1513,7 @@ fun NativeEpubScreen(
             columnsPerPage = ReaderFeatureCodec.clampedColumns(features),
             explicitParagraphSpacingPx = ReaderFeatureCodec.clampedParagraphSpacing(features),
             firstLineIndent = chromeState.firstLineIndent,
+            letterSpacingSp = ReaderFeatureCodec.clampedLetterSpacing(features),
         )
     }
 
@@ -1712,13 +1714,13 @@ fun NativeEpubScreen(
                     // cannot cause a re-pagination flash.
                     val cjkSidePad = remember(
                         maxWidth, contentInsets.left, contentInsets.right,
-                        features.fontScale, viewSettings.marginPx, viewSettings.maxInlineSizePx,
+                        features.fontScale, features.letterSpacingSp,
+                        viewSettings.marginPx, viewSettings.maxInlineSizePx,
                     ) {
                         ReaderCjkColumn.foliateSidePadFor(
                             viewportPx = (maxWidth - contentInsets.left - contentInsets.right).value,
                             fontSizePx = ReaderFeatureCodec.fontSizePx(features),
-                            letterSpacingPx = CjkTypography.LETTER_SPACING_SP *
-                                features.fontScale.coerceAtLeast(0.5f),
+                            letterSpacingPx = ReaderFeatureCodec.letterSpacingCssPx(features),
                             marginPx = viewSettings.marginPx.toFloat(),
                             maxInlineSizePx = viewSettings.maxInlineSizePx.toFloat(),
                         ).dp

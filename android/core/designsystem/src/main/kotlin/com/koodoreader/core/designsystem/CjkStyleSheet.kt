@@ -57,7 +57,9 @@ object CjkStyleSheet {
         val out = StringBuilder(512)
 
         out.append("body{")
-        if (rule.letterSpacingPx > 0f) {
+        // Negative tracking is a real setting (tighten a column that reads
+        // loose), so only an exact zero is skipped.
+        if (rule.letterSpacingPx != 0f && rule.letterSpacingPx.isFinite()) {
             out.append("letter-spacing:").append(cssPx(rule.letterSpacingPx)).append("px;")
         }
         if (rule.justify) out.append("text-align:justify;")

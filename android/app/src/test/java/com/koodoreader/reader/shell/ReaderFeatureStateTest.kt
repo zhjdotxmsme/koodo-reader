@@ -221,4 +221,66 @@ class ReaderFeatureStateTest {
         assertEquals(0f, ReaderFeatureCodec.clampedParagraphSpacing(ReaderFeatureState(paragraphSpacingPx = -3f)))
         assertEquals(48f, ReaderFeatureCodec.clampedParagraphSpacing(ReaderFeatureState(paragraphSpacingPx = 99f)))
     }
+
+    // ─── Discrete sliders (P1-13) ─────────────────────────────────────────────
+
+    @Test
+    fun `letter spacing round trips through the codec`() {
+        val state = ReaderFeatureState(letterSpacingSp = 0.05f)
+        assertEquals(0.05f, ReaderFeatureCodec.fromMap(ReaderFeatureCodec.toMap(state)).letterSpacingSp, 0.001f)
+    }
+
+    @Test
+    fun `letter spacing clamps to the supported range`() {
+        assertEquals(
+            ReaderFeatureCodec.LETTER_SPACING_MAX,
+            ReaderFeatureCodec.clampedLetterSpacing(ReaderFeatureState(letterSpacingSp = 0.4f)),
+            0.001f,
+        )
+        assertEquals(
+            ReaderFeatureCodec.LETTER_SPACING_MIN,
+            ReaderFeatureCodec.clampedLetterSpacing(ReaderFeatureState(letterSpacingSp = -0.4f)),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `line height snaps to the 0_05 grid`() {
+        assertEquals(1.15f, ReaderFeatureCodec.snappedLineHeight(1.13f), 0.001f)
+        assertEquals(1.20f, ReaderFeatureCodec.snappedLineHeight(1.22f), 0.001f)
+        assertEquals(ReaderFeatureCodec.LINE_HEIGHT_MIN, ReaderFeatureCodec.snappedLineHeight(0.5f))
+        assertEquals(ReaderFeatureCodec.LINE_HEIGHT_MAX, ReaderFeatureCodec.snappedLineHeight(9f))
+    }
+
+    @Test
+    fun `font scale snaps to whole pixel sizes`() {
+        // 17px default: 17.34px rounds back to 17, 18.02px rounds up to 18 —
+        // the slider must not leave the body on a fractional size, because a
+        // fractional size makes the CJK cell grid and the glyph advances
+        // disagree.
+        assertEquals(1f, ReaderFeatureCodec.snappedFontScale(1.02f), 0.001f)
+        assertEquals(18f / 17f, ReaderFeatureCodec.snappedFontScale(1.06f), 0.001f)
+        assertEquals(14f, ReaderFeatureCodec.fontSizePx(ReaderFeatureState(
+            fontScale = ReaderFeatureCodec.snappedFontScale(ReaderFeatureCodec.FONT_SCALE_MIN),
+        )), 0.001f)
+        assertEquals(22f, ReaderFeatureCodec.fontSizePx(ReaderFeatureState(
+            fontScale = ReaderFeatureCodec.snappedFontScale(ReaderFeatureCodec.FONT_SCALE_MAX),
+        )), 0.001f)
+    }
+
+    @Test
+    fun `letter spacing reaches both rendering tracks`() {
+        val wide = ReaderFeatureState(letterSpacingSp = 0.1f)
+        val base = ReaderFeatureState()
+        // WebView track: CSS px = dp, so no density in the number.
+        val baseCss = ReaderFeatureCodec.userStylesheet(base, density = 1f)
+        val wideCss = ReaderFeatureCodec.userStylesheet(wide, density = 1f)
+        assertTrue(baseCss, baseCss.contains("letter-spacing:0.5px;"))
+        assertTrue(wideCss, wideCss.contains("letter-spacing:0.6px;"))
+        // Native track: px, so density scales it.
+        val options = ReaderTypography.paginatorOptions(
+            density = 3f, letterSpacingSp = 0.1f,
+        )
+        assertEquals((0.5f + 0.1f) * 3f, options.letterSpacingPx, 0.001f)
+    }
 }

@@ -909,7 +909,7 @@ fun NativePdfScreen(
             onTheme = { appearancePrefs.readerThemeKind = it },
             fontScale = features.fontScale,
             onFontScale = {
-                val next = features.copy(fontScale = it)
+                val next = features.copy(fontScale = ReaderFeatureCodec.snappedFontScale(it))
                 features = next
                 featurePrefs.save(next)
             },

@@ -201,17 +201,17 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
             )
 
             Spacer(Modifier.height(8.dp))
-            val percent = (state.fontScale * 100).toInt().toString()
             Text(
-                text = "${t("Font size")} · ${percent}%",
+                text = "${t("Font size")} · ${ReaderFeatureCodec.fontSizePx(state).toInt()} px",
                 style = MaterialTheme.typography.titleMedium,
             )
             Slider(
                 value = state.fontScale,
-                onValueChange = { commit(state.copy(fontScale = it)) },
+                onValueChange = {
+                    commit(state.copy(fontScale = ReaderFeatureCodec.snappedFontScale(it)))
+                },
                 valueRange = ReaderFeatureCodec.FONT_SCALE_MIN..ReaderFeatureCodec.FONT_SCALE_MAX,
-                // 与书内阅读选项 Layout/Advanced 一致：0.1 步长（0.7..2.5 → 17 steps）。
-                steps = 17,
+                steps = 7,
             )
 
             Text(t("Font"), style = MaterialTheme.typography.titleMedium)
@@ -270,10 +270,25 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
             )
             Slider(
-                value = state.lineHeightRatio,
-                onValueChange = { commit(state.copy(lineHeightRatio = it)) },
+                value = ReaderFeatureCodec.clampedLineHeight(state),
+                onValueChange = {
+                    commit(state.copy(lineHeightRatio = ReaderFeatureCodec.snappedLineHeight(it)))
+                },
                 valueRange = ReaderFeatureCodec.LINE_HEIGHT_MIN..ReaderFeatureCodec.LINE_HEIGHT_MAX,
-                steps = 3,
+                steps = 19,
+            )
+
+            Text(
+                text = "${t("Letter spacing")} · ${"%.2f".format(ReaderFeatureCodec.clampedLetterSpacing(state))}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Slider(
+                value = ReaderFeatureCodec.clampedLetterSpacing(state),
+                onValueChange = {
+                    commit(state.copy(letterSpacingSp = ReaderFeatureCodec.snappedLetterSpacing(it)))
+                },
+                valueRange = ReaderFeatureCodec.LETTER_SPACING_MIN..ReaderFeatureCodec.LETTER_SPACING_MAX,
+                steps = 19,
             )
 
             Text(
