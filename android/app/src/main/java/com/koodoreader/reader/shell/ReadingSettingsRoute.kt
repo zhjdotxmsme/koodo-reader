@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,15 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
     var gesture by remember { mutableStateOf(gestureStore.load()) }
     var pattern by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
+    val selectionActionPrefs = remember(context) { SelectionMenuActionPrefs(context) }
+    var selectionActions by remember(selectionActionPrefs) {
+        mutableStateOf(selectionActionPrefs.load())
+    }
+
+    fun commitSelectionActions(next: List<SelectionMenuAction>) {
+        selectionActions = next
+        selectionActionPrefs.save(next)
+    }
 
     fun commit(next: ReaderFeatureState) {
         state = next
@@ -363,6 +373,39 @@ fun ReadingSettingsRoute(onBack: () -> Unit) {
                     minLines = 4,
                 )
             }
+            Spacer(Modifier.height(16.dp))
+            Text(t("Selection menu actions"), style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                t("Choose which actions the selection menu offers"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            SelectionMenuAction.entries.chunked(3).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(SpaceTokens.sm.dp),
+                ) {
+                    row.forEach { action ->
+                        FilterChip(
+                            selected = action in selectionActions,
+                            onClick = {
+                                // Never leave the menu with nothing on it: the
+                                // last remaining action cannot be turned off.
+                                val next = if (action in selectionActions) {
+                                    (selectionActions - action).ifEmpty { selectionActions }
+                                } else {
+                                    selectionActions + action
+                                }
+                                commitSelectionActions(next)
+                            },
+                            label = { Text(t(action.titleKey)) },
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
             Text(t("Text rules"), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))

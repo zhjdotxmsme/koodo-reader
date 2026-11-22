@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,6 +60,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -119,6 +121,8 @@ import com.koodoreader.reader.reader.BookAnnotationsViewModel
 import com.koodoreader.reader.shell.ReaderFeatureCodec
 import com.koodoreader.reader.shell.ReaderFeaturePrefs
 import com.koodoreader.reader.shell.ReaderFeatureState
+import com.koodoreader.reader.shell.SelectionMenuAction
+import com.koodoreader.reader.shell.SelectionMenuActionPrefs
 import com.koodoreader.reader.shell.ReaderPurifiedText
 import com.koodoreader.reader.shell.ReaderTextPipeline
 import com.koodoreader.reader.shell.WordBank
@@ -967,6 +971,17 @@ fun NativeEpubScreen(
     var aiBusy by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var noteText by remember { mutableStateOf("") }
+    // P1-12: which secondary actions the selection menu offers. Read once per
+    // screen and refreshed from Settings; the colour row and Delete stay fixed.
+    val selectionActionPrefs = remember(context) { SelectionMenuActionPrefs(context) }
+    var selectionActions by remember(selectionActionPrefs) {
+        mutableStateOf(selectionActionPrefs.load())
+    }
+    // The user can change the set in Settings while a book stays open; the
+    // screen is not recreated on return, so re-read when the menu opens.
+    LaunchedEffect(showSelectionMenu) {
+        if (showSelectionMenu) selectionActions = selectionActionPrefs.load()
+    }
     // 字典
     val dictRepo = remember(context) {
         DictRepository(context.applicationContext.filesDir)
@@ -1262,6 +1277,34 @@ fun NativeEpubScreen(
         translateController.show(text, bookKey = bookKey, cfi = cfi)
         showSelectionMenu = false
         readerScope.launch { translateController.translate() }
+    }
+
+    /**
+     * Runs one configurable selection action (P1-12).
+     *
+     * Every branch is the exact body the menu used to hardcode, so making the
+     * row configurable cannot change what an action does — only whether it is
+     * offered.
+     */
+    fun runSelectionAction(action: SelectionMenuAction, clipboard: ClipboardManager) {
+        when (action) {
+            SelectionMenuAction.COPY -> {
+                clipboard.setText(AnnotatedString(currentSelectionText()))
+                showSelectionMenu = false
+            }
+            SelectionMenuAction.SEARCH -> {
+                searchQuery = currentSelectionText()
+                showSelectionMenu = false
+                showSearch = true
+                doSearch()
+            }
+            SelectionMenuAction.DICTIONARY -> lookupDictionary()
+            SelectionMenuAction.TRANSLATE -> startTranslation()
+            SelectionMenuAction.NOTE -> {
+                noteText = ""
+                showNoteDialog = true
+            }
+        }
     }
 
     fun saveNote() {
@@ -2158,7 +2201,7 @@ fun NativeEpubScreen(
         ) {
             Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                 if (highlighted) {
-                    // 已高亮：显示删除 + 字典
+                    // 已高亮：显示删除 + 可配置动作行
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "${t("Highlight")} 「${excerpt.take(24)}」",
@@ -2167,22 +2210,16 @@ fun NativeEpubScreen(
                             maxLines = 1,
                         )
                         TextButton(onClick = { deleteHighlight() }, modifier = Modifier.koodoPressScale()) { Text(t("Delete")) }
-                        TextButton(onClick = {
-                            clipboard.setText(AnnotatedString(excerpt))
-                            showSelectionMenu = false
-                        }, modifier = Modifier.koodoPressScale()) { Text(t("Copy")) }
-                        TextButton(onClick = {
-                            searchQuery = excerpt
-                            showSelectionMenu = false
-                            showSearch = true
-                            doSearch()
-                        }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
-                        TextButton(onClick = { lookupDictionary() }, modifier = Modifier.koodoPressScale()) { Text(t("Dictionary")) }
-                        TextButton(onClick = { startTranslation() }, modifier = Modifier.koodoPressScale()) { Text(t("Translate")) }
+                        selectionActions.forEach { action ->
+                            TextButton(
+                                onClick = { runSelectionAction(action, clipboard) },
+                                modifier = Modifier.koodoPressScale(),
+                            ) { Text(t(action.titleKey)) }
+                        }
                         TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
                     }
                 } else {
-                    // 未高亮：高亮(4色) + 笔记 + 字典
+                    // 未高亮：高亮(4色) 固定 + 可配置动作行
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "「${excerpt.take(16)}」",
@@ -2195,20 +2232,15 @@ fun NativeEpubScreen(
                         TextButton(onClick = { saveHighlight(2) }, modifier = Modifier.koodoPressScale()) { Text(t("Pink")) }
                         TextButton(onClick = { saveHighlight(3) }, modifier = Modifier.koodoPressScale()) { Text(t("Blue")) }
                     }
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { noteText = ""; showNoteDialog = true }, modifier = Modifier.koodoPressScale()) { Text(t("Note")) }
-                        TextButton(onClick = {
-                            clipboard.setText(AnnotatedString(excerpt))
-                            showSelectionMenu = false
-                        }, modifier = Modifier.koodoPressScale()) { Text(t("Copy")) }
-                        TextButton(onClick = {
-                            searchQuery = excerpt
-                            showSelectionMenu = false
-                            showSearch = true
-                            doSearch()
-                        }, modifier = Modifier.koodoPressScale()) { Text(t("Search")) }
-                        TextButton(onClick = { lookupDictionary() }, modifier = Modifier.koodoPressScale()) { Text(t("Dictionary")) }
-                        TextButton(onClick = { startTranslation() }, modifier = Modifier.koodoPressScale()) { Text(t("Translate")) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    ) {
+                        selectionActions.forEach { action ->
+                            TextButton(
+                                onClick = { runSelectionAction(action, clipboard) },
+                                modifier = Modifier.koodoPressScale(),
+                            ) { Text(t(action.titleKey)) }
+                        }
                         TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
                     }
                 }
