@@ -228,7 +228,7 @@ fun contentHeight(windowPx: Int, insets: Insets): Int =
 | # | 事项 | 文件 | 验收 |
 |---|---|---|---|
 | 1 | 中文 `letterSpacing = 0`；`userStylesheet` 全面 dp + em | `ReaderTypography.kt`、`ReaderFeatureCodec.kt` | 无额外字缝；TXT/EPUB 同字号段距一致 |
-| 2 | `ReaderCjkColumn.quantize()` 接入两条轨 | 新增 + `NativeEpubScreen`/`TextLayoutDraw` | 两端严格对齐 |
+| 2 | `ReaderCjkColumn.quantize()` 接入两条轨 ✅ | 新增 + `NativeEpubScreen`/`TextLayoutDraw` | 两端严格对齐 |
 | 3 | 缩进 2em、段距仅 `p + p`、行距 13 档 | `ReaderTypography` / 控制中心 | 无双重留白；页底无半行空洞 |
 | 4 | CJK `widows/orphans = 1` | CSS + native 分页器 | 中文页底空白 ≤ 1 行 |
 | 5 | 触控区矩形模型 + 四布局 + 镜像 + gestureExclusion | `ReaderPageGestures.kt` | 单手不误翻；右开本方向正确 |
@@ -240,12 +240,12 @@ fun contentHeight(windowPx: Int, insets: Insets): Int =
 
 | # | 事项 | 要点 |
 |---|---|---|
-| 9 | 主题单次 `setStyles` | 样式分层合并为一段一次注入；深色图片 `mix-blend-mode: multiply` |
-| 10 | 页边标注 sidemark/sideline | 正文列外侧 5dp，RTL 换边 |
-| 11 | 高亮 CFI + 文本哈希重锚 | 5 色 + 深色 tint 表 |
-| 12 | 划词菜单动作可配置 | 词典/翻译/摘录/朗读 |
-| 13 | 控制中心滑杆离散化 + 触感 | 行距 13 档、字距 ±0.1 |
-| 14 | 书架卡片按尺寸分档（进度徽章/字号） | `BookCard.kt` 网格与列表一致性 |
+| 9 | 主题单次 `setStyles` ✅ | 样式分层合并为一段一次注入；深色图片 `mix-blend-mode: multiply` |
+| 10 | 页边标注 sidemark/sideline ✅ | 正文列外侧 6px 竖条，RTL 换边，两轨同源 |
+| 11 | 高亮 CFI + 文本哈希重锚 ✅ | 5 色 + 深色 tint 表（实做为摘要文本兜底，无哈希） |
+| 12 | 划词菜单动作可配置 ✅ | 复制/搜索/词典/翻译/笔记，启停可配 |
+| 13 | 控制中心滑杆离散化 + 触感 ✅ | 行距 0.05 格（19 档）、字号整像素（14–22px）、字距 ±0.1 |
+| 14 | 书架卡片按尺寸分档 ✅ | `BookCardTier`：<140dp 隐藏进度徽章、标题降档 |
 
 ### P2（可选）
 
@@ -302,7 +302,7 @@ fun contentHeight(windowPx: Int, insets: Insets): Int =
 | `PaginatorOptions` 统一由 `ReaderTypography.paginatorOptions()` 构建 | `NativeEpubScreen` | 消除两处重复构造导致的参数漂移 |
 | 单测：量化 5 项 + CSS 9 项 + 更新字距断言 | `core/designsystem/src/test` | 锁定契约 |
 
-**遗留**：`CjkColumn.fit()` 已实现并有单测，但尚未接入两个渲染轨的边距计算（需要实机验证 WebView 的可用宽度口径，避免与 Foliate 自身边距叠加）。这是 P0-2 的最后一步。
+**遗留**：native 轨已由 `paginatorOptions()` 的 `quantizeColumnToCells` 量化；WebView 轨的接缝 `ReaderCjkColumn.foliateSidePadFor()` 已接入（`NativeEpubScreen` 只对 foliate 容器加对称左右 padding）。**剩余：实机核对 WebView 可用宽度口径**（是否存在滚动条/内边距差），必要时修正反解式——列入真机附录清单。
 
 **未验证**：本轮改动**未运行编译**（按要求暂停打包）。风险点在 `ReaderControlCenterSections` 的滑杆类型与 `NativeEpubScreen` 的调用参数，恢复构建后需先跑 `:core:designsystem:test` 与 `:app:compileWebviewDebugKotlin`。
 
@@ -606,6 +606,34 @@ runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
 1. 打开一本有高亮的 EPUB：所有高亮正常显示；
 2. （构造性测试）修改书文件后重新导入：高亮仍在原位或附近，且**笔记列表里 CFI 已更新**；
 3. 彻底对不上的书：高亮缺失但笔记完整（可在笔记页看到原文），不崩溃、无静默删除。
+
+---
+
+## 5.10 2026-11-22 第 9 轮：P0/P1 剩余项落地
+
+| Task | 清单项 | 改动 | 关键位置 |
+|---|---|---|---|
+| 1 | **P0-2** WebView 轨列宽量化收尾 | `ReaderCjkColumn.foliateSidePadFor()` 反解「页面 padding 会缩小 gap 的百分比基数」这一循环依赖，把 foliate 列宽量化到整字格；`NativeEpubScreen` 只对 foliate 容器加对称左右 padding | `core/designsystem/.../CjkColumn.kt`、`NativeEpubScreen.kt` |
+| 2 | **P1-13** 滑杆离散化 + 触感 + 字距 | 行距 snap 到 0.05 格（19 档）、字号 snap 到整像素（14–22px，7 档）、新增字距 ±0.1（0.01 步长）；跨档触感 `TextHandleMove`；字距贯通 native 与 WebView 两轨 | `ReaderFeatureState.kt`、`ReaderTypography.kt`、`ReaderControlCenterSections.kt`、`ReadingSettingsRoute.kt` |
+| 3 | **P1-12** 划词菜单动作可配置 | `SelectionMenuAction` enum + SharedPreferences（逗号串，未知项丢弃、去重、空集回落默认）；菜单次行动作由设置驱动 | `shell/SelectionMenuActions.kt`、`NativeEpubScreen.kt`、`ReadingSettingsRoute.kt` |
+| 4 | **P1-14** 书架卡片分档 | `BookCardTier` 按 tile 实测宽度分档（<140dp 为 COMPACT）；COMPACT 隐藏进度徽章、标题降为 `bodyMedium` | `core/ui/.../BookCardTier.kt`、`KoodoBookCard.kt` |
+| 5 | **P1-10** 页边标注 | `SidemarkGeometry`：3px 竖条贴正文列外侧 6px，RTL 镜像到右，越界向内夹取；native 轨画在 Canvas、foliate 轨画在 Overlayer 的 SVG 组内（与高亮同生命周期） | `engine/annotate/.../SidemarkGeometry.kt`、`TextLayoutDraw.kt`、`overlayer.js`、`index.html` |
+
+### 与原计划的偏差（实做更正）
+
+1. **P0-2 的算式**：计划里的 `viewportPx - 2*margins` 口径不成立——foliate 的 `gap` 是页面宽度的百分比（`engine.mjs` 固定 5%），分页器内部还要再减 `margin` 与 `gap/2`。实际可用宽度是 `page*(1-g/(1-g)) - margin`，而加 padding 又同时缩小 `page`，所以 padding 必须反解：`page = (column + margin) / (1 - g/(1-g))`。另外跨度双页模式下每页指标不同（gutter 取 1/4 边距），padding 本身还可能把双页压回单页，因此该情形直接返回 0。
+2. **P1-10 的接线候选**：计划假设高亮是 DOM `<span>`（候选 A：稳定 class；候选 B：`data-koodo-hl` 属性）。实际 foliate 轨的高亮是 `Overlayer.highlight()` 画在 over-layer SVG 上的矩形，与 DOM 无关，A/B 都不成立。改为在 `Overlayer.highlight` 增加 `sidemarkWidth/Gap/Rtl` 选项，把竖条作为同一 `<g>` 的最后一个子节点——重绘、删除随高亮一起走，不需要额外记账。竖条透明度独立于 `.3` 的色带（否则 30% 的竖条等于看不见）。
+3. **页边标注的取数**：不做「仅带文字的笔记才画」的特判。竖条颜色由该页的色带 map 直接派生（`SidemarkGeometry.tickColors`），避免重复解析 CFI，也从结构上保证「竖条不可能指到色带不在的行」。
+
+### 验证
+
+- `node scripts/test-foliate-host.js` → **74/74**（新增 7 条：竖条位置/宽度/高度/不透明度、RTL 镜像、窄边距夹取、无宽度时不生成空组）；
+- `:core:designsystem:test` → `ReaderCjkColumnTest` 8 例（含「padding 反解后列宽确实是整格」「双页/退化输入返回 0」）；
+- `:engine:annotate:test` → `SidemarkGeometryTest` 6 例（含 NaN 与越界钳制、深浅两档 alpha）；
+- `:core:ui:testDebugUnitTest` → `BookCardTierTest` 3 例；
+- `:app:testNativeHostDebugUnitTest` → **388 例，0 失败**（含 `SelectionMenuActionsTest` 5 例、`ReaderFeatureStateTest` 新增 5 例）。
+
+**未验证（真机）**：foliate 轨 padding 的实机观感与 CSS 宽度口径（是否有滚动条吃掉 1–2px）、触感反馈在真机上的强度、页边标注在窄边距大字号下的观感——三项都需设备可用时单独核对。
 
 ---
 
