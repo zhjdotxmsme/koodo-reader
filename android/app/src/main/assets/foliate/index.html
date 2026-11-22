@@ -48,17 +48,32 @@ view.addEventListener('draw-annotation', (ev) => {
     const color = (detail.annotation && detail.annotation.color) || '#ffe066';
     // P1-10: every annotation carries a page-margin tick, so a note stays
     // visible while reading instead of only where the text is tinted.
-    // The book's direction is the section document's, not the host page's — an
-    // RTL book inside this LTR shell must mirror the tick to the right margin.
+    // The tick sits in the page's own side padding — the gap between the page
+    // edge and the text column — so it lands in the same place whether the
+    // selection is at the start of a line or in the middle of one.
     const doc = detail.doc || (detail.range && detail.range.startContainer
         && detail.range.startContainer.ownerDocument);
-    const rtl = !!(doc && doc.defaultView
-        && doc.defaultView.getComputedStyle(doc.body || doc.documentElement).direction === 'rtl');
+    const style = doc && doc.defaultView
+        ? doc.defaultView.getComputedStyle(doc.documentElement) : null;
+    // The paginator publishes the resolved side padding as a custom property
+    // (`--page-margin-left`, set in paginator.js). That is the reliable source:
+    // the computed `padding-left` also carries it, but reading it back depends
+    // on which element the overlay's document ended up styling, and an empty
+    // read silently suppressed every tick on the first device run.
+    const length = (name) => {
+        const raw = style ? parseFloat(style.getPropertyValue(name)) : NaN;
+        return Number.isFinite(raw) && raw > 0 ? raw : 0;
+    };
+    const padLeft = length('--page-margin-left') || length('padding-left');
+    const padRight = length('--page-margin-right') || length('padding-right');
+    const rtl = !!(style && doc.body
+        && doc.defaultView.getComputedStyle(doc.body).direction === 'rtl');
     detail.draw(Overlayer.highlight, {
         color: color,
         sidemarkWidth: 3,
-        sidemarkGap: 6,
         sidemarkRtl: rtl,
+        sidemarkPadLeft: padLeft,
+        sidemarkPadRight: padRight,
     });
 });
 view.addEventListener('load', (ev) => {

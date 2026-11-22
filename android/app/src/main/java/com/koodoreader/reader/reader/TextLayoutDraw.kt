@@ -62,23 +62,25 @@ internal object TextLayoutDraw {
                 bg,
             )
             if (sidemarkColor != null) {
-                val tick = android.graphics.Paint().apply {
-                    color = sidemarkColor.toInt()
-                    style = android.graphics.Paint.Style.FILL
-                }
-                val left = SidemarkGeometry.tickLeftPx(
+                SidemarkGeometry.tickLeftPxOrNull(
                     lineLeftPx = line.x,
                     lineRightPx = line.rightPx,
+                    indentPx = line.indentPx,
                     rtl = rtl,
                     pageWidthPx = pageWidthPx,
-                )
-                canvas.drawRect(
-                    left,
-                    line.y,
-                    left + SidemarkGeometry.WIDTH_PX,
-                    line.y + line.height,
-                    tick,
-                )
+                )?.let { left ->
+                    val tick = android.graphics.Paint().apply {
+                        color = sidemarkColor.toInt()
+                        style = android.graphics.Paint.Style.FILL
+                    }
+                    canvas.drawRect(
+                        left,
+                        line.y,
+                        left + SidemarkGeometry.WIDTH_PX,
+                        line.y + line.height,
+                        tick,
+                    )
+                }
             }
         }
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {

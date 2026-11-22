@@ -2728,23 +2728,27 @@ private fun DrawScope.drawLayoutLine(
                 line.y + line.height,
                 bg,
             )
-            sidemarkColors[line.blockIndex]?.let { mark -> 
-                val tick = android.graphics.Paint()
-                tick.color = mark.toInt()
-                tick.style = android.graphics.Paint.Style.FILL
-                val left = SidemarkGeometry.tickLeftPx(
+            sidemarkColors[line.blockIndex]?.let { mark ->
+                // The column edge, not the ink edge: an indented first line
+                // must not drag the tick right with it.
+                SidemarkGeometry.tickLeftPxOrNull(
                     lineLeftPx = line.x,
                     lineRightPx = line.rightPx,
+                    indentPx = line.indentPx,
                     rtl = rtl,
                     pageWidthPx = size.width,
-                )
-                canvas.drawRect(
-                    left,
-                    line.y,
-                    left + SidemarkGeometry.WIDTH_PX,
-                    line.y + line.height,
-                    tick,
-                )
+                )?.let { left ->
+                    val tick = android.graphics.Paint()
+                    tick.color = mark.toInt()
+                    tick.style = android.graphics.Paint.Style.FILL
+                    canvas.drawRect(
+                        left,
+                        line.y,
+                        left + SidemarkGeometry.WIDTH_PX,
+                        line.y + line.height,
+                        tick,
+                    )
+                }
             }
         }
     }

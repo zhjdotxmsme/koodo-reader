@@ -1,6 +1,17 @@
 const createSVGElement = tag =>
     document.createElementNS('http://www.w3.org/2000/svg', tag)
 
+// `rgba(r,g,b,a)` / `rgb(r,g,b)` → `rgb(r,g,b)`. Anything else (a hex, a named
+// colour) is returned unchanged — the mark then inherits whatever alpha the
+// caller implied, which for a hex is fully opaque anyway.
+const opaque = (color) => {
+    const match = /^rgba?\(\s*([^)]*)\)$/i.exec(String(color || '').trim())
+    if (!match) return color
+    const parts = match[1].split(',').map((part) => part.trim())
+    if (parts.length < 3) return color
+    return `rgb(${parts[0]},${parts[1]},${parts[2]})`
+}
+
 let overlayerCounter = 0
 
 // The page a rect sits in. The paginator sizes the root to a single page and
@@ -329,21 +340,44 @@ export class Overlayer {
             // overlay group, so it is redrawn and removed with the highlight
             // it belongs to — no separate bookkeeping, no orphan marks.
             sidemarkWidth = 0,
-            sidemarkGap = 6,
             sidemarkRtl = false,
+            // Clearance between the column edge and the tick, in CSS px. Same
+            // value as SidemarkGeometry.GAP_PX on the native track.
+            sidemarkGap = 2,
+            // The page's own side padding: the text column starts inside it,
+            // and the tick belongs in that gap, not next to the highlighted
+            // word — a word in the middle of a line would put it mid-column,
+            // which is what the first device run showed.
+            sidemarkPadLeft = 0,
+            sidemarkPadRight = 0,
         } = options
 
+        // Outer group: no opacity of its own. `opacity` multiplies down the
+        // whole subtree, so a tick nested inside the 30% band group would be
+        // drawn at 30% of 30% — invisible on a dark page, which is exactly what
+        // the first device run showed. The band keeps its wash on an inner group
+        // and the ticks sit beside it, opaque.
+        const root = createSVGElement('g')
         const g = createSVGElement('g')
-        g.setAttribute('fill', color)
+        // The callers pass the band colour as `rgba(r,g,b,0.3)` — the wash alpha
+        // is baked into the string — while the group ALSO applies
+        // `--overlayer-highlight-opacity: .3`. Multiplying the two drew every
+        // foliate highlight at 9% instead of the 30% the native track paints
+        // (measured on device: #B8860B over #121212 came out (33,28,17)). Strip
+        // the alpha here and let the group be the single source of the wash.
+        g.setAttribute('fill', opaque(color))
         g.style.opacity = 'var(--overlayer-highlight-opacity, .3)'
         g.style.mixBlendMode = 'var(--overlayer-highlight-blend-mode, normal)'
+        root.append(g)
 
-        // The tick goes in its own opaque group: the band above is drawn at
-        // 30% through the CSS variable, and a 30% tick would be invisible.
         const marks = sidemarkWidth > 0 ? createSVGElement('g') : null
         if (marks) {
-            marks.setAttribute('fill', color)
-            marks.style.opacity = '1'
+            // The callers pass the band colour as `rgba(r,g,b,0.3)` — the wash
+            // alpha is baked into the string, so a tick filled with it would be
+            // 30% opaque however the group is styled. Strip the alpha: a mark
+            // that is supposed to be noticed cannot be a wash.
+            marks.setAttribute('fill', opaque(color))
+            root.append(marks)
         }
 
         const lines = mergeLineRects(rects, vertical)
@@ -352,11 +386,24 @@ export class Overlayer {
             const isLast = index === lines.length - 1
 
             if (marks) {
-                const anchor = sidemarkRtl ? left + width + sidemarkGap : left - sidemarkGap - sidemarkWidth
+                // Anchor to the *column* edge, not to the highlighted run: the
+                // tick marks "there is a note on this line", so it must sit in
+                // the same place for a selection at the start of a line and one
+                // in the middle of it.
+                const pad = sidemarkRtl ? sidemarkPadRight : sidemarkPadLeft
+                // Same clearance as the native track (SidemarkGeometry): a
+                // 2px gap, the tick outside the column edge.
+                const needed = sidemarkGap + sidemarkWidth
                 const pageLeft = page ? page.left : 0
                 const pageRight = page ? page.right : Infinity
-                const x = Math.min(Math.max(anchor, pageLeft), pageRight - sidemarkWidth)
-                if (x >= pageLeft && x + sidemarkWidth <= pageRight) {
+                const columnLeft = pageLeft + (sidemarkRtl ? 0 : pad)
+                const columnRight = pageRight - (sidemarkRtl ? pad : 0)
+                // A margin narrower than the tick would put it under the text;
+                // skip the mark rather than draw it on the glyphs.
+                if (pad >= needed) {
+                    const x = sidemarkRtl
+                        ? Math.min(columnRight + sidemarkGap, pageRight - sidemarkWidth)
+                        : Math.max(columnLeft - sidemarkGap - sidemarkWidth, pageLeft)
                     const el = createSVGElement('rect')
                     el.setAttribute('x', x)
                     el.setAttribute('y', top)
@@ -435,10 +482,9 @@ export class Overlayer {
                 g.append(el)
             }
         }
-        // Marks last, so they sit above every band rect of this highlight.
-        if (marks) g.append(marks)
-        return g
+        return root
     }
+
     static outline(rects, options = {}) {
         const { color = 'red', width: strokeWidth = 3, padding = 0, radius = 3 } = options
         const g = createSVGElement('g')

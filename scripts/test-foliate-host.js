@@ -413,37 +413,68 @@ async function main() {
             ];
 
             nodes.length = 0;
-            const group = Overlayer.highlight(rects, { color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6 });
-            const marks = group.children[group.children.length - 1];
-            eq('sidemark group is the last child so it paints on top', marks.children.length, 2);
-            eq('sidemark left tick sits 6px outside the line', marks.children[0].attributes.x, 31);
-            eq('sidemark tick width is 3px', marks.children[0].attributes.width, 3);
-            eq('sidemark tick spans the line box', marks.children[0].attributes.height, 24);
-            eq('sidemark tick is opaque, not the 30% band alpha', marks.style.opacity, '1');
+            const group = Overlayer.highlight(rects, {
+                color: 'rgba(255,224,102,0.3)',
+                sidemarkWidth: 3,
+                sidemarkPadLeft: 20,
+                sidemarkPadRight: 20,
+            });
+            const [band, marks] = group.children;
+            eq('the band and the ticks are sibling groups', group.children.length, 2);
+            check(
+                'the tick group is NOT inside the 30% band group',
+                group.children.indexOf(marks) === 1 && marks.children.length === 2,
+                group.children.map((c) => c.children.length).join(','),
+            );
+            eq('the outer group carries no opacity of its own', group.style.opacity, undefined);
+            eq('the band group keeps the 30% wash', band.style.opacity, 'var(--overlayer-highlight-opacity, .3)');
+            eq(
+                'the tick drops the wash alpha the caller baked into the colour',
+                marks.attributes.fill,
+                'rgb(255,224,102)',
+            );
+            eq('the tick sits in the page side padding, left of the column', marks.children[0].attributes.x, 15);
+            eq('the tick is 3px wide', marks.children[0].attributes.width, 3);
+            eq('the tick spans the line box', marks.children[0].attributes.height, 24);
+            eq('the tick carries no opacity of its own', marks.style.opacity, undefined);
+            check(
+                'the tick does not follow a mid-line selection',
+                // Both lines in `rects` start at left=40, so both ticks land at
+                // the column edge regardless of where each run starts.
+                marks.children.every((c) => c.attributes.x === 15),
+                marks.children.map((c) => c.attributes.x).join(','),
+            );
+
+            nodes.length = 0;
+            const midLine = Overlayer.highlight(
+                [{ left: 180, top: 0, right: 240, bottom: 24, width: 60, height: 24,
+                    page: { left: 0, top: 0, right: 360, bottom: 640 } }],
+                { color: '#ffe066', sidemarkWidth: 3, sidemarkPadLeft: 20 },
+            ).children[1];
+            eq('a mid-line run still marks the margin', midLine.children[0].attributes.x, 15);
 
             nodes.length = 0;
             const rtlGroup = Overlayer.highlight(rects, {
-                color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6, sidemarkRtl: true,
+                color: '#ffe066', sidemarkWidth: 3, sidemarkRtl: true,
+                sidemarkPadLeft: 20, sidemarkPadRight: 20,
             });
-            const rtlMarks = rtlGroup.children[rtlGroup.children.length - 1];
-            eq('rtl sidemark mirrors to the trailing edge', rtlMarks.children[0].attributes.x, 306);
+            const rtlMarks = rtlGroup.children[1];
+            eq('rtl sidemark mirrors to the right margin', rtlMarks.children[0].attributes.x, 342);
 
             nodes.length = 0;
-            const offPage = Overlayer.highlight(
-                [{ left: 2, top: 0, right: 350, bottom: 20, width: 348, height: 20,
-                    page: { left: 0, top: 0, right: 360, bottom: 640 } }],
-                { color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6 },
+            const tight = Overlayer.highlight(rects, {
+                color: '#ffe066', sidemarkWidth: 3, sidemarkPadLeft: 1,
+            });
+            eq(
+                'a margin narrower than the tick draws no mark at all',
+                tight.children.length,
+                2,
             );
-            const clamped = offPage.children[offPage.children.length - 1];
-            eq('a margin narrower than the gap keeps the tick on the page', clamped.children[0].attributes.x, 0);
+            eq('… so the tick group stays empty', tight.children[1].children.length, 0);
 
             const none = Overlayer.highlight(rects, { color: '#ffe066' });
-            eq('no sidemark group without a width', none.children.length, 2);
-            check(
-                'the band shapes are drawn, no empty tick group',
-                none.children.every((c) => c.tag !== 'g'),
-                none.children.map((c) => c.tag).join(','),
-            );
+            eq('no tick group without a width', none.children.length, 1);
+            eq('the bands are still drawn', none.children[0].children.length, 2);
         } finally {
             delete globalThis.document;
         }

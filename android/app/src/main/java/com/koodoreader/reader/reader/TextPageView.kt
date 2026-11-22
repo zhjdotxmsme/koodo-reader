@@ -119,7 +119,6 @@ fun TextPageView(
                 sidemarkColor = sidemarkColors[line.blockIndex],
                 rtl = readerLayoutDirection == LayoutDirection.Rtl,
                 pageWidthPx = size.width,
-            )
-        }
+            )        }
     }
 }

@@ -4,9 +4,15 @@ package com.koodoreader.engine.annotate
  * Where the page-margin tick ("sidemark") of a highlight goes (P1-10).
  *
  * Both rendering tracks draw the same shape, so the geometry lives here and is
- * unit-tested: a 3px vertical tick just outside the highlighted line's ink, in
- * the page margin. The native track paints it on its Canvas; the foliate track
+ * unit-tested: a 3px vertical tick inside the page's side margin, level with the
+ * highlighted line. The native track paints it on its Canvas; the foliate track
  * appends an SVG `<rect>` to the highlight's overlay group.
+ *
+ * The mark is anchored to the **text column**, not to the highlighted run: it
+ * means "there is a note on this line", so it must land in the same place
+ * whether the selection starts a line or sits in the middle of one. The first
+ * device run drew it beside the selected word — mid-column — which read as a
+ * stray artefact rather than a margin mark.
  *
  * The point of the mark is that a note must be *visible while reading* — a
  * translucent band over the text is easy to skim past, a coloured tick in the
@@ -17,8 +23,8 @@ object SidemarkGeometry {
     /** Tick thickness in px. Thin enough to read as a mark, not as a border. */
     const val WIDTH_PX = 3f
 
-    /** Distance between the tick and the line's ink, in px. */
-    const val GAP_PX = 6f
+    /** Clearance between the tick and the column edge, in px. */
+    const val GAP_PX = 2f
 
     /** Alpha of the tick on a night page: the tint is already dark, so soften. */
     const val DARK_ALPHA = 0x8C
@@ -27,27 +33,44 @@ object SidemarkGeometry {
     const val LIGHT_ALPHA = 0xFF
 
     /**
-     * The tick's left edge, in page px.
+     * The tick's left edge, in page px, or null when it should not be drawn.
      *
-     * @param lineLeftPx the line's own left ink edge.
+     * @param lineLeftPx the line's ink x — [LayoutLine.x], which is *after* the
+     *   first-line indent.
      * @param lineRightPx the line's right edge including justification.
+     * @param indentPx the line's own first-line indent ([LayoutLine.indentPx]);
+     *   subtracted to get back to the column's left edge, so an indented first
+     *   line and a flush one put the tick in the same place.
      * @param rtl mirror to the right margin, where an RTL page's outer edge is.
      * @param pageWidthPx the page width, used to keep the tick on the page.
+     * @return the tick's left edge, or null when the margin is too narrow to
+     *   hold it — the caller then draws no mark rather than one over the
+     *   glyphs.
      */
-    fun tickLeftPx(
+    fun tickLeftPxOrNull(
         lineLeftPx: Float,
         lineRightPx: Float,
-        rtl: Boolean,
-        pageWidthPx: Float,
-    ): Float {
-        val anchor = if (rtl) lineRightPx else lineLeftPx
-        if (!anchor.isFinite()) return 0f
-        val raw = if (rtl) anchor + GAP_PX else anchor - GAP_PX
-        // Never off the page: a margin narrower than the gap (large type on a
-        // small screen) would otherwise paint the tick at a negative x, which
-        // the canvas clips — the note would vanish instead of moving inward.
-        val maxLeft = if (pageWidthPx.isFinite()) pageWidthPx - WIDTH_PX else raw
-        return if (maxLeft <= 0f) 0f else raw.coerceIn(0f, maxLeft)
+        indentPx: Float = 0f,
+        rtl: Boolean = false,
+        pageWidthPx: Float = Float.NaN,
+    ): Float? {
+        val indent = if (indentPx.isFinite()) indentPx else 0f
+        // Room the tick needs outside the text.
+        val needed = GAP_PX + WIDTH_PX
+        if (rtl) {
+            // `rightPx` already includes the justification stretch and the
+            // indent does not shift the right edge, so it needs no correction.
+            if (!lineRightPx.isFinite()) return null
+            val margin = if (pageWidthPx.isFinite()) pageWidthPx - lineRightPx else Float.NaN
+            if (!margin.isFinite() || margin < needed) return null
+            val left = lineRightPx + GAP_PX
+            val maxLeft = pageWidthPx - WIDTH_PX
+            return if (maxLeft <= 0f) null else left.coerceIn(0f, maxLeft)
+        }
+        if (!lineLeftPx.isFinite()) return null
+        val columnLeft = lineLeftPx - indent
+        if (columnLeft < needed) return null
+        return columnLeft - GAP_PX - WIDTH_PX
     }
 
     /**
