@@ -622,18 +622,36 @@ runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
 ### 与原计划的偏差（实做更正）
 
 1. **P0-2 的算式**：计划里的 `viewportPx - 2*margins` 口径不成立——foliate 的 `gap` 是页面宽度的百分比（`engine.mjs` 固定 5%），分页器内部还要再减 `margin` 与 `gap/2`。实际可用宽度是 `page*(1-g/(1-g)) - margin`，而加 padding 又同时缩小 `page`，所以 padding 必须反解：`page = (column + margin) / (1 - g/(1-g))`。另外跨度双页模式下每页指标不同（gutter 取 1/4 边距），padding 本身还可能把双页压回单页，因此该情形直接返回 0。
-2. **P1-10 的接线候选**：计划假设高亮是 DOM `<span>`（候选 A：稳定 class；候选 B：`data-koodo-hl` 属性）。实际 foliate 轨的高亮是 `Overlayer.highlight()` 画在 over-layer SVG 上的矩形，与 DOM 无关，A/B 都不成立。改为在 `Overlayer.highlight` 增加 `sidemarkWidth/Gap/Rtl` 选项，把竖条作为同一 `<g>` 的最后一个子节点——重绘、删除随高亮一起走，不需要额外记账。竖条透明度独立于 `.3` 的色带（否则 30% 的竖条等于看不见）。
+2. **P1-10 的接线候选**：计划假设高亮是 DOM `<span>`（候选 A：稳定 class；候选 B：`data-koodo-hl` 属性）。实际 foliate 轨的高亮是 `Overlayer.highlight()` 画在 over-layer SVG 上的矩形，与 DOM 无关，A/B 都不成立。改为在 `Overlayer.highlight` 增加 `sidemarkWidth/Pad*/Rtl` 选项，把竖条画成与色带**同级**的 `<g>`（子节点会让外层 `opacity` 相乘，竖条实测只有 0.09）。
 3. **页边标注的取数**：不做「仅带文字的笔记才画」的特判。竖条颜色由该页的色带 map 直接派生（`SidemarkGeometry.tickColors`），避免重复解析 CFI，也从结构上保证「竖条不可能指到色带不在的行」。
 
 ### 验证
 
-- `node scripts/test-foliate-host.js` → **74/74**（新增 7 条：竖条位置/宽度/高度/不透明度、RTL 镜像、窄边距夹取、无宽度时不生成空组）；
-- `:core:designsystem:test` → `ReaderCjkColumnTest` 8 例（含「padding 反解后列宽确实是整格」「双页/退化输入返回 0」）；
-- `:engine:annotate:test` → `SidemarkGeometryTest` 6 例（含 NaN 与越界钳制、深浅两档 alpha）；
+- `node scripts/test-foliate-host.js` → **81/81**（新增 14 条：竖条是色带的**兄弟**组而非子节点、外组无 opacity、竖条填充剥掉 0.3 alpha、x 落在页面内边距、句中选词不跟随、RTL 镜像、窄边距干脆不画、无宽度不生成空组）；
+- `:core:designsystem:test` → `ReaderCjkColumnTest` 6 例（含「padding 反解后列宽确实是整格」「双页/退化输入返回 0」）；
+- `:engine:annotate:test` → `SidemarkGeometryTest` 8 例（列边缘锚定、首行缩进不拖动竖条、句中选区不跟随、越界不画、NaN、深浅两档 alpha）；
 - `:core:ui:testDebugUnitTest` → `BookCardTierTest` 3 例；
-- `:app:testNativeHostDebugUnitTest` → **388 例，0 失败**（含 `SelectionMenuActionsTest` 5 例、`ReaderFeatureStateTest` 新增 5 例）。
+- `:app:testNativeHostDebugUnitTest` → **389 例，0 失败**（含 `SelectionMenuActionsTest` 5 例、`ReaderFeatureStateTest` 新增 6 例）。
 
-**未验证（真机）**：foliate 轨 padding 的实机观感与 CSS 宽度口径（是否有滚动条吃掉 1–2px）、触感反馈在真机上的强度、页边标注在窄边距大字号下的观感——三项都需设备可用时单独核对。
+### 真机验收（已执行，发现 3 个缺陷并修复，见 `98815296`）
+
+在 PKT110 / Android 14 / 密度 2.667 上逐像素核对了阅读页：
+
+| 项 | 首轮 | 修复后 |
+|---|---|---|
+| 高亮色带合成色 | `(33,28,17)` = **9%** | `(68,53,16)` = **30%**，与 native 轨一致 |
+| 页边竖条 | 不可见 | x=110–117（3 CSS px）、与色带等高 58px、`(184,134,11)` 完全不透明 |
+| 竖条 vs 正文列 | 落在正文内部（句中选词时） | 正文列左缘 118，竖条右缘 117，不压字 |
+
+三个缺陷的根因：
+
+1. **foliate 轨高亮一直只有 9%**（既有缺陷）：调用方传 `rgba(...,0.3)`，外层组又设 `opacity: var(--overlayer-highlight-opacity, .3)`，两者相乘。竖条把这个问题照了出来。修法：色带组统一用 `opacity` 作为唯一衰减源，`fill` 剥掉字符串里的 alpha。
+2. **`opacity` 沿子树相乘**：竖条原来是色带组的子节点，实际 0.09，等于不存在。改为兄弟组。
+3. **竖条锚在选区而非正文列**：句中选一个词时竖条画在正文中间。改为锚定正文列边缘（foliate 读页面 side padding，native 用 `line.x - line.indentPx`），边距容不下时干脆不画。
+
+另外顺带确认：分页中文排版正确（每行 17 格、右边缘齐、避头尾后仍对齐）、划词菜单动作行就是 `SelectionMenuAction.DEFAULT` 顺序、设置页三个滑杆档位密度符合设计（字号稀疏、行距/字距密集）。
+
+**仍未验证（真机）**：foliate 轨的 CSS 可用宽度口径是否与反解式一致（需要在一本跨页的书上量实际列宽）、触感强度、PDF 轨。
 
 ---
 
