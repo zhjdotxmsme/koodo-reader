@@ -1,7 +1,6 @@
 package com.koodoreader.reader.epubhost
 
 import android.content.Context
-import android.os.Looper
 import android.util.Log
 import android.view.ActionMode
 import android.view.ViewGroup
@@ -14,7 +13,7 @@ import android.webkit.WebView
 import com.koodoreader.core.designsystem.ThemeKind
 import com.koodoreader.reader.pdfhost.PdfEngineReadyLatch
 import com.koodoreader.reader.shell.HighlightAnchorRequest
-import com.koodoreader.reader.shell.HighlightRemap
+import com.koodoreader.reader.shell.HighlightReAnchor
 import com.koodoreader.reader.shell.ReaderFeatureState
 import com.koodoreader.reader.shell.ReAnchorReport
 import org.json.JSONArray
@@ -284,7 +283,7 @@ class FoliateHostBridge(
                     .coerceIn(REANCHOR_MIN_TIMEOUT_MS, REANCHOR_MAX_TIMEOUT_MS),
             )
         }.getOrNull() ?: return null
-        return parseReAnchorReport(raw)
+        return HighlightReAnchor.parseReport(raw)
     }
 
     fun close() {
@@ -385,41 +384,5 @@ class FoliateHostBridge(
         private const val REANCHOR_MAX_TIMEOUT_MS = 60_000L
         private const val BOOTSTRAP_PATH = "foliate/index.html"
         private const val TAG = "FoliateHostBridge"
-
-        /** Pure so tests can pin the wire format without a WebView. */
-        internal fun parseReAnchorReport(raw: String): ReAnchorReport {
-            if (raw.isBlank()) return ReAnchorReport()
-            return runCatching {
-                val o = JSONObject(raw)
-                val remaps = mutableListOf<HighlightRemap>()
-                val remapArr = o.optJSONArray("reanchored")
-                if (remapArr != null) {
-                    for (i in 0 until remapArr.length()) {
-                        val r = remapArr.optJSONObject(i) ?: continue
-                        val old = r.optString("old", "")
-                        val new = r.optString("cfi", "")
-                        if (old.isNotBlank() && new.isNotBlank() && old != new) {
-                            remaps.add(HighlightRemap(old, new))
-                        }
-                    }
-                }
-                val failed = mutableListOf<String>()
-                val failedArr = o.optJSONArray("failed")
-                if (failedArr != null) {
-                    for (i in 0 until failedArr.length()) {
-                        val f = failedArr.optString(i, "")
-                        if (f.isNotBlank()) failed.add(f)
-                    }
-                }
-                ReAnchorReport(
-                    anchored = o.optInt("anchored", 0),
-                    remaps = remaps,
-                    failed = failed,
-                )
-            }.getOrDefault(ReAnchorReport())
-        }
-
-        @Suppress("unused")
-        private val uiThreadCheck = Looper.getMainLooper()
     }
 }

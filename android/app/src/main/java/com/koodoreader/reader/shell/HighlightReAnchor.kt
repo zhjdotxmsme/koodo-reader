@@ -1,6 +1,7 @@
 package com.koodoreader.reader.shell
 
 import com.koodoreader.core.data.entity.NoteEntity
+import org.json.JSONObject
 
 /**
  * One highlight to anchor in the foliate engine.
@@ -82,5 +83,43 @@ object HighlightReAnchor {
             changed.add(note.copy(cfi = newCfi, range = null))
         }
         return changed
+    }
+
+    /**
+     * Parse the engine's `reAnchorHighlights` report into a [ReAnchorReport].
+     * Pure so tests can pin the wire format without a WebView; lives here (not
+     * in the bridge companion) so touching it never triggers Android class init.
+     * Blank or malformed payloads degrade to an empty report.
+     */
+    fun parseReport(raw: String): ReAnchorReport {
+        if (raw.isBlank()) return ReAnchorReport()
+        return runCatching {
+            val o = JSONObject(raw)
+            val remaps = mutableListOf<HighlightRemap>()
+            val remapArr = o.optJSONArray("reanchored")
+            if (remapArr != null) {
+                for (i in 0 until remapArr.length()) {
+                    val r = remapArr.optJSONObject(i) ?: continue
+                    val old = r.optString("old", "")
+                    val new = r.optString("cfi", "")
+                    if (old.isNotBlank() && new.isNotBlank() && old != new) {
+                        remaps.add(HighlightRemap(old, new))
+                    }
+                }
+            }
+            val failed = mutableListOf<String>()
+            val failedArr = o.optJSONArray("failed")
+            if (failedArr != null) {
+                for (i in 0 until failedArr.length()) {
+                    val f = failedArr.optString(i, "")
+                    if (f.isNotBlank()) failed.add(f)
+                }
+            }
+            ReAnchorReport(
+                anchored = o.optInt("anchored", 0),
+                remaps = remaps,
+                failed = failed,
+            )
+        }.getOrDefault(ReAnchorReport())
     }
 }

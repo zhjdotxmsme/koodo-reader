@@ -31,7 +31,10 @@ class HighlightReAnchorTest {
             note("d", "epubcfi(/6/4!/4/4:9)", null),
         )
         val requests = HighlightReAnchor.requests(notes) { "#ffe066" }
-        assertEquals(listOf("a", "d"), requests.map { it.cfi.substringBefore('!') + '!' })
+        assertEquals(
+            listOf("epubcfi(/6/4!/4/2:0)", "epubcfi(/6/4!/4/4:9)"),
+            requests.map { it.cfi },
+        )
         assertEquals(listOf("hello world", ""), requests.map { it.text })
         assertEquals(requests.map { it.colorCss }.distinct(), listOf("#ffe066"))
     }

@@ -1,5 +1,6 @@
 package com.koodoreader.reader.epubhost
 
+import com.koodoreader.reader.shell.HighlightReAnchor
 import com.koodoreader.reader.shell.HighlightRemap
 import com.koodoreader.reader.shell.ReAnchorReport
 import org.junit.Assert.assertEquals
@@ -10,7 +11,7 @@ class ReAnchorReportParsingTest {
 
     @Test
     fun `a full report parses into remaps and failures`() {
-        val report = FoliateHostBridge.parseReAnchorReport(
+        val report = HighlightReAnchor.parseReport(
             """
             {"anchored":2,
              "reanchored":[{"old":"epubcfi(a)","cfi":"epubcfi(b)"}],
@@ -26,13 +27,13 @@ class ReAnchorReportParsingTest {
 
     @Test
     fun `blank and malformed payloads degrade to an empty report`() {
-        assertEquals(ReAnchorReport(), FoliateHostBridge.parseReAnchorReport(""))
-        assertEquals(ReAnchorReport(), FoliateHostBridge.parseReAnchorReport("not json"))
+        assertEquals(ReAnchorReport(), HighlightReAnchor.parseReport(""))
+        assertEquals(ReAnchorReport(), HighlightReAnchor.parseReport("not json"))
     }
 
     @Test
     fun `identity remaps and blank entries are dropped at the wire`() {
-        val report = FoliateHostBridge.parseReAnchorReport(
+        val report = HighlightReAnchor.parseReport(
             """
             {"anchored":0,
              "reanchored":[
@@ -48,7 +49,7 @@ class ReAnchorReportParsingTest {
 
     @Test
     fun `missing arrays parse as empty`() {
-        val report = FoliateHostBridge.parseReAnchorReport("""{"anchored":5}""")
+        val report = HighlightReAnchor.parseReport("""{"anchored":5}""")
         assertEquals(5, report.anchored)
         assertTrue(report.remaps.isEmpty())
         assertTrue(report.failed.isEmpty())
