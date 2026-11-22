@@ -134,41 +134,22 @@ object ReaderCjkColumn {
      * The foliate paginator's `gap` attribute, as set by `engine.mjs` (`'5%'`).
      *
      * It is a percentage of the page width and it is split between the two side
-     * paddings, so it eats width the text column never sees — the foliate
-     * variant below has to account for it.
+     * paddings, so it eats width the text column never sees — the quantisation
+     * below has to account for it.
      */
     const val FOLIATE_GAP_PERCENT = 5f
 
     /**
-     * Padding to add to *each* side of a box of [contentWidthPx] so the text
-     * column inside it is a whole number of cells.
-     *
-     * @param contentWidthPx the width the column would otherwise fill.
-     * @param fontSizePx body font size in px.
-     * @param letterSpacingPx tracking in px.
-     */
-    fun sidePadFor(
-        contentWidthPx: Float,
-        fontSizePx: Float,
-        letterSpacingPx: Float = 0f,
-    ): Float = positiveOrZero(
-        CjkColumn.fit(
-            availablePx = contentWidthPx,
-            fontSizePx = fontSizePx,
-            letterSpacingPx = letterSpacingPx,
-        ).sidePadPx,
-    )
-
-    /**
-     * [sidePadFor] for the foliate track, where the browser — not we — own the
-     * inside of the page.
+     * Padding for *each* side of the WebView, so the foliate text column ends up
+     * a whole number of character cells wide.
      *
      * The paginator lays the book out as one column page whose usable width is
      *
      *     column = pageWidth − margin − gap,  gap = pageWidth × g / (1 − g)
      *
      * (`getHorizontalColumnMetrics`; `g` is the renderer's `gap` attribute, 5%
-     * in `engine.mjs`). Two consequences the plain [sidePadFor] cannot express:
+     * in `engine.mjs`). Two consequences a plain `CjkColumn.fit` on the raw
+     * width cannot express:
      *
      *  - the column is narrower than the page by the margin **and** the gap, so
      *    quantising against the raw width aims at the wrong number;
