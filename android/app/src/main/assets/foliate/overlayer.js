@@ -324,6 +324,13 @@ export class Overlayer {
             radius = 4,
             radiusPadding = 2,
             vertical = false,
+            // P1-10 sidemark: a solid tick in the page margin beside every
+            // highlighted line. 0 disables it. The tick is part of the same
+            // overlay group, so it is redrawn and removed with the highlight
+            // it belongs to — no separate bookkeeping, no orphan marks.
+            sidemarkWidth = 0,
+            sidemarkGap = 6,
+            sidemarkRtl = false,
         } = options
 
         const g = createSVGElement('g')
@@ -331,10 +338,33 @@ export class Overlayer {
         g.style.opacity = 'var(--overlayer-highlight-opacity, .3)'
         g.style.mixBlendMode = 'var(--overlayer-highlight-blend-mode, normal)'
 
+        // The tick goes in its own opaque group: the band above is drawn at
+        // 30% through the CSS variable, and a 30% tick would be invisible.
+        const marks = sidemarkWidth > 0 ? createSVGElement('g') : null
+        if (marks) {
+            marks.setAttribute('fill', color)
+            marks.style.opacity = '1'
+        }
+
         const lines = mergeLineRects(rects, vertical)
         for (const [index, { left, top, height, width, page }] of lines.entries()) {
             const isFirst = index === 0
             const isLast = index === lines.length - 1
+
+            if (marks) {
+                const anchor = sidemarkRtl ? left + width + sidemarkGap : left - sidemarkGap - sidemarkWidth
+                const pageLeft = page ? page.left : 0
+                const pageRight = page ? page.right : Infinity
+                const x = Math.min(Math.max(anchor, pageLeft), pageRight - sidemarkWidth)
+                if (x >= pageLeft && x + sidemarkWidth <= pageRight) {
+                    const el = createSVGElement('rect')
+                    el.setAttribute('x', x)
+                    el.setAttribute('y', top)
+                    el.setAttribute('height', height)
+                    el.setAttribute('width', sidemarkWidth)
+                    marks.append(el)
+                }
+            }
 
             let x, y, w, h
 
@@ -405,6 +435,8 @@ export class Overlayer {
                 g.append(el)
             }
         }
+        // Marks last, so they sit above every band rect of this highlight.
+        if (marks) g.append(marks)
         return g
     }
     static outline(rects, options = {}) {

@@ -6,17 +6,29 @@ import androidx.compose.ui.graphics.toArgb
 import android.graphics.Bitmap
 import android.graphics.Rect
 import com.koodoreader.engine.layout.LayoutLine
+import com.koodoreader.engine.annotate.SidemarkGeometry
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import kotlin.math.min
 
 internal object TextLayoutDraw {
 
+    /**
+     * @param highlightColor the 30%-alpha band behind the line, or null.
+     * @param sidemarkColor the page-margin tick for that same highlight, or
+     *   null. P1-10: the band shows *where* the note is, the tick shows that
+     *   there is one without needing to look at the glyphs.
+     * @param rtl mirror the tick to the right margin.
+     * @param pageWidthPx the page width, so the tick never leaves the page.
+     */
     fun drawLine(
         scope: DrawScope,
         line: LayoutLine,
         textColor: Color,
         highlightColor: Long? = null,
         pageImages: Map<String, Bitmap?> = emptyMap(),
+        sidemarkColor: Long? = null,
+        rtl: Boolean = false,
+        pageWidthPx: Float = scope.size.width,
     ) {
         val canvas = scope.drawContext.canvas.nativeCanvas
         if (line.imageSrc != null && line.text.isEmpty()) {
@@ -49,6 +61,25 @@ internal object TextLayoutDraw {
                 line.y + line.height,
                 bg,
             )
+            if (sidemarkColor != null) {
+                val tick = android.graphics.Paint().apply {
+                    color = sidemarkColor.toInt()
+                    style = android.graphics.Paint.Style.FILL
+                }
+                val left = SidemarkGeometry.tickLeftPx(
+                    lineLeftPx = line.x,
+                    lineRightPx = line.rightPx,
+                    rtl = rtl,
+                    pageWidthPx = pageWidthPx,
+                )
+                canvas.drawRect(
+                    left,
+                    line.y,
+                    left + SidemarkGeometry.WIDTH_PX,
+                    line.y + line.height,
+                    tick,
+                )
+            }
         }
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = textColor.toArgb()

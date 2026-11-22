@@ -382,6 +382,73 @@ async function main() {
     );
     check('readest getStyles night overrides nested colours', css.indexOf('!important') >= 0, css.slice(0, 200));
 
+    // ── Sidemark tick in the foliate overlay (P1-10) ─────────────────────────
+    {
+        // Overlayer draws into SVG elements, so a minimal DOM is enough to pin
+        // the geometry: what matters is the x/width of the tick relative to the
+        // highlighted rects, and that it never leaves the page.
+        const nodes = [];
+        function fakeElement(tag) {
+            const el = {
+                tag,
+                attributes: {},
+                children: [],
+                style: {},
+                setAttribute(name, value) { el.attributes[name] = value; },
+                append(child) { el.children.push(child); },
+            };
+            nodes.push(el);
+            return el;
+        }
+        globalThis.document = { createElementNS: (_ns, tag) => fakeElement(tag) };
+        try {
+            const { Overlayer } = await import(
+                pathToFileURL(path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'foliate', 'overlayer.js')).href
+            );
+            const rects = [
+                { left: 40, top: 100, right: 300, bottom: 124, width: 260, height: 24,
+                    page: { left: 0, top: 0, right: 360, bottom: 640 } },
+                { left: 40, top: 124, right: 200, bottom: 148, width: 160, height: 24,
+                    page: { left: 0, top: 0, right: 360, bottom: 640 } },
+            ];
+
+            nodes.length = 0;
+            const group = Overlayer.highlight(rects, { color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6 });
+            const marks = group.children[group.children.length - 1];
+            eq('sidemark group is the last child so it paints on top', marks.children.length, 2);
+            eq('sidemark left tick sits 6px outside the line', marks.children[0].attributes.x, 31);
+            eq('sidemark tick width is 3px', marks.children[0].attributes.width, 3);
+            eq('sidemark tick spans the line box', marks.children[0].attributes.height, 24);
+            eq('sidemark tick is opaque, not the 30% band alpha', marks.style.opacity, '1');
+
+            nodes.length = 0;
+            const rtlGroup = Overlayer.highlight(rects, {
+                color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6, sidemarkRtl: true,
+            });
+            const rtlMarks = rtlGroup.children[rtlGroup.children.length - 1];
+            eq('rtl sidemark mirrors to the trailing edge', rtlMarks.children[0].attributes.x, 306);
+
+            nodes.length = 0;
+            const offPage = Overlayer.highlight(
+                [{ left: 2, top: 0, right: 350, bottom: 20, width: 348, height: 20,
+                    page: { left: 0, top: 0, right: 360, bottom: 640 } }],
+                { color: '#ffe066', sidemarkWidth: 3, sidemarkGap: 6 },
+            );
+            const clamped = offPage.children[offPage.children.length - 1];
+            eq('a margin narrower than the gap keeps the tick on the page', clamped.children[0].attributes.x, 0);
+
+            const none = Overlayer.highlight(rects, { color: '#ffe066' });
+            eq('no sidemark group without a width', none.children.length, 2);
+            check(
+                'the band shapes are drawn, no empty tick group',
+                none.children.every((c) => c.tag !== 'g'),
+                none.children.map((c) => c.tag).join(','),
+            );
+        } finally {
+            delete globalThis.document;
+        }
+    }
+
     // ── Highlight re-anchoring ──────────────────────────────────────────────
     {
         const { spineIndexOf, findTextRange } = await import(pathToFileURL(ENGINE_MJS).href);

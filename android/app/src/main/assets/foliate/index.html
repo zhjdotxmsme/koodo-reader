@@ -46,7 +46,20 @@ view.addEventListener('draw-annotation', (ev) => {
     const detail = (ev && ev.detail) || {};
     if (typeof detail.draw !== 'function') return;
     const color = (detail.annotation && detail.annotation.color) || '#ffe066';
-    detail.draw(Overlayer.highlight, { color: color });
+    // P1-10: every annotation carries a page-margin tick, so a note stays
+    // visible while reading instead of only where the text is tinted.
+    // The book's direction is the section document's, not the host page's — an
+    // RTL book inside this LTR shell must mirror the tick to the right margin.
+    const doc = detail.doc || (detail.range && detail.range.startContainer
+        && detail.range.startContainer.ownerDocument);
+    const rtl = !!(doc && doc.defaultView
+        && doc.defaultView.getComputedStyle(doc.body || doc.documentElement).direction === 'rtl');
+    detail.draw(Overlayer.highlight, {
+        color: color,
+        sidemarkWidth: 3,
+        sidemarkGap: 6,
+        sidemarkRtl: rtl,
+    });
 });
 view.addEventListener('load', (ev) => {
     const doc = ev.detail && ev.detail.doc;

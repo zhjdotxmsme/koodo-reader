@@ -212,6 +212,12 @@ fun NativeTextReaderScreen(
                             pageView.page,
                             readerPageIsDark,
                         ),
+                        sidemarkColors = NativeNoteHighlights.noteMarkColorsForPage(
+                            notesForHighlights,
+                            pageView.layout,
+                            pageView.page,
+                            readerPageIsDark,
+                        ),
                         pageImages = pageImages,
                         onLongPressLine = { line ->
                             control?.selectionText = line.text
@@ -241,6 +247,11 @@ fun NativeTextReaderScreen(
                 TextScrollView(
                     view = view,
                     highlightBlockColors = scrollHighlights,
+                    sidemarkColors = NativeNoteHighlights.noteMarkColorsForLayout(
+                        notesForHighlights,
+                        view.layout,
+                        readerPageIsDark,
+                    ),
                     pageImages = pageImages,
                     onLongPressLine = { line ->
                         control?.selectionText = line.text

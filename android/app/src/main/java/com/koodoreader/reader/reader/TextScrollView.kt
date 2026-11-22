@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 import com.koodoreader.engine.layout.LayoutLine
@@ -31,11 +33,14 @@ fun TextScrollView(
     textColor: Color = MaterialTheme.colorScheme.onBackground,
     backgroundColor: Color = MaterialTheme.colorScheme.background,
     highlightBlockColors: Map<Int, Long> = emptyMap(),
+    /** blockIndex → page-margin tick colour (P1-10). */
+    sidemarkColors: Map<Int, Long> = emptyMap(),
     pageImages: Map<String, Bitmap?> = emptyMap(),
     onLongPressLine: ((LayoutLine) -> Unit)? = null,
 ) {
     val lines = view.layout.lines
     val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
     val listState = rememberLazyListState()
     LaunchedEffect(view.location.chapterId, view.scrollTopPx) {
         if (lines.isEmpty()) return@LaunchedEffect
@@ -77,6 +82,9 @@ fun TextScrollView(
                     textColor,
                     highlightColor = highlightBlockColors[line.blockIndex],
                     pageImages = pageImages,
+                    sidemarkColor = sidemarkColors[line.blockIndex],
+                    rtl = layoutDirection == LayoutDirection.Rtl,
+                    pageWidthPx = size.width,
                 )
             }
         }

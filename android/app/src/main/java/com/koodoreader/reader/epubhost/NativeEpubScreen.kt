@@ -84,6 +84,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.koodoreader.engine.annotate.HighlightColor
 import com.koodoreader.engine.annotate.HighlightPalette
+import com.koodoreader.engine.annotate.SidemarkGeometry
 import com.koodoreader.engine.feature.BionicConfig
 import com.koodoreader.engine.feature.BionicReading
 import com.koodoreader.engine.feature.ParagraphMode
@@ -1936,6 +1937,9 @@ fun NativeEpubScreen(
                     }
                         }.toMap()
                     }
+                    val pageSidemarks: Map<Int, Long> = remember(pageHighlights, readerPageIsDark) {
+                        SidemarkGeometry.tickColors(pageHighlights, readerPageIsDark)
+                    }
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
@@ -2073,6 +2077,8 @@ fun NativeEpubScreen(
                                 pageImages,
                                 pageHighlights,
                                 bionic = features.bionic,
+                                sidemarkColors = pageSidemarks,
+                                rtl = readerLayoutDirection == LayoutDirection.Rtl,
                             )
                         }
                         if (features.ruler) {
@@ -2701,24 +2707,46 @@ private fun DrawScope.drawLayoutLine(
     pageImages: Map<String, android.graphics.Bitmap?> = emptyMap(),
     highlightColors: Map<Int, Long> = emptyMap(),
     bionic: Boolean = false,
+    sidemarkColors: Map<Int, Long> = emptyMap(),
+    rtl: Boolean = false,
 ) {
     // 高亮背景色（使用笔记存储的颜色，默认半透明黄）
-    if (line.blockIndex in highlightColors && line.imageSrc == null) {
-        // The map already holds the final ARGB (the mode-aware tint and the
-        // 30% alpha were applied where the map was built) — re-applying the
-        // alpha here would double it.
-        val color = highlightColors[line.blockIndex] ?: 0L
-        val canvas = drawContext.canvas.nativeCanvas
-        val bg = android.graphics.Paint()
-        bg.color = color.toInt()
-        bg.style = android.graphics.Paint.Style.FILL
-        canvas.drawRect(
-            line.x - 2f,
-            line.y,
-            line.rightPx + 2f,
-            line.y + line.height,
-            bg,
-        )
+    if (line.imageSrc == null) {
+        val color = highlightColors[line.blockIndex]
+        if (color != null) {
+            // The map already holds the final ARGB (the mode-aware tint and the
+            // 30% alpha were applied where the map was built) — re-applying the
+            // alpha here would double it.
+            val canvas = drawContext.canvas.nativeCanvas
+            val bg = android.graphics.Paint()
+            bg.color = color.toInt()
+            bg.style = android.graphics.Paint.Style.FILL
+            canvas.drawRect(
+                line.x - 2f,
+                line.y,
+                line.rightPx + 2f,
+                line.y + line.height,
+                bg,
+            )
+            sidemarkColors[line.blockIndex]?.let { mark -> 
+                val tick = android.graphics.Paint()
+                tick.color = mark.toInt()
+                tick.style = android.graphics.Paint.Style.FILL
+                val left = SidemarkGeometry.tickLeftPx(
+                    lineLeftPx = line.x,
+                    lineRightPx = line.rightPx,
+                    rtl = rtl,
+                    pageWidthPx = size.width,
+                )
+                canvas.drawRect(
+                    left,
+                    line.y,
+                    left + SidemarkGeometry.WIDTH_PX,
+                    line.y + line.height,
+                    tick,
+                )
+            }
+        }
     }
     if (line.imageSrc != null && line.text.isEmpty()) {
         val bmp = pageImages["${line.position.spineIndex}:${line.imageSrc}"]

@@ -36,6 +36,8 @@ fun TextPageView(
     onPageTurn: (forward: Boolean) -> Unit,
     onToggleChrome: () -> Unit = {},
     highlightBlockColors: Map<Int, Long> = emptyMap(),
+    /** blockIndex → page-margin tick colour (P1-10); usually a subset of the bands. */
+    sidemarkColors: Map<Int, Long> = emptyMap(),
     pageImages: Map<String, Bitmap?> = emptyMap(),
     onLongPressLine: ((LayoutLine) -> Unit)? = null,
 ) {
@@ -114,6 +116,9 @@ fun TextPageView(
                 textColor,
                 highlightColor = highlightBlockColors[line.blockIndex],
                 pageImages = pageImages,
+                sidemarkColor = sidemarkColors[line.blockIndex],
+                rtl = readerLayoutDirection == LayoutDirection.Rtl,
+                pageWidthPx = size.width,
             )
         }
     }
