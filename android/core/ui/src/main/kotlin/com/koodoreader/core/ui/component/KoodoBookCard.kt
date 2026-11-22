@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -115,7 +116,15 @@ fun KoodoBookCard(
         Modifier
     }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
+        // P1-14: what fits on a tile depends on its width, which the grid
+        // decides from the window — so the tier is measured, not configured.
+        val tier = BookCardTier.forWidthDp(maxWidth.value)
+        val titleStyle = if (tier == BookCardTier.REGULAR) {
+            MaterialTheme.typography.titleSmall
+        } else {
+            MaterialTheme.typography.bodyMedium
+        }
         Column(
             modifier = clickableModifier
                 .koodoPressScale()
@@ -148,8 +157,10 @@ fun KoodoBookCard(
                     )
                 }
                 // Reading progress, bottom-right: which books are half-read.
+                // Suppressed on a compact tile — at ~104dp a badge covers a
+                // third of the artwork and hides the cover it annotates.
                 model.progressFraction
-                    ?.takeIf { it > 0f }
+                    ?.takeIf { it > 0f && tier == BookCardTier.REGULAR }
                     ?.let { fraction ->
                         CoverBadge(
                             text = formatProgressBadge(fraction),
@@ -171,7 +182,7 @@ fun KoodoBookCard(
             }
             Text(
                 text = model.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = titleStyle,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
