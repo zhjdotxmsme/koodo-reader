@@ -2673,8 +2673,11 @@ fun NativeEpubScreen(
             )
         }
     }
+    // The selection sheet deliberately does NOT obscure the page: the reader is
+    // choosing what to do with words they must still see, and a selection
+    // highlight lives inside the WebView — hiding it hides the selection too.
     val readerModalObscured =
-        showControlCenter || showBookAnnotations || showToc || showSelectionMenu || showSearch
+        showControlCenter || showBookAnnotations || showToc || showSearch
     ReaderNativeSurfaceObscurer(readerModalObscured, foliateBridge?.view)
 
     if (showControlCenter) {

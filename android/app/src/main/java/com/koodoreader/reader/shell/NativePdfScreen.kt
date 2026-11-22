@@ -896,8 +896,12 @@ fun NativePdfScreen(
         scope.launch(Dispatchers.IO) { annotationDb.noteDao().upsert(entity) }
     }
 
+    // The reflow selection sheet must not obscure the WebView: the reader is
+    // choosing what to do with words they have to see, and the browser paints
+    // that selection inside the WebView. Hiding it freezes the last frame and
+    // the selection highlight is never drawn.
     val pdfModalObscured =
-        showControlCenter || showBookAnnotations || showReflowSelection
+        showControlCenter || showBookAnnotations
     ReaderNativeSurfaceObscurer(pdfModalObscured, bridge.view, reflowWeb)
 
     if (showControlCenter) {
