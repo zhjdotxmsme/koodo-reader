@@ -229,7 +229,7 @@ fun NativePdfScreen(
     var lastBackAt by remember { mutableStateOf(0L) }
     BackHandler {
         val now = System.currentTimeMillis()
-        if (now - lastBackAt < MotionTokens.HINT) {
+        if (now - lastBackAt < MotionTokens.BACK_EXIT) {
             onBack()
         } else {
             lastBackAt = now

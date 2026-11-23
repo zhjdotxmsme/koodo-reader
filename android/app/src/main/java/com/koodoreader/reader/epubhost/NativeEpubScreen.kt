@@ -1562,11 +1562,12 @@ fun NativeEpubScreen(
     }
 
     // ── 返回键链（后注册且 enabled 优先）：选区菜单 > 目录 > chrome > 双击退出 ──
-    // 兜底层始终启用：HINT 窗口内第二次返回才真正退出，首次返回只弹提示。
+    // 兜底层始终启用：BACK_EXIT 窗口内第二次返回才真正退出，首次返回只弹提示。
+    // 窗口必须 ≥ 提示 Snackbar 的可见时长，否则提示还挂着时第二次返回只会再弹一次。
     val exitBackHint = t("Press back again to exit")
     BackHandler {
         val now = System.currentTimeMillis()
-        if (now - lastBackAt < MotionTokens.HINT) {
+        if (now - lastBackAt < MotionTokens.BACK_EXIT) {
             onBack()
         } else {
             lastBackAt = now
