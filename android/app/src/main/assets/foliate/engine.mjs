@@ -20,11 +20,18 @@
 
 import { parseRules, applyRulesToHtml } from './text-rules.mjs';
 
-export function selectionPayload(sel, cfi) {
+export function selectionPayload(sel, cfi, point) {
     if (!sel || sel.isCollapsed) return { excerpt: '', cfi: '' };
     const excerpt = String(sel).trim();
     if (!excerpt) return { excerpt: '', cfi: '' };
-    return { excerpt, cfi: String(cfi || '') };
+    const out = { excerpt, cfi: String(cfi || '') };
+    // Optional anchor for the host's selection dropdown: CSS-pixel coordinates
+    // in the top WebView viewport (iframe offset + touch point).
+    if (point && isFinite(point.px) && isFinite(point.py)) {
+        out.px = point.px;
+        out.py = point.py;
+    }
+    return out;
 }
 
 /**
@@ -174,7 +181,13 @@ function attachSelectionReporter(view, host) {
                 if (!sel) return;
                 sel.removeAllRanges();
                 sel.addRange(range);
-                reportDoc();
+                // Map the iframe-local touch point into the top WebView
+                // viewport so the host can anchor its selection dropdown.
+                const fr = doc.defaultView && doc.defaultView.frameElement &&
+                    doc.defaultView.frameElement.getBoundingClientRect
+                    ? doc.defaultView.frameElement.getBoundingClientRect() : null;
+                const point = { px: sx + (fr ? fr.left : 0), py: sy + (fr ? fr.top : 0) };
+                emitSelection(host, selectionPayload(sel, cfiForRange(view, index, range), point));
             }, LONG_MS);
         }, { passive: true });
         doc.addEventListener('touchmove', (e) => {

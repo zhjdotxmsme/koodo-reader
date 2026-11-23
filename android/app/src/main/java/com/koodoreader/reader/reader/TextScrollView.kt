@@ -13,6 +13,7 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -36,7 +37,7 @@ fun TextScrollView(
     /** blockIndex → page-margin tick colour (P1-10). */
     sidemarkColors: Map<Int, Long> = emptyMap(),
     pageImages: Map<String, Bitmap?> = emptyMap(),
-    onLongPressLine: ((LayoutLine) -> Unit)? = null,
+    onLongPressLine: ((LayoutLine, Offset) -> Unit)? = null,
 ) {
     val lines = view.layout.lines
     val density = LocalDensity.current
@@ -67,7 +68,10 @@ fun TextScrollView(
                             Modifier.pointerInput(line.blockIndex, line.start) {
                                 detectTapGestures(
                                     onLongPress = {
-                                        if (line.imageSrc == null) onLongPressLine.invoke(line)
+                                        // LazyList item-local offsets are not page
+                                        // coordinates; the host anchors the menu
+                                        // from the page bounds for scroll mode.
+                                        if (line.imageSrc == null) onLongPressLine.invoke(line, Offset.Zero)
                                     },
                                 )
                             }

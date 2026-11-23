@@ -1,27 +1,44 @@
 package com.koodoreader.reader.epubhost
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class FoliateSelectionMenuTest {
 
     @Test
-    fun `blank excerpt does not show highlight dictionary buttons`() {
-        assertFalse(FoliateSelectionMenu.visible(null))
-        assertFalse(FoliateSelectionMenu.visible(""))
-        assertFalse(FoliateSelectionMenu.visible("   "))
+    fun `payload without a point yields null`() {
+        assertNull(FoliateSelectionMenu.payloadPoint(JSONObject("""{"excerpt":"字","cfi":"epubcfi(/6/2)"}""")))
     }
 
     @Test
-    fun `non-blank excerpt shows the host selection menu`() {
-        assertTrue(FoliateSelectionMenu.visible("陶寺的兴衰"))
+    fun `payload with a point parses to offset`() {
+        val point = FoliateSelectionMenu.payloadPoint(
+            JSONObject("""{"excerpt":"字","cfi":"epubcfi(/6/2)","px":12.5,"py":88}"""),
+        )
+        assertEquals(12.5f, point!!.x, 0.001f)
+        assertEquals(88f, point.y, 0.001f)
     }
 
     @Test
-    fun `saved note with the same cfi counts as already highlighted`() {
-        assertTrue(FoliateSelectionMenu.highlighted("epubcfi(/6/4)", listOf("epubcfi(/6/2)", "epubcfi(/6/4)")))
-        assertFalse(FoliateSelectionMenu.highlighted("epubcfi(/6/4)", listOf("epubcfi(/6/2)")))
-        assertFalse(FoliateSelectionMenu.highlighted("", listOf("epubcfi(/6/4)")))
+    fun `non-finite points are rejected`() {
+        assertNull(
+            FoliateSelectionMenu.payloadPoint(
+                JSONObject("""{"excerpt":"字","cfi":"c","px":"NaN","py":88}"""),
+            ),
+        )
+    }
+
+    @Test
+    fun `anchor maps css px through bounds and density`() {
+        val anchor = FoliateSelectionMenu.anchorPx(
+            point = androidx.compose.ui.geometry.Offset(12.5f, 88f),
+            boundsLeft = 100f,
+            boundsTop = 200f,
+            density = 2f,
+        )
+        assertEquals(125f, anchor.x, 0.001f)
+        assertEquals(376f, anchor.y, 0.001f)
     }
 }

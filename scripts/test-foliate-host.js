@@ -256,6 +256,11 @@ async function main() {
         JSON.stringify(selectionPayload({ isCollapsed: false, toString: () => ' 陶寺的兴衰 ' }, 'epubcfi(/6/4)')),
         JSON.stringify({ excerpt: '陶寺的兴衰', cfi: 'epubcfi(/6/4)' }),
     );
+    eq(
+        'selection payload carries the press point when given',
+        JSON.stringify(selectionPayload({ isCollapsed: false, toString: () => ' 陶寺的兴衰 ' }, 'epubcfi(/6/4)', { px: 12.5, py: 88 })),
+        JSON.stringify({ excerpt: '陶寺的兴衰', cfi: 'epubcfi(/6/4)', px: 12.5, py: 88 }),
+    );
 
     const nightCss = appearanceCss({
         bg: 'rgba(44, 47, 49,1)',

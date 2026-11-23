@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -39,7 +40,7 @@ fun TextPageView(
     /** blockIndex → page-margin tick colour (P1-10); usually a subset of the bands. */
     sidemarkColors: Map<Int, Long> = emptyMap(),
     pageImages: Map<String, Bitmap?> = emptyMap(),
-    onLongPressLine: ((LayoutLine) -> Unit)? = null,
+    onLongPressLine: ((LayoutLine, Offset) -> Unit)? = null,
 ) {
     val lines = remember(view.layout, view.page) {
         view.layout.lines.filter { it.page == view.page }
@@ -60,7 +61,7 @@ fun TextPageView(
                         val line = lines.firstOrNull {
                             it.containsY(offset.y) && offset.x in it.x..it.rightPx
                         }
-                        if (line != null && line.imageSrc == null) onLongPressLine?.invoke(line)
+                        if (line != null && line.imageSrc == null) onLongPressLine?.invoke(line, offset)
                     },
                 ) { offset ->
                     when (

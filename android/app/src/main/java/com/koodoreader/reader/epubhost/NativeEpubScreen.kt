@@ -19,17 +19,20 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,12 +55,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipboardManager
@@ -71,6 +78,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -195,6 +203,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import kotlin.math.roundToInt
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -329,6 +338,12 @@ fun NativeEpubScreen(
     var selectionCharCount by remember { mutableStateOf(0) }
     var selectionCfi by remember { mutableStateOf("") }
     var showSelectionMenu by remember { mutableStateOf(false) }
+    // 选词下拉菜单的锚点（根 Box 坐标）。foliate 轨来自引擎上报的触点 +
+    // WebView bounds；native 轨来自页面 Canvas 局部坐标 + Canvas bounds。
+    var selectionAnchor by remember { mutableStateOf<Offset?>(null) }
+    var foliateViewBounds by remember { mutableStateOf(Rect.Zero) }
+    var nativeViewBounds by remember { mutableStateOf(Rect.Zero) }
+    var nativePressLocal by remember { mutableStateOf(Offset.Zero) }
     var footnoteText by remember { mutableStateOf<String?>(null) }
     var pendingFootnoteHref by remember { mutableStateOf<String?>(null) }
     val showChromeState = remember { mutableStateOf(ReaderPageGestures.CHROME_VISIBLE_ON_OPEN) }
@@ -364,6 +379,13 @@ fun NativeEpubScreen(
                             mainHandler.post {
                                 selectionExcerpt = excerpt
                                 selectionCfi = cfi
+                                // 带触点的 payload（长按选中）刷新锚点；selectionchange
+                                // 重放不带触点，沿用上一个锚点。
+                                FoliateSelectionMenu.payloadPoint(payload)?.let { pt ->
+                                    selectionAnchor = FoliateSelectionMenu.anchorPx(
+                                        pt, foliateViewBounds.left, foliateViewBounds.top, density,
+                                    )
+                                }
                                 showSelectionMenu = true
                             }
                         }
@@ -1447,6 +1469,7 @@ fun NativeEpubScreen(
         if (line.imageSrc != null) return
         selectionController.start(line.start).moveEnd(line.end).finish()
         commitTextSelection()
+        selectionAnchor = nativeViewBounds.topLeft + offset
         showSelectionMenu = true
     }
 
@@ -1759,12 +1782,15 @@ fun NativeEpubScreen(
                     }
                     AndroidView(
                         factory = { foliateBridge?.view ?: android.view.View(it) },
-                        modifier = Modifier.fillMaxSize().padding(
-                            start = contentInsets.left + cjkSidePad,
-                            end = contentInsets.right + cjkSidePad,
-                            top = contentInsets.top,
-                            bottom = contentInsets.bottom,
-                        ),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = contentInsets.left + cjkSidePad,
+                                end = contentInsets.right + cjkSidePad,
+                                top = contentInsets.top,
+                                bottom = contentInsets.bottom,
+                            )
+                            .onGloballyPositioned { foliateViewBounds = it.boundsInRoot() },
                     )
                     if (FoliateReaderLayout.showLoadingOverlay(foliateReady, openError)) {
                         Box(
@@ -1782,6 +1808,11 @@ fun NativeEpubScreen(
                     }
                 }
                 useNativeTextReader && chapterLoader != null -> {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned { nativeViewBounds = it.boundsInRoot() },
+                    ) {
                     NativeTextReaderScreen(
                         loader = chapterLoader!!,
                         initialLocation = nativeInitialLocation,
@@ -1805,9 +1836,13 @@ fun NativeEpubScreen(
                                 progressPrefs.save(key, cfi, nativeFraction)
                             }
                         },
-                        onLineSelected = { showSelectionMenu = true },
+                        onLineSelected = { at ->
+                            selectionAnchor = nativeViewBounds.topLeft + at
+                            showSelectionMenu = true
+                        },
                         onToggleChrome = { showChrome = !showChrome },
                     )
+                    }
                 }
                 useNativeTextReader && opening && file != null -> Box(
                     modifier = Modifier.fillMaxSize(),
@@ -1931,6 +1966,7 @@ fun NativeEpubScreen(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
+                            .onGloballyPositioned { nativeViewBounds = it.boundsInRoot() }
                             .pointerInput(pageCount, currentPage, extendingSelection) {
                                 if (extendingSelection) {
                                     detectDragGestures(
@@ -1950,6 +1986,7 @@ fun NativeEpubScreen(
                                             selectionController.finish()
                                             commitTextSelection()
                                             selectionCharCount = 0
+                                            selectionAnchor = nativeViewBounds.topLeft + nativePressLocal
                                             showSelectionMenu = true
                                         },
                                         onDragCancel = {
@@ -1964,6 +2001,7 @@ fun NativeEpubScreen(
                                 detectTapGestures(
                                     onLongPress = { offset ->
                                         if (ReaderPageGestures.onLongPress() == ReaderPageGesture.SELECT) {
+                                            nativePressLocal = offset
                                             selectionOffsetAt(offset)?.let { at ->
                                                 selectionController.start(at).moveEnd(at)
                                                 extendingSelection = true
@@ -2176,66 +2214,68 @@ fun NativeEpubScreen(
         modifier = Modifier.fillMaxSize(),
     )
 
-    // ── 选中行菜单（叠在阅读页底部，不能作为 Scaffold 的兄弟节点
-    // 被 NavHost 顶到屏幕外） ───────────────────────────────────────────────
+    // ── 选中行菜单：锚在选区触点处的下拉菜单（DropdownMenu 空间不足时
+    // 自动翻到锚点上方）；动作集（未高亮/已高亮两组）与高亮色接线不变。 ──
     if (showSelectionMenu && FoliateSelectionMenu.visible(currentSelectionText())) {
         val clipboard = LocalClipboardManager.current
-        val excerpt = currentSelectionText()
         val highlighted = selectedLine?.let { isAlreadyHighlighted(it) }
             ?: FoliateSelectionMenu.highlighted(
                 currentSelectionCfi(),
                 bookNotes.mapNotNull { it.cfi },
             )
+        // 锚点缺失时退回内容区中下段；触点下方留一指节，避免菜单盖住按住的词。
+        val anchor = selectionAnchor
+            ?: Offset(viewport.width / 2f, viewport.height * 0.75f)
+        val menuAnchor = anchor.copy(y = anchor.y + 28f * density)
 
-        // 与 NativePdfScreen 的既有弹层同一模式（ModalBottomSheet + skipPartiallyExpanded）；
-        // 动作集（未高亮/已高亮两组）与高亮色接线保持不变。
-        ModalBottomSheet(
-            onDismissRequest = { showSelectionMenu = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                if (highlighted) {
-                    // 已高亮：显示删除 + 可配置动作行
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            "${t("Highlight")} 「${excerpt.take(24)}」",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                        )
-                        TextButton(onClick = { deleteHighlight() }, modifier = Modifier.koodoPressScale()) { Text(t("Delete")) }
-                        selectionActions.forEach { action ->
-                            TextButton(
-                                onClick = { runSelectionAction(action, clipboard) },
-                                modifier = Modifier.koodoPressScale(),
-                            ) { Text(t(action.titleKey)) }
-                        }
-                        TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(menuAnchor.x.roundToInt(), menuAnchor.y.roundToInt())
                     }
-                } else {
-                    // 未高亮：高亮(4色) 固定 + 可配置动作行
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            "「${excerpt.take(16)}」",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
+                    .size(1.dp),
+            ) {
+                DropdownMenu(
+                    expanded = true,
+                    onDismissRequest = { showSelectionMenu = false },
+                ) {
+                    if (highlighted) {
+                        DropdownMenuItem(
+                            text = { Text(t("Delete")) },
+                            onClick = { deleteHighlight() },
                         )
-                        TextButton(onClick = { saveHighlight(0) }, modifier = Modifier.koodoPressScale()) { Text(t("Yellow")) }
-                        TextButton(onClick = { saveHighlight(1) }, modifier = Modifier.koodoPressScale()) { Text(t("Green")) }
-                        TextButton(onClick = { saveHighlight(2) }, modifier = Modifier.koodoPressScale()) { Text(t("Pink")) }
-                        TextButton(onClick = { saveHighlight(3) }, modifier = Modifier.koodoPressScale()) { Text(t("Blue")) }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    ) {
-                        selectionActions.forEach { action ->
-                            TextButton(
-                                onClick = { runSelectionAction(action, clipboard) },
-                                modifier = Modifier.koodoPressScale(),
-                            ) { Text(t(action.titleKey)) }
+                        HorizontalDivider()
+                    } else {
+                        val dotColors = listOf(
+                            Color(0xFFFBC02D),
+                            Color(0xFF2E7D32),
+                            Color(0xFFAD1457),
+                            Color(0xFF1D4ED8),
+                        )
+                        val dotLabels = listOf(
+                            t("Yellow"), t("Green"), t("Pink"), t("Blue"),
+                        )
+                        dotColors.forEachIndexed { index, dot ->
+                            DropdownMenuItem(
+                                text = { Text(dotLabels[index]) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .background(dot, CircleShape),
+                                    )
+                                },
+                                onClick = { saveHighlight(index) },
+                            )
                         }
-                        TextButton(onClick = { showSelectionMenu = false }, modifier = Modifier.koodoPressScale()) { Text(t("Close")) }
+                        HorizontalDivider()
+                    }
+                    selectionActions.forEach { action ->
+                        DropdownMenuItem(
+                            text = { Text(t(action.titleKey)) },
+                            onClick = { runSelectionAction(action, clipboard) },
+                        )
                     }
                 }
             }

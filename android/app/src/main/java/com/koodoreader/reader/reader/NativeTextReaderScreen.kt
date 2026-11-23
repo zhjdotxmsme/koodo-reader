@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +54,7 @@ fun NativeTextReaderScreen(
     notesForHighlights: List<NoteEntity> = emptyList(),
     control: TextReaderScreenControl? = null,
     onLocationChanged: (TextLocation, ReaderFrame?) -> Unit = { _, _ -> },
-    onLineSelected: () -> Unit = {},
+    onLineSelected: (Offset) -> Unit = {},
     onToggleChrome: () -> Unit = {},
     /**
      * Whether the reader page is in dark mode. Drives the highlight tint:
@@ -219,14 +220,14 @@ fun NativeTextReaderScreen(
                             readerPageIsDark,
                         ),
                         pageImages = pageImages,
-                        onLongPressLine = { line ->
+                        onLongPressLine = { line, at ->
                             control?.selectionText = line.text
                             control?.selectionLocation = TextLocation(
                                 viewModel.currentLocation.chapterId,
                                 line.start,
                                 line.end,
                             )
-                            onLineSelected()
+                            onLineSelected(at)
                         },
                         onPageTurn = { forward ->
                             turnForward = forward
@@ -253,14 +254,14 @@ fun NativeTextReaderScreen(
                         readerPageIsDark,
                     ),
                     pageImages = pageImages,
-                    onLongPressLine = { line ->
+                    onLongPressLine = { line, at ->
                         control?.selectionText = line.text
                         control?.selectionLocation = TextLocation(
                             viewModel.currentLocation.chapterId,
                             line.start,
                             line.end,
                         )
-                        onLineSelected()
+                        onLineSelected(at)
                     },
                 )
             }
