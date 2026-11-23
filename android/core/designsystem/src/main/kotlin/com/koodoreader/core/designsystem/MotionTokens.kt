@@ -11,7 +11,6 @@ package com.koodoreader.core.designsystem
  *   - theme gradients, chapter-hint exits → [SLOW] (300ms)
  *   - skeleton-screen shimmer scan loop → [SHIMMER] (900ms)
  *   - hint dwell → [HINT] (2000ms)
- *   - double-back-to-exit acceptance window → [BACK_EXIT] (4000ms)
  *
  * Easing curves live in `:core:ui` (`KoodoMotion`) because they are Compose
  * types; this module stays pure JVM like [ShapeTokens].
@@ -40,15 +39,6 @@ object MotionTokens {
     /** Hint dwell (chapter-tip toast). */
     const val HINT = 2000
 
-    /**
-     * Double-back-to-exit acceptance window (EPUB/PDF reader back guard).
-     * Deliberately ≥ the visible time of the exit hint's
-     * `SnackbarDuration.Short` (~4s): a second back that arrives while
-     * "Press back again to exit" is still on screen must exit, not re-queue
-     * the hint. Guarded by `MotionTokensTest`.
-     */
-    const val BACK_EXIT = 4000
-
     /** Delay between staggered items. */
     const val STAGGER = 30
 
@@ -56,5 +46,5 @@ object MotionTokens {
     const val PRESS_SCALE = 0.98f
 
     /** Duration scale in ascending order; stagger and press scale are not durations. */
-    val ALL = listOf(FAST, NORMAL, PAGE, SLOW, SHIMMER, HINT, BACK_EXIT)
+    val ALL = listOf(FAST, NORMAL, PAGE, SLOW, SHIMMER, HINT)
 }

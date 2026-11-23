@@ -107,9 +107,6 @@ import com.koodoreader.reader.pdfhost.PdfJsHostBridge
 import com.koodoreader.reader.pdfhost.PdfRendererSnapshot
 import java.io.File
 import androidx.activity.compose.BackHandler
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
 import androidx.compose.runtime.mutableIntStateOf
@@ -222,25 +219,9 @@ fun NativePdfScreen(
     // 打开失败重试：ErrorState 的 onRetry 递增，重跑下方 open LaunchedEffect。
     var retryKey by remember { mutableIntStateOf(0) }
 
-    // ── 返回键链（后注册且 enabled 优先）：选区/弹层 > 目录 > chrome > 双击退出 ──
-    // 置于 bridge 早退（PdfUnavailableScreen）之前，未打开状态下也有双击退出兜底。
-    val snackbarHostState = remember { SnackbarHostState() }
-    val exitBackHint = t("Press back again to exit")
-    var lastBackAt by remember { mutableStateOf(0L) }
-    BackHandler {
-        val now = System.currentTimeMillis()
-        if (now - lastBackAt < MotionTokens.BACK_EXIT) {
-            onBack()
-        } else {
-            lastBackAt = now
-            scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = exitBackHint,
-                    duration = SnackbarDuration.Short,
-                )
-            }
-        }
-    }
+    // ── 返回键链（后注册且 enabled 优先）：选区/弹层 > 目录 > chrome > 直接退出 ──
+    // 置于 bridge 早退（PdfUnavailableScreen）之前，未打开状态下返回也直接退出。
+    BackHandler { onBack() }
     BackHandler(enabled = showChrome) { showChrome = false }
     BackHandler(enabled = showOutline) { showOutline = false }
     // 底部弹层（reflow 选区 / 页面菜单 / 批注）自身已注册更晚的 back 处理，这里兜底。
@@ -544,7 +525,6 @@ fun NativePdfScreen(
         readerBackground = readerScheme.background,
     )
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             ReaderTopBar(

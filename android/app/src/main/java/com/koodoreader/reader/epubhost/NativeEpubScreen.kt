@@ -778,10 +778,9 @@ fun NativeEpubScreen(
     // readerScope 由 Composition 持有，离开 Composition (Activity finish 或导航离开)
     // 时自动取消 —— 避免 Activity 泄漏与配置变更 (旋转/字号) 时协程错过取消时机。
     val readerScope = rememberCoroutineScope()
-    // 保存/返回提示 + 双击退出窗口。lastBackAt 用墙钟即可（跨重组保持）。
+    // 保存/返回提示 snackbar。
     val snackbarHostState = remember { SnackbarHostState() }
     val i18nState = LocalI18n.current
-    var lastBackAt by remember { mutableStateOf(0L) }
     val nativeAnnotationStore = remember(chapterLoader, bookKey, readerScope) {
         val loader = chapterLoader ?: return@remember null
         RoomNoteAnnotationStore(bookKey, loader, db.noteDao(), readerScope)
@@ -1561,21 +1560,9 @@ fun NativeEpubScreen(
         )
     }
 
-    // ── 返回键链（后注册且 enabled 优先）：选区菜单 > 目录 > chrome > 双击退出 ──
-    // 兜底层始终启用：BACK_EXIT 窗口内第二次返回才真正退出，首次返回只弹提示。
-    // 窗口必须 ≥ 提示 Snackbar 的可见时长，否则提示还挂着时第二次返回只会再弹一次。
-    val exitBackHint = t("Press back again to exit")
-    BackHandler {
-        val now = System.currentTimeMillis()
-        if (now - lastBackAt < MotionTokens.BACK_EXIT) {
-            onBack()
-        } else {
-            lastBackAt = now
-            readerScope.launch {
-                snackbarHostState.showSnackbar(message = exitBackHint, duration = SnackbarDuration.Short)
-            }
-        }
-    }
+    // ── 返回键链（后注册且 enabled 优先）：选区菜单 > 目录 > chrome > 直接退出 ──
+    // 兜底层始终启用：阅读页返回直接退出，无双击守卫（误触由系统手势边缘成本兜底）。
+    BackHandler { onBack() }
     BackHandler(enabled = showChrome) { showChrome = false }
     BackHandler(enabled = showToc) { showToc = false }
     BackHandler(enabled = showSelectionMenu) { showSelectionMenu = false }
