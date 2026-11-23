@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -37,8 +38,13 @@ fun ReaderTocPage(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
+            // 阅读路由没有外层 insets 避让：显式 statusBarsPadding +
+            // 置零 TopAppBar 自带 windowInsets（与 ReaderTopBar 同款组合）。
             TopAppBar(
-                modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 title = { Text(title, style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.koodoPressScale()) {

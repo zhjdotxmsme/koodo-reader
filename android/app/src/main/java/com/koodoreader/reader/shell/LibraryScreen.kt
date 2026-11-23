@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -173,8 +174,11 @@ fun LibraryScreen(
                 exit = fadeOut(tween(MotionTokens.NORMAL, easing = KoodoMotion.Accelerate)) +
                     slideOutVertically(tween(MotionTokens.NORMAL, easing = KoodoMotion.Accelerate)) { -it / 2 },
             ) {
+                // 外层 ShellScaffold 已做状态栏避让；置零 TopAppBar 自带 windowInsets，
+                // 否则 56dp 总高还要再扣一遍状态栏内边距，标题行被压扁。
                 TopAppBar(
                     modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                    windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -220,8 +224,10 @@ fun LibraryScreen(
                     slideInVertically(tween(MotionTokens.NORMAL)) { -it / 2 },
                 exit = fadeOut(tween(MotionTokens.FAST)),
             ) {
+            // 同上方选择栏：外层已避让状态栏，这里置零 TopAppBar 自带 windowInsets。
             TopAppBar(
                 modifier = Modifier.height(SpaceTokens.TOP_BAR_HEIGHT.dp),
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
