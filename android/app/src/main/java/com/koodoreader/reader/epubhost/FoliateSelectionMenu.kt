@@ -31,4 +31,22 @@ object FoliateSelectionMenu {
     /** WebView CSS px → root-box px via the WebView's current bounds. */
     fun anchorPx(point: Offset, boundsLeft: Float, boundsTop: Float, density: Float): Offset =
         Offset(boundsLeft + point.x * density, boundsTop + point.y * density)
+
+    /**
+     * The selection's start/end in WebView CSS px (see `selectionEdges` in
+     * engine.mjs). Mapped to root coordinates with [anchorPx].
+     */
+    data class SelectionEdges(val start: Offset, val end: Offset)
+
+    fun parseSelectionEdges(raw: String): SelectionEdges? = runCatching {
+        if (raw.isBlank() || raw == "null") return@runCatching null
+        val obj = JSONObject(raw)
+        if (!obj.has("sx") || !obj.has("sy") || !obj.has("ex") || !obj.has("ey")) {
+            return@runCatching null
+        }
+        SelectionEdges(
+            start = Offset(obj.optDouble("sx").toFloat(), obj.optDouble("sy").toFloat()),
+            end = Offset(obj.optDouble("ex").toFloat(), obj.optDouble("ey").toFloat()),
+        )
+    }.getOrNull()
 }

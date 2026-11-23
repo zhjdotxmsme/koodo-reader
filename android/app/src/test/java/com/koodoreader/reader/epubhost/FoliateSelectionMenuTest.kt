@@ -41,4 +41,25 @@ class FoliateSelectionMenuTest {
         assertEquals(125f, anchor.x, 0.001f)
         assertEquals(376f, anchor.y, 0.001f)
     }
+
+    @Test
+    fun `edges payload parses to start and end offsets`() {
+        val edges = FoliateSelectionMenu.parseSelectionEdges("""{"sx":10,"sy":20,"ex":30,"ey":40}""")
+        assertEquals(10f, edges!!.start.x, 0.001f)
+        assertEquals(20f, edges.start.y, 0.001f)
+        assertEquals(30f, edges.end.x, 0.001f)
+        assertEquals(40f, edges.end.y, 0.001f)
+    }
+
+    @Test
+    fun `edges payload without all four fields is rejected`() {
+        assertNull(FoliateSelectionMenu.parseSelectionEdges("""{"sx":10,"sy":20}"""))
+    }
+
+    @Test
+    fun `null and blank edges payloads yield null`() {
+        assertNull(FoliateSelectionMenu.parseSelectionEdges("null"))
+        assertNull(FoliateSelectionMenu.parseSelectionEdges(""))
+        assertNull(FoliateSelectionMenu.parseSelectionEdges("not json"))
+    }
 }

@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +53,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -341,6 +343,8 @@ fun NativeEpubScreen(
     // 选词下拉菜单的锚点（根 Box 坐标）。foliate 轨来自引擎上报的触点 +
     // WebView bounds；native 轨来自页面 Canvas 局部坐标 + Canvas bounds。
     var selectionAnchor by remember { mutableStateOf<Offset?>(null) }
+    // 选区两端把手位置（根 Box 坐标），foliate 轨由 JS selectionEdges 提供。
+    var selectionEdges by remember { mutableStateOf<FoliateSelectionMenu.SelectionEdges?>(null) }
     var foliateViewBounds by remember { mutableStateOf(Rect.Zero) }
     var nativeViewBounds by remember { mutableStateOf(Rect.Zero) }
     var nativePressLocal by remember { mutableStateOf(Offset.Zero) }
@@ -2214,6 +2218,25 @@ fun NativeEpubScreen(
         modifier = Modifier.fillMaxSize(),
     )
 
+    // ── 选区把手（foliate 轨）：位置跟随选区变化；菜单关闭即清把手并
+    // 折叠 WebView 选区，避免残留选中态再次触发 selectionchange 弹菜单。 ──
+    LaunchedEffect(showSelectionMenu, selectionCfi, selectionExcerpt) {
+        if (!showSelectionMenu || !useFoliate) return@LaunchedEffect
+        val edges = withContext(Dispatchers.IO) { foliateBridge?.selectionEdges() }
+            ?: return@LaunchedEffect
+        selectionEdges = FoliateSelectionMenu.SelectionEdges(
+            start = FoliateSelectionMenu.anchorPx(edges.start, foliateViewBounds.left, foliateViewBounds.top, density),
+            end = FoliateSelectionMenu.anchorPx(edges.end, foliateViewBounds.left, foliateViewBounds.top, density),
+        )
+    }
+    LaunchedEffect(showSelectionMenu) {
+        if (showSelectionMenu) return@LaunchedEffect
+        selectionEdges = null
+        if (useFoliate) {
+            withContext(Dispatchers.IO) { runCatching { foliateBridge?.clearSelection() } }
+        }
+    }
+
     // ── 选中行菜单：锚在选区触点处的下拉菜单（DropdownMenu 空间不足时
     // 自动翻到锚点上方）；动作集（未高亮/已高亮两组）与高亮色接线不变。 ──
     if (showSelectionMenu && FoliateSelectionMenu.visible(currentSelectionText())) {
@@ -2281,6 +2304,25 @@ fun NativeEpubScreen(
             }
         }
     }
+    // ── 选区拖动手柄：两端各一，拖动把触点换算回 WebView CSS px 交给
+    // extendSelection；JS 侧 selectionchange 回流后 effects 重查把手位置。 ──
+    selectionEdges?.let { edges ->
+        SelectionDragHandle(
+            anchor = edges.start,
+            startEdge = true,
+            density = density,
+            boundsLeft = foliateViewBounds.left,
+            boundsTop = foliateViewBounds.top,
+        ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = true) }
+        SelectionDragHandle(
+            anchor = edges.end,
+            startEdge = false,
+            density = density,
+            boundsLeft = foliateViewBounds.left,
+            boundsTop = foliateViewBounds.top,
+        ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = false) }
+    }
+
     } // Box wrapping Scaffold + selection overlay
 
     // ── 翻译弹窗（选词翻译，P6 feature/translate 接线点） ──────────────────────
@@ -2943,5 +2985,62 @@ private fun SpeedReadingLayer(
                 Text(after, style = MaterialTheme.typography.headlineMedium)
             }
         }
+    }
+}
+
+
+/**
+ * A draggable handle anchored at one selection edge (root-box coordinates).
+ * The stem points up at the edge character and the dot sits below the line —
+ * the classic text-selection look. Drags convert the touch point back to
+ * WebView CSS px and hand it to `extendSelection`; the JS-side
+ * selectionchange then re-reports excerpt/cfi, and the effects in
+ * NativeEpubScreen re-query the edge positions.
+ */
+@Composable
+private fun SelectionDragHandle(
+    anchor: Offset,
+    startEdge: Boolean,
+    density: Float,
+    boundsLeft: Float,
+    boundsTop: Float,
+    onDragTo: (Float, Float) -> Unit,
+) {
+    // pointerInput(startEdge) outlives recompositions; read fresh values.
+    val currentAnchor by rememberUpdatedState(anchor)
+    val currentBoundsLeft by rememberUpdatedState(boundsLeft)
+    val currentBoundsTop by rememberUpdatedState(boundsTop)
+    val currentDensity by rememberUpdatedState(density)
+    val currentOnDrag by rememberUpdatedState(onDragTo)
+    val color = if (startEdge) Color(0xFF4C8DFF) else Color(0xFF7A5AF8)
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(currentAnchor.x.roundToInt(), currentAnchor.y.roundToInt()) }
+            .size(36.dp)
+            .pointerInput(startEdge) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                    val rootX = currentAnchor.x + change.position.x
+                    val rootY = currentAnchor.y + change.position.y
+                    currentOnDrag(
+                        (rootX - currentBoundsLeft) / currentDensity,
+                        (rootY - currentBoundsTop) / currentDensity,
+                    )
+                }
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(3.dp, 12.dp)
+                .background(color, RoundedCornerShape(2.dp)),
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .size(14.dp)
+                .background(color, CircleShape),
+        )
     }
 }

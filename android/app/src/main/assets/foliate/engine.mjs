@@ -136,6 +136,38 @@ function rangeAtPoint(doc, x, y) {
     return caret;
 }
 
+// Long-press starts on a WORD, not the whole block. CJK ideographs segment
+// one at a time (no spaces to split on), Latin/digit runs select whole words;
+// the user then drags the handles to extend the range manually.
+export function wordRangeAtPoint(doc, x, y) {
+    const caret = doc.caretRangeFromPoint
+        ? doc.caretRangeFromPoint(x, y)
+        : null;
+    if (!caret) return null;
+    const node = caret.startContainer;
+    if (!node || node.nodeType !== 3) return caret;
+    const text = node.textContent || '';
+    const pos = Math.max(0, Math.min(caret.startOffset, text.length));
+    const isCjk = (ch) => ch !== undefined &&
+        /[\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF\uAC00-\uD7AF]/u.test(ch);
+    const isWord = (ch) => ch !== undefined && /[\p{L}\p{N}_]/u.test(ch);
+    let a = pos;
+    let b = pos;
+    if (isCjk(text[pos])) {
+        b = pos + 1;
+    } else if (isCjk(text[pos - 1])) {
+        a = pos - 1;
+    } else {
+        while (a > 0 && isWord(text[a - 1])) a--;
+        while (b < text.length && isWord(text[b])) b++;
+    }
+    if (a === b) return caret;
+    const r = doc.createRange();
+    r.setStart(node, a);
+    r.setEnd(node, b);
+    return r;
+}
+
 function cfiForRange(view, index, range) {
     if (!view || !range) return '';
     try {
@@ -175,7 +207,7 @@ function attachSelectionReporter(view, host) {
             clear();
             timer = setTimeout(() => {
                 timer = 0;
-                const range = rangeAtPoint(doc, sx, sy);
+                const range = wordRangeAtPoint(doc, sx, sy);
                 if (!range) return;
                 const sel = doc.getSelection();
                 if (!sel) return;
@@ -705,6 +737,78 @@ export function createFoliateEngine(options) {
         return { excerpt: '', cfi: '' };
     }
 
+    function activeSelectionDoc() {
+        const contents = view && view.renderer && typeof view.renderer.getContents === 'function'
+            ? view.renderer.getContents()
+            : [];
+        for (let i = 0; i < contents.length; i++) {
+            const item = contents[i] || {};
+            const doc = item.doc;
+            const sel = doc && doc.getSelection && doc.getSelection();
+            const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+            if (range && !range.collapsed && String(sel).trim()) return { doc, range, sel };
+        }
+        return null;
+    }
+
+    function frameRectOf(doc) {
+        const fr = doc.defaultView && doc.defaultView.frameElement &&
+            doc.defaultView.frameElement.getBoundingClientRect
+            ? doc.defaultView.frameElement.getBoundingClientRect() : null;
+        return fr || { left: 0, top: 0, right: 0, bottom: 0 };
+    }
+
+    // The selection's start/end as top-level WebView viewport coordinates
+    // (same mapping as the selection payload's px/py) — feeds the drag
+    // handles the host draws over the page.
+    function selectionEdges() {
+        const found = activeSelectionDoc();
+        if (!found) return null;
+        const raw = found.range.getClientRects ? found.range.getClientRects() : [];
+        const rects = [];
+        for (let i = 0; i < raw.length; i++) {
+            if (raw[i] && (raw[i].width > 0 || raw[i].height > 0)) rects.push(raw[i]);
+        }
+        if (!rects.length) return null;
+        const fr = frameRectOf(found.doc);
+        const first = rects[0];
+        const last = rects[rects.length - 1];
+        return {
+            sx: first.left + fr.left, sy: first.bottom + fr.top,
+            ex: last.right + fr.left, ey: last.bottom + fr.top,
+        };
+    }
+
+    // Drag a selection edge to (x, y) in top-level WebView viewport
+    // coordinates. Range.setStart/setEnd collapse when the edge crosses the
+    // other end, so handles can pass each other naturally. The resulting
+    // selectionchange re-reports excerpt/cfi to the host.
+    function extendSelection(x, y, edge) {
+        const found = activeSelectionDoc();
+        if (!found) return { ok: false };
+        const fr = frameRectOf(found.doc);
+        const caret = found.doc.caretRangeFromPoint
+            ? found.doc.caretRangeFromPoint(x - fr.left, y - fr.top) : null;
+        if (!caret) return { ok: false };
+        const r = found.doc.createRange();
+        if (edge === 'start') {
+            r.setStart(caret.startContainer, caret.startOffset);
+            r.setEnd(found.range.endContainer, found.range.endOffset);
+        } else {
+            r.setStart(found.range.startContainer, found.range.startOffset);
+            r.setEnd(caret.startContainer, caret.startOffset);
+        }
+        found.sel.removeAllRanges();
+        found.sel.addRange(r);
+        return { ok: true };
+    }
+
+    function clearSelection() {
+        const found = activeSelectionDoc();
+        if (!found) return;
+        found.sel.removeAllRanges();
+    }
+
     async function addHighlight(cfi, color) {
         if (!cfi || !view || typeof view.addAnnotation !== 'function') return { ok: false };
         await view.addAnnotation({ value: String(cfi), color: color || '#ffe066' });
@@ -818,6 +922,9 @@ export const METHODS = [
     'setAppearance',
     'setViewSettings',
     'selectedRange',
+    'selectionEdges',
+    'extendSelection',
+    'clearSelection',
     'addHighlight',
     'removeHighlight',
     'reAnchorHighlights',

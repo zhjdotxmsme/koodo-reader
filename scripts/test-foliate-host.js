@@ -56,6 +56,7 @@ async function main() {
     const {
         createFoliateEngine, dispatch, encodePayload, flattenToc, splitTxtChapters, mdToHtml,
         selectionPayload, appearanceCss, chromeTapAction, parseRules, applyRulesToHtml,
+        wordRangeAtPoint,
     } =
         await import(pathToFileURL(ENGINE_MJS).href);
 
@@ -261,6 +262,30 @@ async function main() {
         JSON.stringify(selectionPayload({ isCollapsed: false, toString: () => ' 陶寺的兴衰 ' }, 'epubcfi(/6/4)', { px: 12.5, py: 88 })),
         JSON.stringify({ excerpt: '陶寺的兴衰', cfi: 'epubcfi(/6/4)', px: 12.5, py: 88 }),
     );
+
+    // wordRangeAtPoint: CJK ideographs select one char, Latin/digit runs the
+    // whole word, punctuation falls back to the bare caret range.
+    const fakeTextNode = (text) => ({ nodeType: 3, textContent: text });
+    const fakeDoc = (text, offset) => ({
+        caretRangeFromPoint: () => ({ startContainer: fakeTextNode(text), startOffset: offset }),
+        createRange: () => {
+            const r = { s: 0, e: 0 };
+            r.setStart = (n, o) => { r.s = o; };
+            r.setEnd = (n, o) => { r.e = o; };
+            return r;
+        },
+    });
+    const wordRange = (text, offset) => {
+        const r = wordRangeAtPoint(fakeDoc(text, offset), 0, 0);
+        return r && r.setStart ? [r.s, r.e] : null;
+    };
+    eq('cjk long-press selects a single ideograph', JSON.stringify(wordRange('陶寺的兴衰', 2)), JSON.stringify([2, 3]));
+    eq('cjk caret at run start selects the first ideograph', JSON.stringify(wordRange('陶寺的兴衰', 0)), JSON.stringify([0, 1]));
+    eq('latin long-press selects the whole word', JSON.stringify(wordRange('hello world, ok', 2)), JSON.stringify([0, 5]));
+    eq('latin word after a space expands from its own run', JSON.stringify(wordRange('hello world, ok', 8)), JSON.stringify([6, 11]));
+    eq('digits select as a run', JSON.stringify(wordRange('chapter 2044 end', 11)), JSON.stringify([8, 12]));
+    eq('touch between word and punctuation selects the adjacent word', JSON.stringify(wordRange('hello, world', 5)), JSON.stringify([0, 5]));
+    eq('blank position falls back to the caret range', wordRange('', 0), null);
 
     const nightCss = appearanceCss({
         bg: 'rgba(44, 47, 49,1)',

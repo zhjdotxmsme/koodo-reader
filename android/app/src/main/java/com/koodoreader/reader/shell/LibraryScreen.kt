@@ -372,6 +372,21 @@ fun LibraryScreen(
                 shape = ShellChrome.searchCorner,
                 colors = ShellChrome.searchFieldColors(),
             )
+            // 书架数据视图：总数 / 收藏 / 在读（0 < 进度 < 1），随当前筛选与排序变化。
+            val favoriteCount = books.count { it.key in shelf.favorites }
+            val readingCount = books.count { book ->
+                val fraction = progressFractions[book.key] ?: 0f
+                fraction > 0.01f && fraction < 0.99f
+            }
+            Text(
+                text = "${books.size} ${t("Books")} · ${t("Favorites")} $favoriteCount · ${t("Reading")} $readingCount",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    horizontal = SpaceTokens.SCREEN_HORIZONTAL.dp,
+                    vertical = SpaceTokens.xs.dp,
+                ),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -467,7 +482,7 @@ fun LibraryScreen(
             } else if (shelf.viewGrid) {
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Adaptive(minSize = 112.dp),
+                    columns = GridCells.Adaptive(minSize = 80.dp),
                     modifier = Modifier.fillMaxSize(),
                     // Grid metrics: 16dp screen margin, 12dp between
                     // columns, 16dp between rows (a cover is a tall block, so
@@ -475,7 +490,7 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(
                         start = SpaceTokens.SCREEN_HORIZONTAL.dp,
                         end = SpaceTokens.SCREEN_HORIZONTAL.dp,
-                        top = SpaceTokens.lg.dp,
+                        top = SpaceTokens.sm.dp,
                         bottom = SpaceTokens.lg.dp,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(SpaceTokens.GRID_GAP_HORIZONTAL.dp),

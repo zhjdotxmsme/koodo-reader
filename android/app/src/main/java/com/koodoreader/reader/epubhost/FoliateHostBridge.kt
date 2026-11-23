@@ -243,6 +243,35 @@ class FoliateHostBridge(
         }
     }
 
+    /** Selection start/end in WebView CSS px, or null when nothing is selected. */
+    fun selectionEdges(): FoliateSelectionMenu.SelectionEdges? {
+        val raw = runCatching {
+            runJs(method = "selectionEdges", args = emptyList(), timeoutMs = EDGES_TIMEOUT_MS)
+        }.getOrNull() ?: return null
+        return FoliateSelectionMenu.parseSelectionEdges(raw)
+    }
+
+    /**
+     * Drag a selection edge to (x, y) in WebView CSS px. Fire-and-forget:
+     * the JS-side selectionchange re-reports the excerpt/cfi, and the caller
+     * re-queries [selectionEdges] off that update.
+     */
+    fun extendSelection(xCss: Float, yCss: Float, startEdge: Boolean) {
+        if (!xCss.isFinite() || !yCss.isFinite()) return
+        runJsFireAndForget(
+            method = "extendSelection",
+            args = listOf(
+                xCss.toString(),
+                yCss.toString(),
+                JSONObject.quote(if (startEdge) "start" else "end"),
+            ),
+        )
+    }
+
+    fun clearSelection() {
+        runJsFireAndForget(method = "clearSelection", args = emptyList())
+    }
+
     fun addHighlight(cfi: String, colorCss: String) {
         if (cfi.isBlank()) return
         runJs(
@@ -379,6 +408,9 @@ class FoliateHostBridge(
         private const val JS_CALL_TIMEOUT_MS = 15_000L
         private const val OPEN_TIMEOUT_MS = 60_000L
         private const val SEARCH_TIMEOUT_MS = 30_000L
+        // Handle-position polls during drag must feel instant; a slow frame
+        // is better answered with the previous position than a 15s block.
+        private const val EDGES_TIMEOUT_MS = 1_500L
         private const val REANCHOR_MS_PER_ITEM = 2_000L
         private const val REANCHOR_MIN_TIMEOUT_MS = 5_000L
         private const val REANCHOR_MAX_TIMEOUT_MS = 60_000L
