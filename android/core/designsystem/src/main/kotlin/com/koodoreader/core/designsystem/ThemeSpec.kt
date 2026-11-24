@@ -30,12 +30,19 @@ data class ThemeSpec(
 ) {
     companion object {
 
-        /** Default (day) preset — white background, black text. */
+        /**
+         * Default (day) preset — warm off-white paper, deep brown-black ink.
+         *
+         * Deliberately avoids pure black/white (#000000/#FFFFFF) per the mobile
+         * UI/UX baseline: pure values feel like a back-lit screen rather than a
+         * printed page. The slight warmth keeps the day theme readable and
+         * cohesive with the native-only Paper/Sepia presets.
+         */
         val DEFAULT_PRESET = ThemeSpec(
             kind = ThemeKind.DEFAULT,
-            backgroundColor = "rgba(255,255,255,1)",
+            backgroundColor = "rgba(247, 245, 240,1)",
             backgroundImage = null,
-            foregroundColor = "rgba(0,0,0,1)",
+            foregroundColor = "rgba(31, 27, 24,1)",
             name = "Default",
         )
 

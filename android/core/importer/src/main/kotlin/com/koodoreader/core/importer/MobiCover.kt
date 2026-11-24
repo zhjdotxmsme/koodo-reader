@@ -23,28 +23,21 @@ import java.io.RandomAccessFile
 object MobiCover {
 
     fun extract(file: File): BookCover? = try {
-        extractInternal(file).also {
-            java.io.File("build/mobi-trace.txt").appendText("result=${it != null}\n")
-        }
-    } catch (t: Throwable) {
-        java.io.File("build/mobi-trace.txt").appendText("THROWN: $t\n")
+        extractInternal(file)
+    } catch (t: Exception) {
+        // Only Exception: an Error here would still escape and abort the
+        // import, and it would not be something a cover extractor can fix.
         null
     }
 
     private fun extractInternal(file: File): BookCover? {
         RandomAccessFile(file, "r").use { raf ->
             val length = file.length()
-            if (length < 132) {
-                java.io.File("build/mobi-trace.txt").appendText("trace: too short\n")
-                return null
-            }
+            if (length < 132) return null
 
             raf.seek(60)
             val typeCreator = ByteArray(8).also { raf.readFully(it) }
-            if (String(typeCreator, 0, 8) != "BOOKMOBI") {
-                java.io.File("build/mobi-trace.txt").appendText("trace: not BOOKMOBI\n")
-                return null
-            }
+            if (String(typeCreator, 0, 8) != "BOOKMOBI") return null
 
             raf.seek(76)
             val recordCount = readU16(raf)
@@ -100,10 +93,7 @@ object MobiCover {
                     n++
                 }
             }
-            if (coverOffset < 0) {
-                java.io.File("build/mobi-trace.txt").appendText("trace: coverOffset<0\n")
-                return null
-            }
+            if (coverOffset < 0) return null
 
             val imageIndex = firstImageRecord + coverOffset
             if (imageIndex <= 0 || imageIndex >= recordCount) return null

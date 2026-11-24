@@ -333,6 +333,17 @@ class BookList extends React.Component<BookListProps, BookListState> {
             bookIndex: index,
           } as any)}
         />
+      ) : this.props.viewMode === "compact" ? (
+        <BookListItem
+          key={index}
+          {...({
+            book: item,
+            isSelected: this.props.selectedBooks.indexOf(item.key) > -1,
+            allBooks: displayedBooks,
+            bookIndex: index,
+            compact: true,
+          } as any)}
+        />
       ) : this.props.viewMode === "card" ? (
         <BookCardItem
           key={index}

@@ -88,6 +88,14 @@ class SettingSwitch extends React.Component<
       speedReadingSpeed:
         ConfigService.getReaderConfig("speedReadingSpeed") || "300",
       isMergeWord: ConfigService.getReaderConfig("isMergeWord") === "yes",
+      isInvertImage:
+        ConfigService.getReaderConfig("isInvertImage") === "yes",
+      isCenterImage:
+        ConfigService.getReaderConfig("isCenterImage") === "yes",
+      isTypoEnhance:
+        ConfigService.getReaderConfig("isTypoEnhance") === "yes",
+      isPortraitAutoDouble:
+        ConfigService.getReaderConfig("isPortraitAutoDouble") === "yes",
       isSeperateStyle: ConfigService.getAllListConfig(
         "seperateStyleBooks"
       ).includes(props.currentBook?.key),

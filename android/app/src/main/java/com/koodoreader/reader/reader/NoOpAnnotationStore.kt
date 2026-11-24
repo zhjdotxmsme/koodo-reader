@@ -8,4 +8,6 @@ object NoOpAnnotationStore : AnnotationStore {
     override fun saveNote(bookKey: String, location: TextLocation, text: String, color: Long) = Unit
 
     override fun addBookmark(bookKey: String, location: TextLocation, label: String) = Unit
+
+    override fun isHighlighted(bookKey: String, location: TextLocation): Boolean = false
 }

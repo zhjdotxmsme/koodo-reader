@@ -146,6 +146,13 @@ android {
         kotlinCompilerExtensionVersion '1.5.14'
     }
 
+    testOptions {
+        // JVM unit tests that touch simple Android APIs (e.g. android.util.Log
+        // in DoKitInitializer) get default return values instead of the
+        // "Method ... not mocked" stub exception.
+        unitTests.returnDefaultValues = true
+    }
+
     flavorDimensions += "host"
     productFlavors {
         webview {
@@ -261,6 +268,14 @@ dependencies {
 
     // P6 native MDX/MDD dictionary.
     implementation project(':feature:dictionary')
+
+    // DoKit (DoraemonKit) in-app debug suite: floating panel with layout
+    // boundaries, view hierarchy and real-time memory/CPU metrics. Core library
+    // is debug-only; release uses the no-op artifact so DoKit code stays out of
+    // shipped APKs while keeping the wrapper compilable.
+    def dokitVersion = '3.5.0'
+    debugImplementation "io.github.didi.dokit:dokitx:$dokitVersion"
+    releaseImplementation "io.github.didi.dokit:dokitx-no-op:$dokitVersion"
 
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom

@@ -14,40 +14,54 @@ package com.koodoreader.core.designsystem
  * So the book card is the single deliberate exception, and its shadow is
  * defined here rather than inline, so the grid and the list row cannot drift
  * apart.
+ *
+ * ## Two-layer shadow system (UX-Pro-Max baseline)
+ *
+ * Only two shadow vocabularies are allowed:
+ *   - **Floating** — `0 4 12` (offsetX 0, offsetY 4dp, blur 12dp): cards,
+ *     covers, small elevated surfaces.
+ *   - **Popup** — `0 12 32` (offsetX 0, offsetY 12dp, blur 32dp): bottom
+ *     sheets, modals, dialogs.
+ *
+ * The old card contact shadow is folded into the floating layer.
  */
 object ElevationTokens {
 
     /**
-     * Shadow alpha for the book card, in 0..1.
+     * Shadow alpha for the floating layer, in 0..1.
      *
      * 0.18 — enough to separate the cover from the page behind it without the
      * cover looking like it is floating above a hole.
      */
-    const val CARD_SHADOW_ALPHA = 0.18f
+    const val FLOATING_SHADOW_ALPHA = 0.18f
+
+    /** Vertical shadow offset for the floating layer, in dp. */
+    const val FLOATING_SHADOW_Y = 4f
+
+    /** Shadow blur radius for the floating layer, in dp. */
+    const val FLOATING_SHADOW_BLUR = 12f
 
     /**
-     * Vertical shadow offset, in dp.
-     *
-     * 2dp downward: the light in this app comes from above, so the shadow
-     * falls below the card.
-     */
-    const val CARD_SHADOW_Y = 2f
-
-    /**
-     * Shadow blur radius, in dp.
-     *
-     * 8dp — soft enough to read as ambient occlusion rather than as a hard
-     * offset copy of the card.
-     */
-    const val CARD_SHADOW_BLUR = 8f
-
-    /**
-     * Shadow spread, in dp.
+     * Shadow spread for the floating layer, in dp.
      *
      * Negative spread tightens the shadow toward the card's own silhouette,
      * which is what makes it read as a contact shadow instead of a halo.
      */
-    const val CARD_SHADOW_SPREAD = -2f
+    const val FLOATING_SHADOW_SPREAD = -2f
+
+    /**
+     * Shadow alpha for the popup layer, in 0..1.
+     *
+     * Slightly stronger than the floating layer because the popup surface is
+     * higher in the z-order and farther from the background.
+     */
+    const val POPUP_SHADOW_ALPHA = 0.24f
+
+    /** Vertical shadow offset for the popup layer, in dp. */
+    const val POPUP_SHADOW_Y = 12f
+
+    /** Shadow blur radius for the popup layer, in dp. */
+    const val POPUP_SHADOW_BLUR = 32f
 
     /**
      * The elevated card's corner radius, in dp.

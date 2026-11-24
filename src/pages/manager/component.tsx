@@ -30,6 +30,7 @@ import {
 } from "../../utils/reader/bookDrag";
 import Footer from "../../components/footer";
 import ProtectionOverlay from "../../components/protection";
+import { migrateLibraryPdfPasswords } from "../../utils/pdf/pdfPasswordMigration";
 class Manager extends React.Component<ManagerProps, ManagerState> {
   timer!: NodeJS.Timeout;
   private isDraggingFromApp = false;
@@ -89,6 +90,12 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
     document.addEventListener("dragstart", this.handleDocumentDragStart, true);
     document.addEventListener("dragend", this.handleDocumentDragEnd, true);
     document.addEventListener("dragenter", this.handleExternalDragEnter, true);
+    // Move PDF passwords out of the synced `books.description` field into the
+    // local-only store. Books imported before the local store existed still
+    // carry their password in a field that is uploaded to the cloud.
+    migrateLibraryPdfPasswords().catch(() => {
+      // non-fatal: the passwords still work where they are
+    });
     // Auto switch to configured startup shelf
     const startupShelf = ConfigService.getReaderConfig("startupShelf");
     if (startupShelf) {

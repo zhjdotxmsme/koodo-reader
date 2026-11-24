@@ -18,6 +18,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koodoreader.core.ui.theme.KoodoTheme
 import com.koodoreader.reader.LocalAssetServer
+import com.koodoreader.reader.debug.DoKitInitializer
 import com.koodoreader.reader.R
 
 /**
@@ -87,6 +88,19 @@ class NativeShellActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Attach DoKit's floating icon once an Activity is in the foreground.
+     *
+     * `DoKit.Builder(...).build()` only initialises DoKit — the floating
+     * icon is attached afterwards, and it must be attached to a live
+     * Activity, so this belongs in onResume rather than in
+     * Application.onCreate.
+     */
+    override fun onResume() {
+        super.onResume()
+        DoKitInitializer.showFloatingIcon(this)
     }
 
     /** Start the loopback origin; a failure downgrades the readers, never the shelf. */

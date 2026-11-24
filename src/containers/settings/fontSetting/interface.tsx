@@ -1,5 +1,6 @@
 import { RouteComponentProps } from "react-router-dom";
 import { FontItem } from "../../../utils/file/fontUtil";
+import { FontScope } from "../../../utils/reader/fontScopeUtil";
 
 export interface SettingInfoProps extends RouteComponentProps<any> {
   t: (title: string) => string;
@@ -22,4 +23,5 @@ export interface SettingInfoState {
   expandedFamily: string;
   downloadingId: string;
   downloadProgress: number;
+  fontScope: FontScope;
 }

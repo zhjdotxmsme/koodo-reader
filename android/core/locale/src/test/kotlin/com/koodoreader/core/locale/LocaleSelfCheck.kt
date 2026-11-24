@@ -67,10 +67,13 @@ fun main() {
         }
     }.onFailure { failures.add(it.message ?: it.toString()) }
 
-    runCheck("locale catalogs: 2 bundled + 39 on demand = 41 desktop locales") {
-        check(LocaleRuntimeLoader.BUNDLED_LOCALE_CODES == listOf("en", "zh-CN")) { "bundled subset changed" }
-        check(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size == 39) {
-            "expected 39 remote locales, got ${LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size}"
+    runCheck("locale catalogs: 11 bundled + 30 on demand = 41 desktop locales") {
+        check(
+            LocaleRuntimeLoader.BUNDLED_LOCALE_CODES ==
+                listOf("en", "zh-CN", "zh-TW", "ja", "ko", "es", "fr", "de", "ru", "pt", "it"),
+        ) { "bundled subset changed" }
+        check(LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size == 30) {
+            "expected 30 remote locales, got ${LocaleRuntimeLoader.REMOTE_LOCALE_CODES.size}"
         }
         check(LocaleRuntimeLoader.ALL_LOCALE_CODES.size == 41) { "expected 41 locales in total" }
     }.onFailure { failures.add(it.message ?: it.toString()) }
@@ -81,16 +84,16 @@ fun main() {
             InMemoryLocalePackStore(),
             object : LocalePackDownloader {
                 override fun download(code: String, expectedSha256: String?): String =
-                    """{"Books":"Bücher"}"""
+                    """{"Books":"Βιβλιοθήκη"}"""
             },
         )
         loader.load("en")
-        val chain = loader.chain("de")
+        val chain = loader.chain("el")
         check(chain.lookup(FallbackKey("Books")).step == FallbackStep.FALLBACK_LANGUAGE) {
-            "de should fall back to en before the pack exists"
+            "el should fall back to en before the pack exists"
         }
-        check(loader.ensure("de") is LocaleEnsureResult.Downloaded) { "de was not downloaded" }
-        check(chain.resolve("Books") == "Bücher") { "chain did not pick up the new pack" }
+        check(loader.ensure("el") is LocaleEnsureResult.Downloaded) { "el was not downloaded" }
+        check(chain.resolve("Books") == "Βιβλιοθήκη") { "chain did not pick up the new pack" }
         check(chain.lookup(FallbackKey("Only")).step == FallbackStep.FALLBACK_LANGUAGE) { "en fallback broken" }
         check(chain.resolve("Missing Key") == "Missing Key") { "key fallback broken" }
     }.onFailure { failures.add(it.message ?: it.toString()) }
@@ -110,7 +113,7 @@ fun main() {
         val root = Files.createTempDirectory("p6-locale-selfcheck").toFile()
         try {
             val store = FilesLocalePackStore(File(root, "locales/packs"))
-            val json = """{"Books":"Bücher"}"""
+            val json = """{"Books":"Βιβλιοθήκη"}"""
             val loader = LocaleRuntimeLoader(
                 MapLocaleAssetSource(mapOf("en" to """{"Books":"Books"}""")),
                 store,
@@ -118,14 +121,14 @@ fun main() {
                     override fun download(code: String, expectedSha256: String?): String = json
                 },
             )
-            check(loader.ensure("de") is LocaleEnsureResult.Downloaded) { "download failed" }
+            check(loader.ensure("el") is LocaleEnsureResult.Downloaded) { "download failed" }
             val restarted = LocaleRuntimeLoader(
                 MapLocaleAssetSource(mapOf("en" to """{"Books":"Books"}""")),
                 FilesLocalePackStore(File(root, "locales/packs")),
             )
-            val ready = restarted.ensure("de")
+            val ready = restarted.ensure("el")
             check(ready is LocaleEnsureResult.Ready) { "pack did not survive the restart: $ready" }
-            check(restarted.chain("de").resolve("Books") == "Bücher") { "restarted chain failed" }
+            check(restarted.chain("el").resolve("Books") == "Βιβλιοθήκη") { "restarted chain failed" }
         } finally {
             root.deleteRecursively()
         }

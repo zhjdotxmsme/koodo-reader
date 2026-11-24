@@ -51,15 +51,24 @@ fun main(args: Array<String>) {
     }.onFailure { failures.add(it) }
 
     // ─── 2. Theme presets ────────────────────────────────────────────────────
-    runCheck("DEFAULT preset backgroundColor == rgba(255,255,255,1)") {
-        check(ThemeSpec.DEFAULT_PRESET.backgroundColor == "rgba(255,255,255,1)") {
+    runCheck("DEFAULT preset backgroundColor is warm off-white") {
+        check(ThemeSpec.DEFAULT_PRESET.backgroundColor == "rgba(247, 245, 240,1)") {
             "Got ${ThemeSpec.DEFAULT_PRESET.backgroundColor}"
         }
     }.onFailure { failures.add(it) }
 
-    runCheck("DEFAULT preset foregroundColor == rgba(0,0,0,1)") {
-        check(ThemeSpec.DEFAULT_PRESET.foregroundColor == "rgba(0,0,0,1)") {
+    runCheck("DEFAULT preset foregroundColor is deep brown-black") {
+        check(ThemeSpec.DEFAULT_PRESET.foregroundColor == "rgba(31, 27, 24,1)") {
             "Got ${ThemeSpec.DEFAULT_PRESET.foregroundColor}"
+        }
+    }.onFailure { failures.add(it) }
+
+    runCheck("DEFAULT preset avoids pure black and pure white") {
+        check(ThemeSpec.DEFAULT_PRESET.backgroundColor != "rgba(255,255,255,1)") {
+            "background is still pure white"
+        }
+        check(ThemeSpec.DEFAULT_PRESET.foregroundColor != "rgba(0,0,0,1)") {
+            "foreground is still pure black"
         }
     }.onFailure { failures.add(it) }
 
@@ -254,11 +263,14 @@ fun main(args: Array<String>) {
         check(ColorTokens.DARK.background == 0xFF16181D) { "dark background changed" }
     }
 
-    runCheck("ShapeTokens: matches the Material 3 five-step scale") {
-        check(ShapeTokens.ALL == ShapeTokens.MATERIAL3_DEFAULTS) {
-            "shape scale ${ShapeTokens.ALL} != M3 ${ShapeTokens.MATERIAL3_DEFAULTS}"
+    runCheck("ShapeTokens: UX-Pro-Max scale with capsule slot") {
+        // M3 base (4/8/12/16/28) adjusted: small=6 for tighter controls, plus
+        // a 999dp capsule slot for pills/chips.
+        check(ShapeTokens.ALL == listOf(4, 6, 12, 16, 28, 999)) {
+            "shape scale ${ShapeTokens.ALL} != expected [4, 6, 12, 16, 28, 999]"
         }
         check(ShapeTokens.ALL.zipWithNext().all { (a, b) -> a < b }) { "shape scale not ascending" }
+        check(ShapeTokens.capsule == 999) { "capsule token missing or wrong" }
     }
 
     runCheck("SpaceTokens: 4dp grid, ascending, semantic reader and list values") {

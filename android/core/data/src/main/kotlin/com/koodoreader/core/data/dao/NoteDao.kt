@@ -24,6 +24,19 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE `key` = :key")
     suspend fun getByKey(key: String): NoteEntity?
 
+    /**
+     * All highlights (rows with an empty `notes` column) of one book.
+     *
+     * A highlight is distinguished from a note by an empty `notes` text —
+     * see AnnotationKind — so the selection sheet can tell "already
+     * highlighted" from "only annotated".
+     */
+    @Query(
+        "SELECT * FROM notes WHERE bookKey = :bookKey AND (notes IS NULL OR notes = '') " +
+            "AND cfi IS NOT NULL",
+    )
+    suspend fun getHighlightsForBook(bookKey: String): List<NoteEntity>
+
     @Query("DELETE FROM notes WHERE `key` = :key")
     suspend fun deleteByKey(key: String)
 

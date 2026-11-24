@@ -15,4 +15,9 @@ export const viewMode = [
     icon: "cover",
     mode: "cover",
   },
+  {
+    name: "Compact",
+    icon: "menu",
+    mode: "compact",
+  },
 ];

@@ -15,6 +15,7 @@ export interface SliderListState {
   letterSpacing: string;
   paraSpacing: string;
   brightness: string;
+  imageOpacity: string;
   scale: string;
   margin: string;
   readingRulerLineHeight?: string;

@@ -36,6 +36,8 @@ class RoomAnnotationStatsStoreTest {
         override suspend fun upsert(note: NoteEntity) = Unit
         override suspend fun upsertAll(notes: List<NoteEntity>) = Unit
         override suspend fun getByKey(key: String): NoteEntity? = null
+        override suspend fun getHighlightsForBook(bookKey: String): List<NoteEntity> =
+            rows.filter { it.bookKey == bookKey && it.notes.isNullOrEmpty() }
         override suspend fun deleteByKey(key: String) = Unit
         override suspend fun deleteForBook(bookKey: String) = Unit
         override suspend fun count(): Long = rows.size.toLong()

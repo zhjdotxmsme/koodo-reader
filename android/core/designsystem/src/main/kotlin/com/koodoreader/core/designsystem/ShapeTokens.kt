@@ -19,14 +19,24 @@ package com.koodoreader.core.designsystem
 object ShapeTokens {
 
     val extraSmall = 4
-    val small = 8
+    /** Small controls / badges: 6dp per the UX-Pro-Max baseline. */
+    val small = 6
+    /** Cards and cover silhouettes: 12dp. */
     val medium = 12
     val large = 16
     val extraLarge = 28
+    /** Pill / capsule shapes: 999dp (effectively fully rounded). */
+    val capsule = 999
 
     /** The scale in ascending order, for validation and iteration. */
-    val ALL = listOf(extraSmall, small, medium, large, extraLarge)
+    val ALL = listOf(extraSmall, small, medium, large, extraLarge, capsule)
 
-    /** Material 3's own defaults, kept explicit so drift is detectable. */
+    /**
+     * Material 3's own default radius steps, kept for reference only.
+     *
+     * This scale deliberately DIFFERS from [ALL]: the UX-Pro-Max baseline
+     * replaces M3's 8dp "small" with 6dp and adds the 999dp capsule. Do not
+     * assert that [ALL] equals this list — the two scales are independent.
+     */
     val MATERIAL3_DEFAULTS = listOf(4, 8, 12, 16, 28)
 }

@@ -27,6 +27,7 @@ import {
 } from "../../utils/reader/discordRPC";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { throttle } from "../../utils/common";
+import { recordHourSeconds } from "../../utils/stats/hourStatsUtil";
 declare var window: any;
 let lock = false; //prevent from clicking too fasts
 let throttleTime = 200;
@@ -68,6 +69,7 @@ const PANEL_OPEN_STATE: Record<
 class Reader extends React.Component<ReaderProps, ReaderState> {
   messageTimer!: NodeJS.Timeout;
   tickTimer!: NodeJS.Timeout;
+  hourTimer!: NodeJS.Timeout;
   private autoShowTimer: NodeJS.Timeout | null = null;
   private readingTimeUtil = new ReadingTimeUtil(
     ConfigService,
@@ -132,6 +134,30 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
         totalDuration: prev.totalDuration + 60,
         currentDuration: prev.currentDuration + 60,
       }));
+    }, 60000);
+
+    // Hour-of-day sampling. The engine's own `readingStats` map only records
+    // "<bookKey>-<seconds>" per day, so the hour a session happened in is
+    // lost — which is why the statistics page could never draw an hourly
+    // distribution. We sample it here, in the same one-minute tick, into a
+    // LOCAL-ONLY store (never uploaded to the cloud).
+    //
+    // The sample is taken against the CURRENT wall-clock hour rather than
+    // against a running session total: a session that spans an hour boundary
+    // then contributes to both hours, which is the behaviour a reader
+    // expects from "when was I reading".
+    this.hourTimer = setInterval(() => {
+      const bookKey = this.props.currentBook?.key;
+      if (!bookKey) return;
+      // Only count time while the reader is actually visible, so a
+      // backgrounded tab does not inflate the distribution.
+      if (typeof document !== "undefined" && document.hidden) return;
+      const now = new Date();
+      try {
+        recordHourSeconds(now, now.getHours(), bookKey, 60);
+      } catch {
+        // never let stats bookkeeping break the reader
+      }
     }, 60000);
 
     window.addEventListener("beforeunload", function (event) {
@@ -209,6 +235,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       clearDiscordPresence();
     }
     clearInterval(this.tickTimer);
+    clearInterval(this.hourTimer);
     if (this.autoShowTimer) {
       clearTimeout(this.autoShowTimer);
       this.autoShowTimer = null;

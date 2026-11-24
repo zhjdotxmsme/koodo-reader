@@ -36,6 +36,7 @@ import {
 import DatabaseService from "../../utils/storage/databaseService";
 import { BookHelper } from "../../assets/lib/kookit.min";
 import { aiAnalyzeTitle } from "../../utils/request/aiBridge";
+import { migratePdfPasswordOutOfDescription } from "../../utils/pdf/pdfPasswordUtil";
 
 // Convert supportedFormats to react-dropzone v14+ accept format
 // Key is MIME type, value is array of file extensions
@@ -607,6 +608,24 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
       return resolve();
     }
     await this.analyzeBookMetadata(result as BookModel, bookName);
+    // The reading engine has no password UI of its own: it prompts through
+    // window.prompt and embeds the answer in the book's metadata, which lands
+    // in the `books` table — a row that is synced to the cloud. Move the
+    // password into the local-only store so it stops travelling with the
+    // backup, and keep the rest of the description (e.g. "scanned PDF").
+    if (result.format === "PDF" && result.description) {
+      try {
+        const cleaned = migratePdfPasswordOutOfDescription(
+          result.key,
+          result.description
+        );
+        if (cleaned !== result.description) {
+          result.description = cleaned;
+        }
+      } catch {
+        // keep the original description — the password still works
+      }
+    }
     await this.handleAddBook(
       result as BookModel,
       file_content as ArrayBuffer,

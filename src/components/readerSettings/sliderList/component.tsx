@@ -15,6 +15,7 @@ class SliderList extends React.Component<SliderListProps, SliderListState> {
       letterSpacing: ConfigService.getReaderConfig("letterSpacing") || "0",
       paraSpacing: ConfigService.getReaderConfig("paraSpacing") || "0",
       brightness: ConfigService.getReaderConfig("brightness") || "1",
+      imageOpacity: ConfigService.getReaderConfig("imageOpacity") || "100",
       margin: ConfigService.getReaderConfig("margin") || "0",
       readingRulerLineHeight:
         ConfigService.getReaderConfig("readingRulerLineHeight") || "3",

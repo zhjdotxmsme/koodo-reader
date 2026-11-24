@@ -276,6 +276,16 @@ export const sliderConfigs = [
     isPDF: true,
   },
   {
+    maxValue: 100,
+    minValue: 30,
+    mode: "imageOpacity",
+    minLabel: "30",
+    maxLabel: "100",
+    step: 5,
+    title: "Image transparency",
+    isPDF: true,
+  },
+  {
     maxValue: 20,
     minValue: 0,
     mode: "letterSpacing",

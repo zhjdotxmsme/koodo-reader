@@ -11,6 +11,21 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // DoKit (DoraemonKit) — the in-app debug toolkit added to :app.
+        //
+        // Its POM pulls two transitive dependencies that are NOT on google() or
+        // mavenCentral():
+        //   com.github.ybq:Android-SpinKit:1.4.0  -> jitpack only
+        //   com.android.volley:volley:1.1.1        -> neither (Central/Google
+        //                                               start at 1.2.0)
+        // Without these two repositories a clean CI checkout fails to resolve
+        // the debug variant, so they must be declared HERE (settings level) —
+        // FAIL_ON_PROJECT_REPOS rejects repositories declared in a module.
+        //
+        // Only the debug variant needs them: dokitx-no-op has no dependencies,
+        // so release builds never hit these repositories.
+        maven { url 'https://jitpack.io' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
     }
 }
 

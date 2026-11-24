@@ -48,4 +48,8 @@ export interface SettingSwitchState {
   isSpeedReading: boolean;
   speedReadingSpeed: string;
   isMergeWord: boolean;
+  isInvertImage: boolean;
+  isCenterImage: boolean;
+  isTypoEnhance: boolean;
+  isPortraitAutoDouble: boolean;
 }

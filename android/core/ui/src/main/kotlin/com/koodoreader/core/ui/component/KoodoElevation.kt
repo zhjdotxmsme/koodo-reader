@@ -23,7 +23,7 @@ import com.koodoreader.core.designsystem.ElevationTokens
  * @param shape the card's shape; the shadow is clipped to it, so pass the SAME
  *   shape the card is drawn with or the shadow will show square corners.
  * @param elevation corner radius of the shadow blur (Android's shadow API
- *   conflates blur radius and elevation — [ElevationTokens.CARD_SHADOW_BLUR]
+ *   conflates blur radius and elevation — [ElevationTokens.FLOATING_SHADOW_BLUR]
  *   is the intended value).
  * @param dark true in dark mode, where a black shadow is invisible and the
  *   separation instead comes from a faint light halo.
@@ -31,7 +31,7 @@ import com.koodoreader.core.designsystem.ElevationTokens
 fun Modifier.bookCardShadow(
     shape: Shape,
     dark: Boolean,
-    elevation: Dp = ElevationTokens.CARD_SHADOW_BLUR.dp,
+    elevation: Dp = ElevationTokens.FLOATING_SHADOW_BLUR.dp,
 ): Modifier = if (dark) {
     // On a dark page a black shadow cannot be seen; the halo does the work.
     this.shadow(
@@ -46,10 +46,33 @@ fun Modifier.bookCardShadow(
         elevation = elevation,
         shape = shape,
         clip = false,
-        ambientColor = Color.Black.copy(alpha = ElevationTokens.CARD_SHADOW_ALPHA),
-        spotColor = Color.Black.copy(alpha = ElevationTokens.CARD_SHADOW_ALPHA),
+        ambientColor = Color.Black.copy(alpha = ElevationTokens.FLOATING_SHADOW_ALPHA),
+        spotColor = Color.Black.copy(alpha = ElevationTokens.FLOATING_SHADOW_ALPHA),
     )
 }
+
+/**
+ * The popup layer of the two-step shadow system: `0 12 32`.
+ *
+ * Used for surfaces that sit ABOVE the page — bottom sheets, modals,
+ * dialogs — where the stronger, deeper shadow separates them from the
+ * content behind.
+ *
+ * @param shape the surface's shape; the shadow is clipped to it.
+ * @param elevation the shadow blur radius (Android's shadow API conflates
+ *   blur radius and elevation — [ElevationTokens.POPUP_SHADOW_BLUR] is the
+ *   intended value).
+ */
+fun Modifier.popupShadow(
+    shape: Shape,
+    elevation: Dp = ElevationTokens.POPUP_SHADOW_BLUR.dp,
+): Modifier = this.shadow(
+    elevation = elevation,
+    shape = shape,
+    clip = false,
+    ambientColor = Color.Black.copy(alpha = ElevationTokens.POPUP_SHADOW_ALPHA),
+    spotColor = Color.Black.copy(alpha = ElevationTokens.POPUP_SHADOW_ALPHA),
+)
 
 /**
  * The rounded silhouette a book cover is clipped to.

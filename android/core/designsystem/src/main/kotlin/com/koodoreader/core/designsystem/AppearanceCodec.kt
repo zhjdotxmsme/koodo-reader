@@ -24,9 +24,9 @@ package com.koodoreader.core.designsystem
  *   "marginBottomPx": 0,
  *   "textAlign": "left",
  *   "themeKind": "DEFAULT",
- *   "backgroundColor": "rgba(255,255,255,1)",
+ *   "backgroundColor": "rgba(247, 245, 240,1)",
  *   "backgroundImage": null,
- *   "foregroundColor": "rgba(0,0,0,1)",
+ *   "foregroundColor": "rgba(31, 27, 24,1)",
  *   "themeName": "Default",
  *   "fontKey": "Built-in font",
  *   "fontDisplayName": "Built-in font",
@@ -152,10 +152,13 @@ object AppearanceCodec {
 
         val theme = ThemeSpec(
             kind = themeKind,
-            backgroundColor = m["backgroundColor"] ?: "rgba(255,255,255,1)",
+            // Fall back to the DEFAULT preset instead of hard-coded pure
+            // black/white: a config that lost its theme fields must render
+            // exactly like a fresh install, not like an older app version.
+            backgroundColor = m["backgroundColor"] ?: ThemeSpec.DEFAULT_PRESET.backgroundColor,
             backgroundImage = m["backgroundImage"]?.takeIf { it != "null" && it != "undefined" },
-            foregroundColor = m["foregroundColor"] ?: "rgba(0,0,0,1)",
-            name = m["themeName"] ?: "Default",
+            foregroundColor = m["foregroundColor"] ?: ThemeSpec.DEFAULT_PRESET.foregroundColor,
+            name = m["themeName"] ?: ThemeSpec.DEFAULT_PRESET.name,
         )
 
         val font = FontCatalogEntry(

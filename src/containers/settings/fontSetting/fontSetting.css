@@ -244,3 +244,36 @@
   min-width: 200px;
   opacity: 0.7;
 }
+
+.font-setting-scope {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(128,128,128,0.2);
+}
+
+.font-setting-scope-label {
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.font-scope-options {
+  display: flex;
+  gap: 8px;
+}
+
+.font-scope-option {
+  border: 1px solid rgba(128,128,128,0.4);
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.font-scope-option.active {
+  opacity: 1;
+  border-color: #4b9cff;
+  background: rgba(75,156,255,0.15);
+}

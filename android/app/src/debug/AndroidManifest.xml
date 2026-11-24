@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only manifest overlay.
+
+  DoKit (DoraemonKit) draws its floating debug panel over other apps while the
+  reader is in the foreground, which needs SYSTEM_ALERT_WINDOW. That permission
+  is a sensitive one for app-store review, so it is declared here instead of in
+  src/main: AGP merges this file into the `debug` variant only, and the shipped
+  release/benchmark variants never request it.
+
+  The release variant does not need a counterpart — dokitx-no-op has an empty
+  manifest and DoKitInitializer skips the install when BuildConfig.DEBUG is
+  false, so nothing in the release build touches the permission.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+</manifest>

@@ -24,6 +24,15 @@ import com.koodoreader.core.designsystem.SpaceTokens
 import com.koodoreader.core.ui.theme.KoodoMotion
 import kotlinx.coroutines.delay
 
+/**
+ * Press feedback: a subtle 0.98 scale dip.
+ *
+ * This modifier intentionally does **not** consume pointer events: it only
+ * watches the press lifecycle so the wrapped component (e.g. Material
+ * [androidx.compose.material3.IconButton] / [androidx.compose.material3.TextButton])
+ * keeps its own ripple and onClick behaviour. The scale is applied via
+ * [graphicsLayer], which does not affect hit testing or pointer dispatch.
+ */
 @Composable
 fun Modifier.koodoPressScale(): Modifier = composed {
     var pressed by remember { mutableStateOf(false) }
@@ -32,14 +41,16 @@ fun Modifier.koodoPressScale(): Modifier = composed {
         animationSpec = tween(MotionTokens.FAST, easing = KoodoMotion.Standard),
         label = "koodoPressScale",
     )
-    this.graphicsLayer { scaleX = scale; scaleY = scale }.pointerInput(Unit) {
-        awaitEachGesture {
-            awaitFirstDown(requireUnconsumed = false)
-            pressed = true
-            waitForUpOrCancellation()
-            pressed = false
+    this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                pressed = true
+                waitForUpOrCancellation()
+                pressed = false
+            }
         }
-    }
 }
 
 @Composable

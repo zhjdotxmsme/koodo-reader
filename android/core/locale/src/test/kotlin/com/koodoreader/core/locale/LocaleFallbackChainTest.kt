@@ -115,23 +115,23 @@ class LocaleFallbackChainTest {
         val store = InMemoryLocalePackStore()
         val downloader = object : LocalePackDownloader {
             override fun download(code: String, expectedSha256: String?): String =
-                """{"Books":"Bücher"}"""
+                """{"Books":"Βιβλιοθήκη"}"""
         }
         val loader = LocaleRuntimeLoader(
             MapLocaleAssetSource(mapOf("en" to """{"Books":"Books","Only":"Only"}""")),
             store,
             downloader,
         )
-        val chain = loader.chain("de")
+        val chain = loader.chain("el")
         assertTrue(loader.load("en") is LocaleLoadResult.Loaded) // bundled English ready
         val before = chain.lookup(FallbackKey("Books"))
         assertEquals(FallbackStep.FALLBACK_LANGUAGE, before.step)
         assertEquals("Books", before.value)
 
-        val result = loader.ensure("de")
+        val result = loader.ensure("el")
         assertTrue(result is LocaleEnsureResult.Downloaded)
         // same chain instance, no rebuild: the new catalog is picked up
-        assertEquals("Bücher", chain.resolve("Books"))
+        assertEquals("Βιβλιοθήκη", chain.resolve("Books"))
         assertEquals(FallbackStep.SELECTED, chain.lookup(FallbackKey("Books")).step)
         assertEquals("Only", chain.resolve("Only"))
     }

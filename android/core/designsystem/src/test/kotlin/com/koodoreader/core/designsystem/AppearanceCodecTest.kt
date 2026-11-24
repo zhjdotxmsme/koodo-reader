@@ -99,9 +99,9 @@ class AppearanceCodecTest {
         )
         val decoded = AppearanceCodec.decode(AppearanceCodec.encode(config))
         assertEquals(ThemeKind.DEFAULT, decoded.theme.kind)
-        assertEquals("rgba(255,255,255,1)", decoded.theme.backgroundColor)
+        assertEquals("rgba(247, 245, 240,1)", decoded.theme.backgroundColor)
         assertNull(decoded.theme.backgroundImage)
-        assertEquals("rgba(0,0,0,1)", decoded.theme.foregroundColor)
+        assertEquals("rgba(31, 27, 24,1)", decoded.theme.foregroundColor)
         assertEquals("Default", decoded.theme.name)
         assertEquals(17f, decoded.typography.fontSizeSp)
         assertEquals(1.6f, decoded.typography.lineHeightRatio)
@@ -248,5 +248,30 @@ class AppearanceCodecTest {
         )
         val decoded = AppearanceCodec.decode(AppearanceCodec.encode(original))
         assertEquals("official-background-3", decoded.theme.backgroundImage)
+    }
+
+    // ─── Missing theme fields fall back to the DEFAULT preset ───────────────
+
+    @Test
+    fun `missing theme fields fall back to the DEFAULT preset, not hard-coded black and white`() {
+        // A config that lost its theme fields must render exactly like a fresh
+        // install. It used to fall back to hard-coded "rgba(255,255,255,1)" /
+        // "rgba(0,0,0,1)", which no longer matched DEFAULT_PRESET and made the
+        // same app show two different "default" appearances depending on
+        // whether the fields were present.
+        val decoded = AppearanceCodec.decode("{}")
+
+        assertEquals(ThemeKind.DEFAULT, decoded.theme.kind)
+        assertEquals(ThemeSpec.DEFAULT_PRESET.backgroundColor, decoded.theme.backgroundColor)
+        assertEquals(ThemeSpec.DEFAULT_PRESET.foregroundColor, decoded.theme.foregroundColor)
+        assertEquals(ThemeSpec.DEFAULT_PRESET.name, decoded.theme.name)
+    }
+
+    @Test
+    fun `absent theme fields never fall back to pure black or pure white`() {
+        val decoded = AppearanceCodec.decode("{}")
+
+        assertTrue(decoded.theme.backgroundColor != "rgba(255,255,255,1)")
+        assertTrue(decoded.theme.foregroundColor != "rgba(0,0,0,1)")
     }
 }

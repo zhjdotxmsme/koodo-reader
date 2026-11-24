@@ -168,8 +168,9 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
     { keyCode: 39 },
     { keyCode: 32 },
     { keyCode: 34 },
+    { keyCode: 175 }, // VolumeUp — volume-key paging (A5)
   ],
-  prevPage: [{ keyCode: 38 }, { keyCode: 37 }, { keyCode: 33 }],
+  prevPage: [{ keyCode: 38 }, { keyCode: 37 }, { keyCode: 33 }, { keyCode: 174 }], // VolumeDown (A5)
   bossKey: [{ keyCode: 9 }],
   toggleFishMode: [{ keyCode: 123 }],
   toggleFullscreen: [{ keyCode: 122 }],
@@ -203,6 +204,56 @@ const cloneConfig = (config: ShortcutConfig): ShortcutConfig => {
     result[action] = cloneBindings(config[action] || []);
   });
   return result;
+};
+
+export const VOLUME_KEYCODES = {
+  down: 174,
+  up: 175,
+} as const;
+
+/**
+ * Whether the given key code is already used by ANY other action, regardless
+ * of the modifier keys.
+ *
+ * The plain-binding conflict check ([findShortcutConflict]) compares the
+ * modifier keys too, so a user who mapped "Ctrl+VolumeUp" to another action
+ * would still get a bare "VolumeUp" added — two actions sharing one
+ * physical key. A physical key belongs to one action only.
+ */
+export const isKeyCodeUsedElsewhere = (
+  config: ShortcutConfig,
+  action: string,
+  keyCode: number
+): boolean =>
+  SHORTCUT_ACTIONS.some(
+    (name) =>
+      name !== action &&
+      (config[name] || []).some((b) => b.keyCode === keyCode)
+  );
+
+/**
+ * Idempotently ensure the volume-key page bindings exist on a stored config
+ * (legacy configs saved before the volume keys were available keep working).
+ * Duplicates and cross-action conflicts are avoided; the input object is
+ * mutated and also returned for convenience.
+ */
+export const ensureVolumeBindings = (config: ShortcutConfig): ShortcutConfig => {
+  const ensure = (action: "prevPage" | "nextPage", keyCode: number) => {
+    const bindings = config[action] || (config[action] = []);
+    if (bindings.some((b) => b.keyCode === keyCode)) {
+      return;
+    }
+    if (
+      findShortcutConflict(config, action, { keyCode }) !== null ||
+      isKeyCodeUsedElsewhere(config, action, keyCode)
+    ) {
+      return; // user bound the key to something else — respect that
+    }
+    bindings.push({ keyCode });
+  };
+  ensure("prevPage", VOLUME_KEYCODES.down);
+  ensure("nextPage", VOLUME_KEYCODES.up);
+  return config;
 };
 
 export const bindingEquals = (
@@ -269,7 +320,9 @@ export const getShortcutConfig = (): ShortcutConfig => {
         merged[action] = parsed[action]!.map((b) => ({ ...b }));
       }
     });
-    return merged;
+    // Legacy persisted configs predate volume-key paging: add the bindings
+    // without clobbering keys the user mapped to other actions.
+    return ensureVolumeBindings(merged);
   } catch {
     return cloneConfig(DEFAULT_SHORTCUT_CONFIG);
   }

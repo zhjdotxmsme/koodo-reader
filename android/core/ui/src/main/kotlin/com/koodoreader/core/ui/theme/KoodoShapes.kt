@@ -12,7 +12,7 @@ import com.koodoreader.core.designsystem.ShapeTokens
  *   cards -> medium (12dp)
  *   Material containers -> large (16dp)
  *   bottom sheets -> extraLarge (28dp)
- *   controls, chips, text fields -> medium (12dp) / small (8dp)
+ *   controls, chips, text fields -> medium (12dp) / small (6dp)
  *   inline badges -> extraSmall (4dp)
  */
 val KoodoShapes = Shapes(
@@ -31,3 +31,6 @@ val KoodoChipShape = RoundedCornerShape(ShapeTokens.small.dp)
 
 /** Book cover corner radius in the library grid. */
 val KoodoCoverShape = RoundedCornerShape(ShapeTokens.small.dp)
+
+/** Fully rounded pill / capsule shape. */
+val KoodoCapsuleShape = RoundedCornerShape(ShapeTokens.capsule.dp)

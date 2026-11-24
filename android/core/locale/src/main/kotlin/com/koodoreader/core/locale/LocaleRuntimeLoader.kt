@@ -116,8 +116,8 @@ sealed interface LocaleEnsureResult {
 }
 
 /**
- * On-demand locale loader for the remaining **39** desktop locales
- * (`en` + `zh-CN` stay bundled per ADR-004 — 41 − 2 = 39).
+ * On-demand locale loader for the remaining **30** desktop locales
+ * (11 stay bundled per ADR-004 — 41 − 11 = 30).
  *
  * Lifecycle:
  *
@@ -306,24 +306,35 @@ class LocaleRuntimeLoader(
     private fun reasonOf(e: Exception): String = e.message ?: e::class.simpleName ?: "error"
 
     companion object {
-        /** Bundled subset — keep aligned with ADR-004 and `sync-locales-android.js`. */
-        val BUNDLED_LOCALE_CODES: List<String> = listOf("en", "zh-CN")
+        /**
+         * The subset shipped inside the APK (`assets/locales`).
+         *
+         * Keep aligned with `ANDROID_LOCALES` in
+         * `scripts/sync-locales-android.js` — that script copies exactly these
+         * locales into the APK assets, and `scripts/check-locales.mjs` fails
+         * when the two lists drift apart.
+         *
+         * The picker in `I18nState.CHOICES` offers the same set, and it reads
+         * each of these catalogs straight out of the assets.
+         */
+        val BUNDLED_LOCALE_CODES: List<String> = listOf(
+            "en", "zh-CN", "zh-TW", "ja", "ko", "es", "fr", "de", "ru", "pt", "it",
+        )
 
         /**
-         * The remaining 39 desktop locales (`src/assets/locales` minus the
+         * The remaining 30 desktop locales (`src/assets/locales` minus the
          * bundled subset), loaded on demand.
          *
          * CANONICAL LIST — `scripts/check-locales.mjs` parses this block and
          * fails when it drifts from the desktop locale directory.
          */
         val REMOTE_LOCALE_CODES: List<String> = listOf(
-            "am", "ar", "bg", "bn", "bo", "cs", "da", "de", "el", "es",
-            "fa", "fi", "fr", "ga", "hi", "hu", "hy", "id", "ie", "it",
-            "ja", "ko", "nl", "pl", "pt-BR", "pt", "ro", "ru", "sl", "sr",
-            "sv", "ta", "th", "tl", "tr", "uk", "vi", "zh-MO", "zh-TW",
+            "am", "ar", "bg", "bn", "bo", "cs", "da", "el", "fa", "fi",
+            "ga", "hi", "hu", "hy", "id", "ie", "nl", "pl", "pt-BR", "ro",
+            "sl", "sr", "sv", "ta", "th", "tl", "tr", "uk", "vi", "zh-MO",
         )
 
-        /** All 41 desktop locales (2 bundled + 39 on demand). */
+        /** All 41 desktop locales (11 bundled + 30 on demand). */
         val ALL_LOCALE_CODES: List<String> = BUNDLED_LOCALE_CODES + REMOTE_LOCALE_CODES
 
         /** Default LRU bound for resident catalogs (~1.4k keys each). */

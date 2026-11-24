@@ -1,8 +1,8 @@
-# P6 设计：简繁转换（OpenCC 移植）+ 其余 39 locale 按需加载
+# P6 设计：简繁转换（OpenCC 移植）+ 其余 30 locale 按需加载
 
 - 日期：2026-09-24
 - 状态：实现完成，待接线与验收（见 §8）
-- 关联：**ADR-004**（安卓 i18n 子集策略，en+zh-CN 打包、回退链 所选→en→key、其余 39 locale 推迟到 P6+）、ADR-003（兜底岛）、任务卡 `t-muexn6d1-rg3pyr`
+- 关联：**ADR-004**（安卓 i18n 子集策略，11 locale 打包、回退链 所选→en→key、其余 30 locale 按需加载）、ADR-003（兜底岛）、任务卡 `t-muexn6d1-rg3pyr`
 - 隔离：git worktree `.worktrees/p6-zh-locale`，分支 `task/p6-zh-locale-p6`
 - 桌面参考：`kookit zh-convert.ts`（`docs/android-loc-baseline.json`：8161 行 / 8143 代码行）——**源码不可读**（`src/assets/lib/kookit-extra.min.mjs` 是压缩产物，且本机无 `D:\Project\kookit`），因此按任务描述**原生移植 OpenCC 模型**（词表驱动 + MaxMatch 分词），并以桌面**配置键与取值**对齐语义。
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | ① 简繁转换引擎（自动/繁/简三态） | `ZhConvertEngine`、`OpenCcDictionary`（trie MaxMatch）、`OpenCcSeed`（517 字 + 69 短语 + 67 台湾词 + 7 繁→简补充） | `android/core/locale/src/main/kotlin/.../` |
 | ② 转换字典持久化与桌面互通 | `ZhConvertSettings`、`ZhConvertPrefsCodec`（键 `convertChinese` 与桌面一致）、`ZhConvertSettingsStore` 端口 + `ZhConvertSettingsRepository` | 同上（§4） |
-| ③ 运行时 locale 按需加载 | `LocaleRuntimeLoader`（39 locale）、`LocaleCatalogRegistry`、`LocaleAssetSource`/`LocalePackStore`/`LocalePackDownloader` 端口 + `FilesLocalePackStore` | 同上（§5） |
+| ③ 运行时 locale 按需加载 | `LocaleRuntimeLoader`（30 locale）、`LocaleCatalogRegistry`、`LocaleAssetSource`/`LocalePackStore`/`LocalePackDownloader` 端口 + `FilesLocalePackStore` | 同上（§5） |
 | ④ 语言切换持久化 + 回退链不变 | `LocaleFallbackChain`、`FallbackKey`、`LocaleCodes`（键 `language` 沿用 `LibraryPrefs`） | 同上（§6） |
 | ⑤ 守卫覆盖新方案 | `scripts/check-locales.mjs`（A 段与 `sync-locales-android.js --check` 等价；B–E 段为 P6 新增守卫） | `scripts/`（§7） |
 | 单测 | 5 个 JVM 测试类 + 1 个无框架 self-check（`:core:locale:selfCheck`） | `src/test/kotlin/.../` |
@@ -33,7 +33,7 @@ android/core/locale/
     │       ├── ZhConvertEngine.kt     # 三态引擎 / 方向链 / 脚本判定 / 用户词典
     │       ├── ZhConvertSettings.kt   # 持久化模型 + Preferences 编解码 + 端口 + 仓库
     │       ├── LocalePackStore.kt     # 端口 + 内存/文件系统实现 + SHA-256
-    │       ├── LocaleRuntimeLoader.kt # 39 locale 按需加载 + 注册表 + 校验器
+    │       ├── LocaleRuntimeLoader.kt # 30 locale 按需加载 + 注册表 + 校验器
     │       ├── LocaleFallbackChain.kt # 所选→en→key（可观测）
     │       └── FallbackKey.kt         # 翻译键类型 + locale 常量
     └── test/kotlin/com/koodoreader/core/locale/
@@ -144,7 +144,7 @@ class DataStoreZhConvertSettingsStore(private val ds: DataStore<Preferences>) : 
 
 `androidx.datastore` 是 Android/AAR 依赖，纯 JVM 模块无法消费；且本任务**禁止修改** `android/app/build.gradle`（无法把 DataStore 依赖加到 app 侧）。因此采用“端口 + 编解码器 + 文档化接线片段”的方式交付，引擎与持久化逻辑本身已被 JVM 测试完整覆盖（§9）。这是本次最明确的**未完成接线项**，见 §8。
 
-## 5. ③ 运行时 locale 按需加载（39 个）
+## 5. ③ 运行时 locale 按需加载（30 个）
 
 ### 5.1 状态机
 
@@ -164,13 +164,13 @@ ensure(code)
 ### 5.2 打包 / 下载 / 校验 / 缓存
 
 - **ADF-004 子集不变**：`BUNDLED_LOCALE_CODES = ["en","zh-CN"]`（与 `sync-locales-android.js` 的 `ANDROID_LOCALES` 由守卫脚本强制相等）。
-- **39 个按需 locale**：`REMOTE_LOCALE_CODES`（守卫脚本解析并断言 == 桌面 41 − 打包 2）。
+- **30 个按需 locale**：`REMOTE_LOCALE_CODES`（守卫脚本解析并断言 == 桌面 41 − 打包 11）。
 - **校验与构建期同规则**（`CatalogValidator`，等价于 `sync-locales-android.js --check`）：必须是 JSON 对象、**每个值都是字符串**（非字符串值报错，尽管桌面文件不会出现）、至少一条；此外下载包还校验 sha256（索引 vs 文件、期望 vs 实际）。
 - **持久化**：`FilesLocalePackStore` 写 `<root>/<code>.json` + `index.json`（扁平 JSON `{"am":"<sha256>:<bytes>"}`），临时文件 + 原子改名（不支持 `ATOMIC_MOVE` 时回退 `REPLACE_EXISTING`）。
 - **缓存**：按访问序 LRU，上限 `DEFAULT_MAX_CACHED_PACKS = 4`；打包语言、`en`、以及 `pin()` 的当前所选语言**永不淘汰**；淘汰只释放内存，安装包仍在磁盘（重新选择该语言是“读文件”而非“重新下载”，有测试）。
 - **下载器**：`LocalePackDownloader`（阻塞接口）由 app 实现（OkHttp / `DownloadManager`），模块自身不开 socket，因此可离线单测；`expectedPacks` 可用下面的 §5.3 表生成。
 
-### 5.3 locale 包清单（39 个，机器校验 sha256）
+### 5.3 locale 包清单（30 个，机器校验 sha256）
 
 下表由 `node scripts/check-locales.mjs --print-pack-table` 生成，**与 `src/assets/locales/*.json` 逐字节绑定**：`check-locales.mjs` 会核对每个 code 的 sha256，漂移即红——这就是运行时下载包的完整性基线（`expectedPacks`）。
 
@@ -186,27 +186,19 @@ ensure(code)
 | `bo` | 1323 | `6a1992cf0334f5a76f23270c2316391c0255449ce8039785348d2e519bc2be94` |
 | `cs` | 1323 | `0d4e5ed1907d7c7455a31155e8486e173f07f431265aa56620e1e0e6c23f21a5` |
 | `da` | 1326 | `dfdc226492f567c179c4cd7eb7319520a0aced4d10ea66bccaab190e6083d99b` |
-| `de` | 1323 | `3981846d3905b769248edca69a3b10ebd75bfa83fef97e18a68e5ecdc739707f` |
 | `el` | 1324 | `14ab06000231726d0685b4d3a37972098733f821d3bdc8c7ac5536d06c51a73a` |
-| `es` | 1323 | `8c4980f44372b4dc50bced71b8d17ca05762e0b6f6faa49a12d7efe6d5732b02` |
 | `fa` | 1323 | `f5623f11373188b80e1cb74e2085c4c8c0db91076ef10233cfeec6db43c6faeb` |
 | `fi` | 1330 | `ea0d5f9c4559336c14b5524fc1fc173adc864b8788e3477fe8394403b5a0c42e` |
-| `fr` | 1322 | `16a4ec8edd072af01037b39a2d9a9dfa94189ff2768e63e6785ce3395da4ac61` |
 | `ga` | 1321 | `9b4c0ad3df892b521177fa2a31b8794683fa057d83d03776199ace01197280d7` |
 | `hi` | 1321 | `f0f519abbb69d3698dae2e439a35e8c4f2747b9b0e20c681e66adf484d880f70` |
 | `hu` | 1321 | `ae42ee9282323afb3627a9985475288e5b5b10e1fa49239c2043b08339d8d6f0` |
 | `hy` | 1324 | `4905da6ac069a5681044a84be7df52d24bf82524a7b2127e5a83b979421cd8ab` |
 | `id` | 1338 | `d6cea7a3f10e8864ff7814c4abdf9b1a8e92eeacb46ab03e71fa93fb883fe0f0` |
 | `ie` | 1325 | `836eecf07df75c7e5e199c4d4064c63f1f33806435a2a279e5e15b77efa65d68` |
-| `it` | 1324 | `acc77a3cf523593579ffdab1547e86ff8bb1ae71a0423a5c4654f4286bd42c73` |
-| `ja` | 1334 | `77c979f5fa65cab378a698a18fa2e80db531cc0e196c332be45507bc386d0996` |
-| `ko` | 1323 | `d8a879d98e570662da4575eb88f2414769da682c1cb1c9ee20024ebb4fbcc777` |
 | `nl` | 1324 | `564246982a8a0ce05ad771c23c6a174cce4b9ea009574350a0cbe8a342f4a446` |
 | `pl` | 1323 | `b77b7bcd2f87fdd5cf3f03cffc6ff95836ad29d3275e7a802ed9dc58f2c50e37` |
-| `pt` | 1330 | `8ffc66c674620b3088bcd0bfd6de0f970d599979a6b589cc24f49b3310c1fddc` |
 | `pt-BR` | 1322 | `68272176c861a26c7ccef2b447f27f5f4b397ddc33829d477df20280a02a45b2` |
 | `ro` | 1323 | `9dd445a7b5c6fd16c44fbbc775c91a9cdeb7e0192f6b9c02f160386ac5fe4e2c` |
-| `ru` | 1324 | `58ba1cdc108fc5707089de251cf4fbed66ff0ab0b10d8f35cece8218f2b3c87c` |
 | `sl` | 1321 | `922e1312d342df2bfe1a90e944cfae449725381a1b5c3b98c1dbe6b4b05375ce` |
 | `sr` | 1322 | `ec9d01a3e1246ec8cae342c529d902837711d32c32a3f342ca61421f5b5802f2` |
 | `sv` | 1328 | `23e7ac444d3d668f82debe9a453e542d1347cbbf39c5f381f27780ff8f16c5c8` |
@@ -217,7 +209,6 @@ ensure(code)
 | `uk` | 1334 | `9801fae0c0fa5771fb3ecf983924c3c55b942cb2b05516490e13da3faff9e20b` |
 | `vi` | 1327 | `a66470632ab8c4096d8ce5e485ecefe0039f68e49a2eb9fbafa455ed4ae9ab7f` |
 | `zh-MO` | 1329 | `c606948ec381e22daf539f40fb57405807c110db21f837279c98d0fa5a05743d` |
-| `zh-TW` | 1328 | `0ed9f6780a436c0579f374d0c5de108f93102618d2354e3a3ce4ac27c6d8faa3` |
 <!-- PACK-TABLE:END -->
 
 ## 6. ④ 回退链不变：所选 → en → key

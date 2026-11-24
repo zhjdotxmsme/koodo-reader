@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 import i18n from "../i18n";
 import localforage from "localforage";
 import { languageCNMap, languageENMap } from "../constants/ttsList";
+import { getPdfPassword as getPdfPasswordFromStore } from "./pdf/pdfPasswordUtil";
 import { BookHelper } from "../assets/lib/kookit.min";
 import * as Kookit from "../assets/lib/kookit.min";
 import {
@@ -971,8 +972,14 @@ export const checkBrokenDatabase = async () => {
   return false;
 };
 export const getPdfPassword = (book: Book) => {
-  if (book.format !== "PDF" || !book?.description) return "";
-  // 匹配形如 protected PDF: #password# 的内容
+  if (book.format !== "PDF") return "";
+  // 1) The local-only store wins: it holds the password that was moved out of
+  //    the synced `description` field when the book was imported.
+  const remembered = getPdfPasswordFromStore(book.key);
+  if (remembered) return remembered;
+  // 2) Fall back to the legacy marker the engine still writes into the
+  //    metadata (books imported before the migration).
+  if (!book?.description) return "";
   const match = book.description.match(/protected PDF: #(.+?)#/);
   return match ? match[1] : "";
 };

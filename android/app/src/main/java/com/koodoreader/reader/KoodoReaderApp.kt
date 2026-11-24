@@ -2,6 +2,7 @@ package com.koodoreader.reader
 
 import android.app.Application
 import com.koodoreader.feature.crash.CrashMonitoring
+import com.koodoreader.reader.debug.DoKitInitializer
 import com.koodoreader.reader.zhconvert.ZhConvertBridge
 
 /**
@@ -13,6 +14,8 @@ import com.koodoreader.reader.zhconvert.ZhConvertBridge
  *  - the P6 简繁转换 bridge: binds the pure-JVM `:core:locale`
  *    ZhConvertSettingsStore port to DataStore and installs the layout-pipeline
  *    text transform hook (docs/p6-zh-locale-design.md §4.1).
+ *  - DoKit in-app debug toolkit (debug builds only): floating panel with layout
+ *    boundaries, view hierarchy and memory/CPU metrics.
  */
 class KoodoReaderApp : Application() {
     override fun onCreate() {
@@ -20,6 +23,7 @@ class KoodoReaderApp : Application() {
         CrashLogWriter.install(this)
         AndroidDesktopDb.install()
         ZhConvertBridge.install(this)
+        DoKitInitializer.install(this)
         // Process-wide uncaught-exception handler + breadcrumb ring (redaction-only,
         // NoopCrashBackend by default — no data leaves the device until a real backend
         // is attached with user consent; see :feature:crash CrashMonitoring docs).

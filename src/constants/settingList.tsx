@@ -603,6 +603,26 @@ export const readerSettingList = [
     propName: "isHideBackground",
     isPDF: true,
   },
+  {
+    title: "Invert images (night mode)",
+    propName: "isInvertImage",
+    isPDF: true,
+  },
+  {
+    title: "Center images",
+    propName: "isCenterImage",
+    isPDF: true,
+  },
+  {
+    title: "Typography enhance (tables/lists)",
+    propName: "isTypoEnhance",
+    isPDF: true,
+  },
+  {
+    title: "Auto double page in portrait",
+    propName: "isPortraitAutoDouble",
+    isPDF: true,
+  },
 ];
 export const officialTranList = {
   Automatic: "Automatic",

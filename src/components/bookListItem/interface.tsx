@@ -12,6 +12,8 @@ export interface BookItemProps extends RouteComponentProps<any> {
   refreshBookKey: string;
   allBooks?: BookModel[];
   bookIndex?: number;
+  /** Compact (极简列表) row: small cover + title/author + intro line */
+  compact?: boolean;
   handleRefreshBookCover: (key: string) => void;
   handleSelectBook: (isSelectBook: boolean) => void;
   handleReadingBook: (book: BookModel) => void;

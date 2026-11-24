@@ -7,24 +7,19 @@ import org.junit.jupiter.api.Test
 class ShapeTokensTest {
 
     @Test
-    fun `scale has exactly the five Material 3 steps`() {
-        assertEquals(5, ShapeTokens.ALL.size)
-    }
-
-    @Test
-    fun `scale matches the Material 3 defaults`() {
-        // Keeping these equal means `:core:ui` can build its Compose Shapes from
-        // these numbers without a translation table.
-        assertEquals(ShapeTokens.MATERIAL3_DEFAULTS, ShapeTokens.ALL)
+    fun `scale has the UX-Pro-Max steps plus the Material 3 base`() {
+        // extraSmall, small, medium, large, extraLarge, capsule
+        assertEquals(6, ShapeTokens.ALL.size)
     }
 
     @Test
     fun `named steps map to their scale positions`() {
         assertEquals(4, ShapeTokens.extraSmall)
-        assertEquals(8, ShapeTokens.small)
+        assertEquals(6, ShapeTokens.small)
         assertEquals(12, ShapeTokens.medium)
         assertEquals(16, ShapeTokens.large)
         assertEquals(28, ShapeTokens.extraLarge)
+        assertEquals(999, ShapeTokens.capsule)
     }
 
     @Test
@@ -44,9 +39,14 @@ class ShapeTokensTest {
 
     @Test
     fun `documented card and chip radii are on the scale`() {
-        // Cards use medium (12) and chips use small (8) — the mapping the
-        // library and settings components rely on.
+        // Cards use medium (12) and small controls use small (6) — the mapping
+        // the library and settings components rely on.
         assertEquals(12, ShapeTokens.medium)
-        assertTrue(ShapeTokens.ALL.contains(8))
+        assertTrue(ShapeTokens.ALL.contains(6))
+    }
+
+    @Test
+    fun `capsule is a fully rounded pill value`() {
+        assertTrue(ShapeTokens.capsule >= 100)
     }
 }

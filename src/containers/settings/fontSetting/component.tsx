@@ -10,6 +10,9 @@ import FontUtil, {
 } from "../../../utils/file/fontUtil";
 import { ChineseFonts, NonChineseFonts } from "../../../constants/fontConfig";
 import { applyCustomSystemFont } from "../../../utils/reader/launchUtil";
+import { saveThemeFonts } from "../../../utils/reader/fontScopeUtil";
+import { buildFontZip, fontZipBlob } from "../../../utils/file/fontZip";
+import { saveAs } from "file-saver";
 
 class FontSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   fileInputRef = React.createRef<HTMLInputElement>();
@@ -27,6 +30,10 @@ class FontSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       expandedFamily: "",
       downloadingId: "",
       downloadProgress: 0,
+      fontScope:
+        (ConfigService.getReaderConfig("fontScope") as
+          | "global"
+          | "theme") || "global",
     };
   }
 
@@ -63,6 +70,68 @@ class FontSetting extends React.Component<SettingInfoProps, SettingInfoState> {
 
   handleImportClick = () => {
     this.fileInputRef.current?.click();
+  };
+
+  // A7: font scope — apply the current font globally or to the current theme
+  handleFontScope = (scope: "global" | "theme") => {
+    if (scope === "theme") {
+      const themeColor = ConfigService.getReaderConfig("themeColor") || "";
+      if (themeColor) {
+        try {
+          saveThemeFonts(themeColor, {
+            fontFamily:
+              ConfigService.getReaderConfig("fontFamily") || "Built-in font",
+            subFontFamily:
+              ConfigService.getReaderConfig("subFontFamily") ||
+              "Built-in font",
+          });
+        } catch {
+          // non-fatal: the reader will keep the global font
+        }
+      }
+    }
+    ConfigService.setReaderConfig("fontScope", scope);
+    this.setState({ fontScope: scope }, () => {
+      toast(this.props.t("Change successful"));
+      if (this.props.renderBookFunc) {
+        setTimeout(() => {
+          this.props.renderBookFunc?.();
+        }, 100);
+      }
+    });
+  };
+
+  // A8: batch export — package all custom fonts into a single zip download
+  handleExportAllFonts = async () => {
+    const fonts = this.state.fonts;
+    if (!fonts || fonts.length === 0) {
+      toast.error(this.props.t("No custom fonts to export"));
+      return;
+    }
+    try {
+      const entries: { name: string; buffer: ArrayBuffer }[] = [];
+      for (const font of fonts) {
+        const buffer = await FontUtil.loadFontArrayBuffer(font.key, font.type);
+        if (!buffer) {
+          toast.error(`${font.label}: ${this.props.t("Font data missing")}`);
+          continue;
+        }
+        entries.push({
+          name: `${font.key}.${font.type}`,
+          buffer,
+        });
+      }
+      if (entries.length === 0) {
+        toast.error(this.props.t("No font data to package"));
+        return;
+      }
+      const zip = buildFontZip(entries.map((e) => ({ ...e })));
+      saveAs(fontZipBlob(zip), "koodo-fonts.zip");
+      toast.success(this.props.t("Fonts exported"));
+    } catch (err) {
+      console.error(err);
+      toast.error(this.props.t("Font export failed"));
+    }
   };
 
   handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -495,6 +564,30 @@ class FontSetting extends React.Component<SettingInfoProps, SettingInfoState> {
           onChange={this.handleFileChange}
         />
 
+        <div className="font-setting-scope">
+          <span className="font-setting-scope-label">
+            <Trans>Font scope</Trans>
+          </span>
+          <div className="font-scope-options">
+            <button
+              className={`font-scope-option${
+                this.state.fontScope === "global" ? " active" : ""
+              }`}
+              onClick={() => this.handleFontScope("global")}
+            >
+              <Trans>Global</Trans>
+            </button>
+            <button
+              className={`font-scope-option${
+                this.state.fontScope === "theme" ? " active" : ""
+              }`}
+              onClick={() => this.handleFontScope("theme")}
+            >
+              <Trans>Current theme</Trans>
+            </button>
+          </div>
+        </div>
+
         <div className="font-setting-actions">
           <div
             className="setting-dialog-new-plugin font-setting-action-btn"
@@ -502,6 +595,14 @@ class FontSetting extends React.Component<SettingInfoProps, SettingInfoState> {
           >
             <span style={{ fontWeight: "bold" }}>
               <Trans>Import local font</Trans>
+            </span>
+          </div>
+          <div
+            className="setting-dialog-new-plugin font-setting-action-btn"
+            onClick={this.handleExportAllFonts}
+          >
+            <span style={{ fontWeight: "bold" }}>
+              <Trans>Batch export fonts</Trans>
             </span>
           </div>
         </div>

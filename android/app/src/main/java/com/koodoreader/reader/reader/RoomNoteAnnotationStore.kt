@@ -2,10 +2,12 @@ package com.koodoreader.reader.reader
 
 import com.koodoreader.core.data.dao.NoteDao
 import com.koodoreader.core.data.entity.NoteEntity
+import com.koodoreader.engine.annotate.CfiAnchor
 import com.koodoreader.engine.layout.reader.ChapterLoader
 import com.koodoreader.engine.layout.reader.TextLocation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Persists text anchors to Room `notes` (desktop-compatible CFI column).
@@ -35,6 +37,30 @@ class RoomNoteAnnotationStore(
     override fun addBookmark(bookKey: String, location: TextLocation, label: String) {
         if (bookKey != this.bookKey) return
         persist(location, excerpt = label, notes = "", color = null)
+    }
+
+    /**
+     * Whether the selection overlaps an existing highlight of this book.
+     *
+     * The stored highlight is a single CFI point (the start of the range),
+     * so an exact match is treated as a hit. The selection itself is a
+     * start..end range, and a selection that CONTAINS the stored point also
+     * counts — that is the common case (the user long-presses across a
+     * highlight they just made).
+     */
+    override fun isHighlighted(bookKey: String, location: TextLocation): Boolean {
+        if (bookKey != this.bookKey) return false
+        val selectionCfi = ChapterLoaderProgress.cfiForLocation(loader, location) ?: return false
+        val highlights = runBlocking {
+            runCatching { noteDao.getHighlightsForBook(bookKey) }.getOrNull()
+        } ?: return false
+        return highlights.any { entity ->
+            val stored = entity.cfi ?: return@any false
+            stored == selectionCfi ||
+                runCatching {
+                    CfiAnchor.compare(selectionCfi, stored) >= 0
+                }.getOrDefault(false)
+        }
     }
 
     private fun persist(

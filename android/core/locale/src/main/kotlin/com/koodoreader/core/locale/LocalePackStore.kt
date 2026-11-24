@@ -14,7 +14,8 @@ import java.security.MessageDigest
  *
  *  - [LocaleAssetSource] — **bundled**: `assets/locales/<code>.json` inside the
  *    APK, synced from `src/assets/locales` by `scripts/sync-locales-android.js`
- *    (ADR-004: only `en` + `zh-CN` today).
+ *    (ADR-004: 11 locales today — see
+ *    `LocaleRuntimeLoader.BUNDLED_LOCALE_CODES`).
  *  - [LocalePackStore] — **downloaded**: `<filesDir>/locales/packs/<code>.json`
  *    with a hash index, so a pack survives restarts and can be verified.
  *  - [LocalePackDownloader] — **network**: implemented by the app (OkHttp /

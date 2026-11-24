@@ -12,22 +12,28 @@ import org.junit.jupiter.api.Test
  *   - themeUtil.ts   generateThemeCSS() applies rgba colours via ConfigService
  *
  * Preset colours:
- *   DEFAULT    background rgba(255,255,255,1)   text rgba(0,0,0,1)
- *   PROTECT_EY background rgba(197, 231, 207,1)  text rgba(54, 80, 62,1)
- *   NIGHT      background rgba(44, 47, 49,1)     text rgba(255,255,255,1)
+ *   DEFAULT     background rgba(247, 245, 240,1)  text rgba(31, 27, 24,1)
+ *   PROTECT_EYE background rgba(197, 231, 207,1)  text rgba(54, 80, 62,1)
+ *   NIGHT       background rgba(18, 18, 18,1)     text rgba(216, 214, 209,1)
  */
 class ThemePresetTest {
 
     // ─── Default preset ───────────────────────────────────────────────────────
 
     @Test
-    fun `DEFAULT preset backgroundColor matches themeList backgroundList 0`() {
-        assertEquals("rgba(255,255,255,1)", ThemeSpec.DEFAULT_PRESET.backgroundColor)
+    fun `DEFAULT preset backgroundColor is warm off-white, not pure white`() {
+        assertEquals("rgba(247, 245, 240,1)", ThemeSpec.DEFAULT_PRESET.backgroundColor)
     }
 
     @Test
-    fun `DEFAULT preset foregroundColor matches themeList textList 0`() {
-        assertEquals("rgba(0,0,0,1)", ThemeSpec.DEFAULT_PRESET.foregroundColor)
+    fun `DEFAULT preset foregroundColor is deep brown-black, not pure black`() {
+        assertEquals("rgba(31, 27, 24,1)", ThemeSpec.DEFAULT_PRESET.foregroundColor)
+    }
+
+    @Test
+    fun `DEFAULT preset avoids pure black and pure white`() {
+        assertTrue(ThemeSpec.DEFAULT_PRESET.backgroundColor != "rgba(255,255,255,1)")
+        assertTrue(ThemeSpec.DEFAULT_PRESET.foregroundColor != "rgba(0,0,0,1)")
     }
 
     @Test

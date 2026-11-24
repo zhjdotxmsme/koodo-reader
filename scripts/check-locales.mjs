@@ -10,7 +10,7 @@
 // from that script so the two can never disagree). Parts B–D cover the P6
 // additions and are the drift guards for:
 //
-//   B. android/core/locale module shape + the 39 on-demand locale list must
+//   B. android/core/locale module shape + the on-demand locale list must
 //      equal `src/assets/locales` minus the bundled subset (ADR-004).
 //   C. docs/p6-zh-locale-design.md must carry the sha256 of every remote
 //      locale source (that table is the download manifest for runtime packs).
@@ -200,7 +200,7 @@ function checkBundledAssets(bundled, sources) {
   }
 }
 
-// ─── B. P6 module shape + the 39 on-demand locales ───────────────────────────
+// ─── B. P6 module shape + the on-demand locales ──────────────────────────────
 
 const REQUIRED_FILES = [
   'build.gradle',

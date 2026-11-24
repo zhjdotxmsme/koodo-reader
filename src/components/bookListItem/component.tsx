@@ -14,6 +14,7 @@ import {
   estimateMenuHeight,
   CONTEXT_MENU_WIDTH,
 } from "../../utils/common";
+import { buildBookMetaLines } from "../../utils/manager/bookShelf";
 
 declare var window: any;
 
@@ -62,6 +63,71 @@ const BookListItem: React.FC<BookItemProps> = (props) => {
 
   const percentage = getPercentage();
   const actionProps = { left, top };
+
+  // Compact (极简列表) layout — C1/C2: minimal row with title, author and
+  // an intro line when the book carries a description.
+  if (props.compact === true) {
+    const title =
+      ConfigService.getReaderConfig("isUseOriginalName") === "yes"
+        ? getFileNameWithoutExtension(props.book.path, props.book.name)
+        : props.book.name;
+    const metaLines = buildBookMetaLines(
+      {
+        name: title,
+        author: props.book.author,
+        description: props.book.description,
+      },
+      { showIntro: true, showLastRead: true, introLimit: 40, lastReadLabel: props.t("Last read") }
+    );
+    return (
+      <>
+        <div
+          className={`book-compact-item${
+            props.isSelected ? " selected" : ""
+          }`}
+          draggable
+          onDragStart={handleBookDragStart}
+          onClick={(event) => {
+            if (props.isSelectBook) {
+              handleSelectIconClick(event);
+            } else {
+              handleJump(event);
+            }
+          }}
+          onContextMenu={(event: any) => {
+            handleMoreAction(event);
+          }}
+        >
+          {isCoverExist ? (
+            <img className="book-compact-cover" src={cover} alt="" />
+          ) : (
+            <div className="book-compact-cover book-compact-cover-empty">
+              {title.slice(0, 1)}
+            </div>
+          )}
+          <div className="book-compact-main">
+            <div className="book-compact-title">{title}</div>
+            {props.book.author ? (
+              <div className="book-compact-author">{props.book.author}</div>
+            ) : null}
+            {metaLines.map((line, i) => (
+              <div key={i} className="book-compact-meta">
+                {line}
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* The compact row still handles right-click, so the context menu has
+            to be rendered here too — otherwise the click opens the dialog
+            state but nothing appears on screen. */}
+        {props.isOpenActionDialog && props.book.key === props.currentBook.key ? (
+          <div className="action-dialog-parent">
+            <ActionDialog {...(actionProps as any)} />
+          </div>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>

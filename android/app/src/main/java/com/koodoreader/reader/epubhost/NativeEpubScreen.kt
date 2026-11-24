@@ -30,10 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +89,7 @@ import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.designsystem.CssColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import com.koodoreader.engine.annotate.CfiAnchor
 import com.koodoreader.engine.annotate.HighlightColor
 import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.engine.annotate.SidemarkGeometry
@@ -185,6 +183,7 @@ import com.koodoreader.reader.shell.ReaderFirstRunGuide
 import com.koodoreader.reader.shell.rememberReaderFirstRunGuide
 import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
+import com.koodoreader.reader.shell.ReaderSelectionBottomSheet
 import com.koodoreader.reader.shell.ReaderSystemBars
 import com.koodoreader.reader.shell.ReaderTapKind
 import com.koodoreader.reader.shell.ReaderTapTarget
@@ -340,9 +339,6 @@ fun NativeEpubScreen(
     var selectionCharCount by remember { mutableStateOf(0) }
     var selectionCfi by remember { mutableStateOf("") }
     var showSelectionMenu by remember { mutableStateOf(false) }
-    // 选词下拉菜单的锚点（根 Box 坐标）。foliate 轨来自引擎上报的触点 +
-    // WebView bounds；native 轨来自页面 Canvas 局部坐标 + Canvas bounds。
-    var selectionAnchor by remember { mutableStateOf<Offset?>(null) }
     // 选区两端把手位置（根 Box 坐标），foliate 轨由 JS selectionEdges 提供。
     var selectionEdges by remember { mutableStateOf<FoliateSelectionMenu.SelectionEdges?>(null) }
     var foliateViewBounds by remember { mutableStateOf(Rect.Zero) }
@@ -383,13 +379,6 @@ fun NativeEpubScreen(
                             mainHandler.post {
                                 selectionExcerpt = excerpt
                                 selectionCfi = cfi
-                                // 带触点的 payload（长按选中）刷新锚点；selectionchange
-                                // 重放不带触点，沿用上一个锚点。
-                                FoliateSelectionMenu.payloadPoint(payload)?.let { pt ->
-                                    selectionAnchor = FoliateSelectionMenu.anchorPx(
-                                        pt, foliateViewBounds.left, foliateViewBounds.top, density,
-                                    )
-                                }
                                 showSelectionMenu = true
                             }
                         }
@@ -1178,6 +1167,35 @@ fun NativeEpubScreen(
         return selectionExcerpt.ifBlank { selectedLine?.text.orEmpty() }
     }
 
+    /**
+     * Whether the current selection already carries a highlight.
+     *
+     * The Foliate/WebView path can answer this from the selection line
+     * ([isAlreadyHighlighted]) or by comparing CFIs. The NATIVE text-reader
+     * path has no [selectedLine] — its highlights live in the `notes` table
+     * keyed by the CFI derived from the selection's TextLocation, and the
+     * selection's own CFI is the START of the range.
+     *
+     * Without this branch the native path always reported "not highlighted",
+     * so re-highlighting an already-highlighted range inserted a SECOND,
+     * overlapping highlight instead of offering "Delete".
+     */
+    fun isSelectionHighlighted(): Boolean {
+        selectedLine?.let { return isAlreadyHighlighted(it) }
+        val cfi = currentSelectionCfi()
+        if (cfi.isBlank()) return false
+        val storedCfis = bookNotes.mapNotNull { it.cfi }
+        if (FoliateSelectionMenu.highlighted(cfi, storedCfis)) return true
+        if (!useNativeTextReader) return false
+        // Native path: the selection CFI is the start of the range, so a
+        // stored highlight at or before it (same paragraph) means the
+        // selection overlaps an existing highlight.
+        return storedCfis.any { stored ->
+            stored == cfi || runCatching { CfiAnchor.compare(cfi, stored) >= 0 }
+                .getOrDefault(false)
+        }
+    }
+
     fun highlightCss(color: Long): String = HighlightPalette.readerCss(color, readerPageIsDark)
 
     fun saveHighlight(colorIdx: Int = 0) {
@@ -1473,7 +1491,6 @@ fun NativeEpubScreen(
         if (line.imageSrc != null) return
         selectionController.start(line.start).moveEnd(line.end).finish()
         commitTextSelection()
-        selectionAnchor = nativeViewBounds.topLeft + offset
         showSelectionMenu = true
     }
 
@@ -1841,7 +1858,6 @@ fun NativeEpubScreen(
                             }
                         },
                         onLineSelected = { at ->
-                            selectionAnchor = nativeViewBounds.topLeft + at
                             showSelectionMenu = true
                         },
                         onToggleChrome = { showChrome = !showChrome },
@@ -1990,7 +2006,6 @@ fun NativeEpubScreen(
                                             selectionController.finish()
                                             commitTextSelection()
                                             selectionCharCount = 0
-                                            selectionAnchor = nativeViewBounds.topLeft + nativePressLocal
                                             showSelectionMenu = true
                                         },
                                         onDragCancel = {
@@ -2237,72 +2252,18 @@ fun NativeEpubScreen(
         }
     }
 
-    // ── 选中行菜单：锚在选区触点处的下拉菜单（DropdownMenu 空间不足时
-    // 自动翻到锚点上方）；动作集（未高亮/已高亮两组）与高亮色接线不变。 ──
+    // ── 选中行菜单：底部弹层（BottomSheet），避免顶部 Popup 遮挡正文。 ──
     if (showSelectionMenu && FoliateSelectionMenu.visible(currentSelectionText())) {
         val clipboard = LocalClipboardManager.current
-        val highlighted = selectedLine?.let { isAlreadyHighlighted(it) }
-            ?: FoliateSelectionMenu.highlighted(
-                currentSelectionCfi(),
-                bookNotes.mapNotNull { it.cfi },
-            )
-        // 锚点缺失时退回内容区中下段；触点下方留一指节，避免菜单盖住按住的词。
-        val anchor = selectionAnchor
-            ?: Offset(viewport.width / 2f, viewport.height * 0.75f)
-        val menuAnchor = anchor.copy(y = anchor.y + 28f * density)
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .offset {
-                        IntOffset(menuAnchor.x.roundToInt(), menuAnchor.y.roundToInt())
-                    }
-                    .size(1.dp),
-            ) {
-                DropdownMenu(
-                    expanded = true,
-                    onDismissRequest = { showSelectionMenu = false },
-                ) {
-                    if (highlighted) {
-                        DropdownMenuItem(
-                            text = { Text(t("Delete")) },
-                            onClick = { deleteHighlight() },
-                        )
-                        HorizontalDivider()
-                    } else {
-                        val dotColors = listOf(
-                            Color(0xFFFBC02D),
-                            Color(0xFF2E7D32),
-                            Color(0xFFAD1457),
-                            Color(0xFF1D4ED8),
-                        )
-                        val dotLabels = listOf(
-                            t("Yellow"), t("Green"), t("Pink"), t("Blue"),
-                        )
-                        dotColors.forEachIndexed { index, dot ->
-                            DropdownMenuItem(
-                                text = { Text(dotLabels[index]) },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .background(dot, CircleShape),
-                                    )
-                                },
-                                onClick = { saveHighlight(index) },
-                            )
-                        }
-                        HorizontalDivider()
-                    }
-                    selectionActions.forEach { action ->
-                        DropdownMenuItem(
-                            text = { Text(t(action.titleKey)) },
-                            onClick = { runSelectionAction(action, clipboard) },
-                        )
-                    }
-                }
-            }
-        }
+        val highlighted = isSelectionHighlighted()
+        ReaderSelectionBottomSheet(
+            highlighted = highlighted,
+            actions = selectionActions,
+            onDismiss = { showSelectionMenu = false },
+            onSaveHighlight = { saveHighlight(it) },
+            onDeleteHighlight = { deleteHighlight() },
+            onAction = { runSelectionAction(it, clipboard) },
+        )
     }
     // ── 选区拖动手柄：两端各一，拖动把触点换算回 WebView CSS px 交给
     // extendSelection；JS 侧 selectionchange 回流后 effects 重查把手位置。 ──

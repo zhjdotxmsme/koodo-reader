@@ -219,3 +219,79 @@
     background 0.2s,
     color 0.2s;
 }
+
+.stats-goals-wrapper,
+.stats-manual-wrapper,
+.stats-rank-wrapper,
+.stats-hourly-wrapper,
+.stats-year-wrapper {
+  margin: 0 24px 16px;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.stats-goals-inputs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.stats-goal-input {
+  flex: 1;
+  min-width: 110px;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+.stats-manual-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 13px;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  margin-top: 8px;
+}
+
+.stats-progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.stats-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.stats-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  font-size: 14px;
+}
+
+.stats-rank-index {
+  width: 22px;
+  font-weight: bold;
+  opacity: 0.6;
+}
+
+.stats-rank-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-rank-value {
+  white-space: nowrap;
+  opacity: 0.8;
+}

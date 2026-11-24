@@ -32,6 +32,9 @@ class BookAnnotationsViewModelTest {
         override fun observeAll(): Flow<List<NoteEntity>> = flow
         override suspend fun getByKey(key: String): NoteEntity? = map[key]
 
+        override suspend fun getHighlightsForBook(bookKey: String): List<NoteEntity> =
+            map.values.filter { it.bookKey == bookKey && it.notes.isNullOrEmpty() }
+
         override suspend fun deleteByKey(key: String) {
             map.remove(key)
             publish()

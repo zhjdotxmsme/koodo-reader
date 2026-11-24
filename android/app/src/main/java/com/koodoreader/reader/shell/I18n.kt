@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Compose-side i18n state: bundles the desktop locale subset (en + zh-CN,
+ * Compose-side i18n state: bundles the desktop locale subset (11 languages,
  * synced into assets by scripts/sync-locales-android.js), exposes `t(key)`
  * via [LocalI18n], and persists the language choice ("system" | code).
  *
