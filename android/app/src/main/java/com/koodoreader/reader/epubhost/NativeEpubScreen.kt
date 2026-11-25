@@ -89,7 +89,6 @@ import com.koodoreader.core.data.entity.NoteEntity
 import com.koodoreader.core.designsystem.CssColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import com.koodoreader.engine.annotate.CfiAnchor
 import com.koodoreader.engine.annotate.HighlightColor
 import com.koodoreader.engine.annotate.HighlightPalette
 import com.koodoreader.engine.annotate.SidemarkGeometry
@@ -109,6 +108,7 @@ import com.koodoreader.reader.reader.ChapterLoaderProgress
 import com.koodoreader.reader.reader.FormatChapterLoaders
 import com.koodoreader.reader.reader.IncrementalBookSearch
 import com.koodoreader.reader.reader.LayoutSelection
+import com.koodoreader.reader.reader.NativeHighlightMatcher
 import com.koodoreader.reader.reader.SelectionController
 import com.koodoreader.reader.reader.TextLineRenderer
 import com.koodoreader.reader.reader.NativeTextReaderScreen
@@ -859,7 +859,8 @@ fun NativeEpubScreen(
         val layout = s.layoutResult() ?: return@remember emptyMap()
         bookNotes.mapNotNull { note ->
             val cfi = note.cfi ?: return@mapNotNull null
-            val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+            val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return@mapNotNull null
+            val pos = CfiAddressing.fromCfi(point, layout) ?: return@mapNotNull null
             val line = layout.lineAt(pos) ?: return@mapNotNull null
             if (line.page == currentPage) {
                 line.blockIndex to HighlightPalette.paintArgb(note.color, readerPageIsDark)
@@ -933,14 +934,16 @@ fun NativeEpubScreen(
             }
             useNativeTextReader -> {
                 val loader = chapterLoader ?: return
-                val loc = ChapterLoaderProgress.initialLocation(loader, cfi)
+                val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return
+                val loc = ChapterLoaderProgress.initialLocation(loader, point)
                 nativeInitialLocation = loc
                 textReaderControl.jumpTo(loc)
             }
             else -> {
                 val s = session ?: return
+                val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return
                 readerScope.launch {
-                    val page = withContext(Dispatchers.IO) { s.resumePage(cfi) } ?: return@launch
+                    val page = withContext(Dispatchers.IO) { s.resumePage(point) } ?: return@launch
                     currentPage = page
                 }
             }
@@ -1152,7 +1155,7 @@ fun NativeEpubScreen(
         if (useNativeTextReader) {
             val loc = textReaderControl.selectionLocation ?: return ""
             val loader = chapterLoader ?: return ""
-            return ChapterLoaderProgress.cfiForLocation(loader, loc).orEmpty()
+            return ChapterLoaderProgress.cfiRangeForLocation(loader, loc).orEmpty()
         }
         val line = selectedLine ?: return if (useFoliate) foliateCfi else ""
         return CfiAddressing.toCfi(LayoutPosition(
@@ -1175,8 +1178,8 @@ fun NativeEpubScreen(
      * The Foliate/WebView path can answer this from the selection line
      * ([isAlreadyHighlighted]) or by comparing CFIs. The NATIVE text-reader
      * path has no [selectedLine] — its highlights live in the `notes` table
-     * keyed by the CFI derived from the selection's TextLocation, and the
-     * selection's own CFI is the START of the range.
+     * keyed by a range CFI (legacy rows: the start point), so the selection's
+     * own range CFI is matched exactly against the stored CFIs.
      *
      * Without this branch the native path always reported "not highlighted",
      * so re-highlighting an already-highlighted range inserted a SECOND,
@@ -1189,13 +1192,7 @@ fun NativeEpubScreen(
         val storedCfis = bookNotes.mapNotNull { it.cfi }
         if (FoliateSelectionMenu.highlighted(cfi, storedCfis)) return true
         if (!useNativeTextReader) return false
-        // Native path: the selection CFI is the start of the range, so a
-        // stored highlight at or before it (same paragraph) means the
-        // selection overlaps an existing highlight.
-        return storedCfis.any { stored ->
-            stored == cfi || runCatching { CfiAnchor.compare(cfi, stored) >= 0 }
-                .getOrDefault(false)
-        }
+        return storedCfis.any { stored -> NativeHighlightMatcher.matches(cfi, stored) }
     }
 
     fun highlightCss(color: Long): String = HighlightPalette.readerCss(color, readerPageIsDark)
@@ -1268,7 +1265,9 @@ fun NativeEpubScreen(
         }
         readerScope.launch {
             val notes = db.noteDao().observeForBook(bookKey).first()
-            val target = notes.firstOrNull { it.cfi == cfi }
+            val target = notes.firstOrNull { note ->
+                note.cfi?.let { stored -> NativeHighlightMatcher.matches(cfi, stored) } == true
+            }
             target?.let { db.noteDao().deleteByKey(it.key) }
             if (useNativeTextReader) {
                 textReaderControl.selectionLocation = null
@@ -1976,7 +1975,8 @@ fun NativeEpubScreen(
                         val layout = s.layoutResult() ?: return@remember emptyMap()
                         bookNotes.mapNotNull { note ->
                             val cfi = note.cfi ?: return@mapNotNull null
-                            val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+                            val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return@mapNotNull null
+                            val pos = CfiAddressing.fromCfi(point, layout) ?: return@mapNotNull null
                             val line = layout.lineAt(pos) ?: return@mapNotNull null
                             if (line.page == page) {
                         line.blockIndex to HighlightPalette.paintArgb(note.color, readerPageIsDark)

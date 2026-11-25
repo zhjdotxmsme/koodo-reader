@@ -35,6 +35,18 @@ class ChapterLoaderProgressTest {
         loader.close()
     }
 
+    @Test
+    fun `selection maps to range cfi and resumes at its start`() {
+        val loader = FakeLoader(listOf(ChapterDescriptor("idref:a", "One", 1, 10)))
+        val location = com.koodoreader.engine.layout.reader.TextLocation("idref:a", 1, 3)
+        val range = ChapterLoaderProgress.cfiRangeForLocation(loader, location)
+        assertEquals("epubcfi(/6/1!/2/0/0,/1:1,/1:3)", range)
+        val restored = ChapterLoaderProgress.initialLocation(loader, range)
+        assertEquals("idref:a", restored.chapterId)
+        assertEquals(1, restored.start)
+        loader.close()
+    }
+
     private class FakeLoader(
         private val descriptors: List<ChapterDescriptor>,
     ) : ChapterLoader {

@@ -2,7 +2,6 @@ package com.koodoreader.reader.reader
 
 import com.koodoreader.core.data.dao.NoteDao
 import com.koodoreader.core.data.entity.NoteEntity
-import com.koodoreader.engine.annotate.CfiAnchor
 import com.koodoreader.engine.layout.reader.ChapterLoader
 import com.koodoreader.engine.layout.reader.TextLocation
 import kotlinx.coroutines.CoroutineScope
@@ -40,26 +39,24 @@ class RoomNoteAnnotationStore(
     }
 
     /**
-     * Whether the selection overlaps an existing highlight of this book.
+     * Whether the selection is an exact match for an existing highlight of
+     * this book.
      *
-     * The stored highlight is a single CFI point (the start of the range),
-     * so an exact match is treated as a hit. The selection itself is a
-     * start..end range, and a selection that CONTAINS the stored point also
-     * counts — that is the common case (the user long-presses across a
-     * highlight they just made).
+     * Highlights are stored as range CFIs (the selected span); bookmarks keep
+     * the legacy point CFI. [NativeHighlightMatcher.matches] accepts a
+     * selection whose range CFI equals the stored one, or whose start point
+     * equals a stored point — legacy rows stay deletable without migrating
+     * data. Partial overlap and other-chapter positions deliberately do not
+     * match, so deleting only ever removes what is selected.
      */
     override fun isHighlighted(bookKey: String, location: TextLocation): Boolean {
         if (bookKey != this.bookKey) return false
-        val selectionCfi = ChapterLoaderProgress.cfiForLocation(loader, location) ?: return false
+        val selectionCfi = ChapterLoaderProgress.cfiRangeForLocation(loader, location) ?: return false
         val highlights = runBlocking {
             runCatching { noteDao.getHighlightsForBook(bookKey) }.getOrNull()
         } ?: return false
         return highlights.any { entity ->
-            val stored = entity.cfi ?: return@any false
-            stored == selectionCfi ||
-                runCatching {
-                    CfiAnchor.compare(selectionCfi, stored) >= 0
-                }.getOrDefault(false)
+            entity.cfi?.let { stored -> NativeHighlightMatcher.matches(selectionCfi, stored) } == true
         }
     }
 
@@ -69,7 +66,11 @@ class RoomNoteAnnotationStore(
         notes: String,
         color: Long?,
     ) {
-        val cfi = ChapterLoaderProgress.cfiForLocation(loader, location) ?: return
+        val cfi = if (color == null) {
+            ChapterLoaderProgress.cfiForLocation(loader, location)
+        } else {
+            ChapterLoaderProgress.cfiRangeForLocation(loader, location)
+        } ?: return
         val chapterIdx = loader.descriptors().indexOfFirst { it.id == location.chapterId }.coerceAtLeast(0)
         val chapterLabel = ChapterLoaderProgress.chapterBarLabel(loader, location.chapterId)
             .substringAfter("· ", "")

@@ -1,5 +1,6 @@
 package com.koodoreader.reader.reader
 
+import com.koodoreader.engine.annotate.CfiAnchor
 import com.koodoreader.engine.layout.CfiAddressing
 import com.koodoreader.engine.layout.LayoutPosition
 import com.koodoreader.engine.layout.reader.ChapterLoader
@@ -13,22 +14,34 @@ object ChapterLoaderProgress {
         if (descriptors.isEmpty()) return TextLocation("", 0)
         val fallback = TextLocation(descriptors.first().id, 0)
         if (storedCfi.isNullOrBlank()) return fallback
-        val pos = CfiAddressing.fromCfi(storedCfi) ?: return fallback
+        val point = runCatching { CfiAnchor.startPoint(storedCfi) }.getOrNull() ?: return fallback
+        val pos = CfiAddressing.fromCfi(point) ?: return fallback
         val chapterId = chapterIdForSpineIndex(loader, pos.spineIndex) ?: return fallback
         return TextLocation(chapterId, pos.charOffset.coerceAtLeast(0))
     }
 
-    fun cfiForLocation(loader: ChapterLoader, location: TextLocation): String? {
+    fun cfiForLocation(loader: ChapterLoader, location: TextLocation): String? =
+        cfiForOffset(loader, location.chapterId, location.start)
+
+    /** Range CFI spanning [location]; a collapsed selection degrades to the start point. */
+    fun cfiRangeForLocation(loader: ChapterLoader, location: TextLocation): String? {
+        val start = cfiForLocation(loader, location) ?: return null
+        if (location.end <= location.start) return start
+        val end = cfiForOffset(loader, location.chapterId, location.end) ?: return null
+        return runCatching { CfiAnchor.rangeCfi(start, end) }.getOrNull()
+    }
+
+    private fun cfiForOffset(loader: ChapterLoader, chapterId: String, offset: Int): String? {
         val descriptors = loader.descriptors()
-        val order = descriptors.indexOfFirst { it.id == location.chapterId }
+        val order = descriptors.indexOfFirst { it.id == chapterId }
         if (order < 0) return null
         val spineIndex = order + 1
-        val item = loader.load(location.chapterId)
+        val item = loader.load(chapterId)
         var cursor = 0
         for (block in item.blocks) {
             val end = cursor + block.text.length
-            if (location.start <= end) {
-                val charOffset = (location.start - cursor).coerceAtLeast(0)
+            if (offset <= end) {
+                val charOffset = (offset - cursor).coerceAtLeast(0)
                 return CfiAddressing.toCfi(LayoutPosition(spineIndex, block.elementIndex, charOffset))
             }
             cursor = end + 1

@@ -22,7 +22,8 @@ object NativeNoteHighlights {
         dark: Boolean = false,
     ): Map<Int, Long> = notes.mapNotNull { note ->
         val cfi = note.cfi ?: return@mapNotNull null
-        val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+        val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return@mapNotNull null
+        val pos = CfiAddressing.fromCfi(point, layout) ?: return@mapNotNull null
         val line = layout.lineAt(pos) ?: return@mapNotNull null
         if (line.page != pageIndex) return@mapNotNull null
         line.blockIndex to HighlightPalette.paintArgb(note.color, dark)
@@ -35,7 +36,8 @@ object NativeNoteHighlights {
         dark: Boolean = false,
     ): Map<Int, Long> = notes.mapNotNull { note ->
         val cfi = note.cfi ?: return@mapNotNull null
-        val pos = CfiAddressing.fromCfi(cfi, layout) ?: return@mapNotNull null
+        val point = NativeHighlightMatcher.startPointOrNull(cfi) ?: return@mapNotNull null
+        val pos = CfiAddressing.fromCfi(point, layout) ?: return@mapNotNull null
         val line = layout.lineAt(pos) ?: return@mapNotNull null
         line.blockIndex to HighlightPalette.paintArgb(note.color, dark)
     }.toMap()
