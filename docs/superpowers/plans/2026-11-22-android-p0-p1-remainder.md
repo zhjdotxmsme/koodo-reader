@@ -670,10 +670,11 @@ git commit -m "docs(android): record p0-p1 remainder round in uiux upgrade log"
 
 ## 附录（不在本计划，真机可用时单独执行）
 
-1. **P0-2 实机核对**：WebView 可用 CSS 宽口径（是否存在滚动条/内边距差），必要时修正 `Task 1 Step 5` 的宽度计算。
+1. **P0-2 实机核对**：WebView 可用 CSS 宽口径。2026-11-25 起量化已移入分页器内部（`b8d2b455`），本计划 `Task 1 Step 5` 的宿主侧 padding 反解已删除——核对对象改为 `paginator.js` 量化后的实际列宽（单页/跨页 spread），必要时修正量化式，不再改宿主 padding。
 2. **M4a Task 10 真机三点清单**（阅读选项/双页、PDF 裁边重排、全局默认字号）+ 备份脚本真机往返 + benchmark device run。
-3. **高亮重锚真机验收 3 项**（§5.9）。
+3. **高亮重锚真机验收 3 项**（§5.9；2026-11-25 起原生标注已改 range CFI + 精确匹配，验收需覆盖新旧两种存量锚点）。
 4. **性能基线回填**：`docs/android-baseline*.json` 的 `pending-device` 四项（冷启动/打开/翻页/内存）。
+5. **第 10 轮（2026-11-25）真机项**：实机列宽口径、触感强度（滑杆跨档 haptic）、PDF 轨真机行为、选区调整模式拖拽手感——见 `2026-11-25-android-plan-closeout.md` 与 uiux 文档 §5.11。
 
 ## 暂缓项（需产品决策或另立里程碑）
 

@@ -291,7 +291,7 @@ fun contentHeight(windowPx: Int, insets: Insets): Int =
 
 | 改动 | 位置 | 效果 |
 |---|---|---|
-| 中文默认字距 `0.5sp → 0` | `CjkTypography.LETTER_SPACING_SP` | 两端对齐不再靠拉字缝，靠字格本身 |
+| 中文默认字距 `0.5sp → 0` | `CjkTypography.LETTER_SPACING_SP` | 两端对齐不再靠拉字缝，靠字格本身。**2026-11-25 更正：本轮只写了记录、改动未入库**——该常量自 `50fa1a88` 创建起一直是 `0.5f`，真正归零发生在 §5.11（`16dc7c2f`） |
 | 新增列宽量化 `CjkColumn.fit()` | 新增 `core/designsystem/.../CjkColumn.kt` | 列宽 = n × 字距推进量，余量均分两侧 |
 | 新增 CSS 生成器 `CjkStyleSheet` | 新增 `core/designsystem/.../CjkStyleSheet.kt` | 段落结构判定、`!important` 归属、`:lang()` 孤行分流 |
 | `p` 判定扩展为「后代纯行内的 div 也算段落」 | `CjkStyleSheet` | Calibre/多看转出的 `<div>正文</div>` 得到正确缩进，布局 wrapper 不受影响 |
@@ -652,6 +652,48 @@ runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
 另外顺带确认：分页中文排版正确（每行 17 格、右边缘齐、避头尾后仍对齐）、划词菜单动作行就是 `SelectionMenuAction.DEFAULT` 顺序、设置页三个滑杆档位密度符合设计（字号稀疏、行距/字距密集）。
 
 **仍未验证（真机）**：foliate 轨的 CSS 可用宽度口径是否与反解式一致（需要在一本跨页的书上量实际列宽）、触感强度、PDF 轨。
+
+---
+
+## 5.11 2026-11-25 第 10 轮：自动可验证范围收尾（选区/标注锚点/字距/孤行/列宽）
+
+> 收掉 `docs/superpowers/plans/2026-11-25-android-plan-closeout.md` 中全部可自动验证的 5 项，逐项提交：`16a75dae`、`3465915d`、`16dc7c2f`+`07ca6f94`、`6d91f9d3`、`b8d2b455`。最终状态：**自动可验证范围完成；真机验收待做**。
+
+| 事项 | 改动 | 关键位置 |
+|---|---|---|
+| 选区调整模式 + 塌缩区间守卫（`16a75dae`） | `ReaderSelectionUiPolicy`：`showMenu = menuOpen && !adjusting`、`showHandles = menuOpen && adjusting && useFoliate`，菜单与拖拽把手互斥；`NativeEpubScreen` 新增 `selectionAdjusting` 状态与优先级更高的 `BackHandler`；`engine.mjs` 导出 `selectionRangeIsUsable`，`extendSelection` 在 `setStart/setEnd` 之后、`removeAllRanges()` 之前拒绝塌缩拖拽区间（返回 `{ok:false, clamped:true}`），拖到/越过固定端时保住上一个有效选区 | `shell/ReaderSelectionUiPolicy.kt`、`NativeEpubScreen.kt`、`foliate/engine.mjs` |
+| 原生标注精确点/区间匹配（`3465915d`） | 新增 `NativeHighlightMatcher.matches`：同值精确匹配；仅放行「存量点 CFI == 新区间起点」的 legacy 匹配；两个区间之间永不互删。新高亮/笔记经 `ChapterLoaderProgress.cfiRangeForLocation` 落库为 **range CFI**（存量点 CFI 不迁移）；`isHighlighted`/删除目标查找共用同一 matcher；点消费者（重锚绘制、`jumpToCfi` native 分支）经 `startPointOrNull` 塌缩成点，起点/终点由同一 `cfiForOffset` 派生不再漂移 | `reader/NativeHighlightMatcher.kt`、`reader/ChapterLoaderProgress.kt`、`reader/RoomNoteAnnotationStore.kt`、`reader/NativeNoteHighlights.kt` |
+| 字距默认归零 + 负字距合法（`16dc7c2f` + `07ca6f94`） | `CjkTypography.LETTER_SPACING_SP` 实际 `0.5f → 0f`（见下方更正）；`PaginatorOptions`/`LayoutTokens` 校验改为 `letterSpacingPx.isFinite()` 且 `fontSizePx + letterSpacingPx > 0`——允许负字距，只禁止推进量塌成非正；desktop 配置解析 coerce 到 `[-0.1, MAX]` 保持旧值兼容；`07ca6f94` 把推进量下限常量收敛到单一出处，`CjkColumn.fit` 的退化守卫保留 | `core/designsystem/.../CjkTypography.kt`、`engine/layout/.../LayoutEngine.kt`、`LayoutTokens.kt`、`shell/ReaderTypography.kt` |
+| 逐块 CJK `1/1` 与拉丁 `2/2`（`6d91f9d3`） | 新增 `ReaderScript.widowsOrphans(text, fallback)`：逐字符统计 CJK（汉字/假名/谚文/兼容表意）与拉丁字母，CJK 占优（`cjk > 0 && cjk >= latin`）时返回 1，否则返回 fallback——判定**每块做一次**，同页混排互不影响。`PaginatorOptions.languageAwareWidowsOrphans` 默认 `false`（通用引擎调用方行为不变），仅 Android `ReaderTypography.paginatorOptions()` 置 `true`：CJK 段落孤行/寡行控制降为 `1/1`（页底不再空 2 行），拉丁段落保持 `2/2` | `engine/layout/.../ReaderScript.kt`、`LayoutEngine.kt`、`shell/ReaderTypography.kt` |
+| 分页器内部单页/跨页量化（`b8d2b455`） | `paginator.js` 内新增 `quantizeColumnMetrics` 纯函数：列宽量化到 `n×字号 + (n−1)×字距`（cell = 渲染推进量），余量并入 `columnGap` 与两侧对称 padding；`getHorizontalColumnMetrics` 单页与 spread 两条返回路径都过量化，新增 `cellFontSize`/`cellLetterSpacing` 入参与 `cell-font-size`/`cell-letter-spacing` 两个受观察 attribute；`engine.mjs#setViewSettings` 按与 `readest-style.mjs` 相同的 1.25 Android 系数派生 body 字号、从快照透传 `letterSpacingPx`（`ReadestViewSettings.Snapshot` 新增字段经桥接 JSON 下发）；**删除宿主侧 `cjkSidePad` padding 反解**（§5.10 Task 1 的接缝作废，`ReaderCjkColumn.foliateSidePadFor` 消费点移除、Kotlin 助手与其测试保留）；滚动/竖排流不传 cell 指标，几何逐字节不变；退化输入（非有限/≤0/列宽 < 4 cells）原样返回 | `foliate/paginator.js`、`foliate/engine.mjs`、`epubhost/ReadestViewSettings.kt`、`FoliateHostBridge.kt`、`NativeEpubScreen.kt` |
+
+### 0.5sp 记录更正
+
+§5.2 表格中「中文默认字距 `0.5sp → 0`」**在提交历史中不成立**：`CjkTypography.LETTER_SPACING_SP` 自 `50fa1a88` 创建起一直是 `0.5f`——第 2 轮按要求暂停了编译，该改动从未入库（§5.2 的「未验证/未编译」注记即此）。真正的归零发生在本轮 `16dc7c2f`（2026-11-25），同时负字距成为合法设置。原表格行已就地标注，设备运行历史保持原样。
+
+### 最终验证结果（2026-11-25，本机，无设备）
+
+| 命令 | 结果 |
+|---|---|
+| `node scripts/check-dict-catalog.js` | `[check-dict-catalog] OK — 11 cloud dicts match desktop (bytes=0, bundled=[])` |
+| `node scripts/test-foliate-host.js --quiet` | `OK 98 passed` |
+| `node scripts/test-pdfengine.js` | `[test-pdfengine] OK — 62 checks passed` |
+| `CI=true node node_modules/react-scripts/bin/react-scripts.js test --watchAll=false --runInBand` | **Test Suites: 18 passed, 18 total；Tests: 222 passed, 222 total**，0 失败 |
+| `./gradlew :benchmarks:compileBenchmarkKotlin :core:designsystem:test :core:designsystem:selfCheck :engine:annotate:test :engine:layout:test :core:importer:test :core:ui:testDebugUnitTest :app:testNativeHostDebugUnitTest :app:assembleNativeHostDebug -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD SUCCESSFUL**（1m 24s）；JUnit XML 计数：designsystem 179、annotate 128、layout 228、importer 110、ui 3、app(nativeHostDebug) 408——**合计 1056 tests，0 失败**；`selfCheck` 与 benchmarks 编译通过 |
+| `./gradlew :app:processNativeHostReleaseMainManifest -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD SUCCESSFUL**；merged `nativeHostRelease` manifest **无 `android.permission.SYSTEM_ALERT_WINDOW`、无 DoKit 组件**（release 权限仅 INTERNET/ACCESS_NETWORK_STATE/FOREGROUND_SERVICE(+MEDIA_PLAYBACK)/POST_NOTIFICATIONS）；该权限只声明在 `src/debug/AndroidManifest.xml` 并只合入 debug variant |
+| `./gradlew :app:assembleNativeHostRelease -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD FAILED**（见下） |
+
+### Release 编译失败（预先存在，与本轮无关，只记录不修）
+
+`:app:compileNativeHostReleaseKotlin` 失败：`DoKitInitializer.kt:8` / `:82` 引用 `com.didichuxing.doraemonkit.kit.main.MainIconDoKitView`，而 release 依赖是 `dokitx-no-op:3.5.0`（无此类）。该文件由 `9bedf9a9`（2026-11-24，本收尾计划基线之前）引入；第 10 轮 6 个提交均未触及它或 `app/build.gradle`，且在基线 `b8d2b455` 的干净工作树上即可复现（最后一次成功的 release APK 产物是 2026-11-06、versionName 0.0.0，早于 DoKit 接入）。权限边界不受影响（上表 manifest 核查通过）。**留待独立修复**：release 改用条件调用或把浮动图标入口移入 debug source set，不得混入文档收尾提交。
+
+### 仍未验证（真机，全部保持开放）
+
+1. 实机列宽口径：量化移入分页器后，在真书/跨页场景量实际列宽（单页与 spread 双页）；
+2. 触感强度（滑杆跨档 `TextHandleMove` 的手感）；
+3. PDF 轨真机行为（重排/裁边/翻页）；
+4. 高亮重锚真机用例（§5.9 三项）；
+5. 备份真机往返 + 性能基线回填（`docs/android-baseline*.json` 的 `pending-device` 四项）。
 
 ---
 
