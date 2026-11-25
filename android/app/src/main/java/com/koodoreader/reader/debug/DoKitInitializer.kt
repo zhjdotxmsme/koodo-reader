@@ -5,7 +5,6 @@ import android.app.Application
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.didichuxing.doraemonkit.DoKit
-import com.didichuxing.doraemonkit.kit.main.MainIconDoKitView
 import com.koodoreader.reader.BuildConfig
 
 /**
@@ -21,6 +20,9 @@ import com.koodoreader.reader.BuildConfig
 object DoKitInitializer {
 
     private const val TAG = "DoKitInitializer"
+
+    private const val MAIN_ICON_CLASS =
+        "com.didichuxing.doraemonkit.kit.main.MainIconDoKitView"
 
     /**
      * Whether the initializer is allowed to run. Replaceable in unit tests so
@@ -67,8 +69,12 @@ object DoKitInitializer {
      *
      * [DoKit.show] would find that Activity reflectively through
      * ActivityThread, which is blocked on modern Android (hidden-API
-     * restrictions), so we attach the icon ourselves through
-     * [DoKit.launchFloating] with the Activity we already have.
+     * restrictions), so we attach the icon ourselves through DoKit's
+     * `launchFloating` with the Activity we already have. Both the icon view
+     * class and the method are resolved reflectively: the release no-op
+     * artifact does not contain the icon view, so a compile-time reference to
+     * it would break release compilation. If the class or method cannot be
+     * resolved, the call returns without logging an error.
      *
      * Safe to call repeatedly: DoKit re-attaches the same view instead of
      * adding a second one.
@@ -79,7 +85,13 @@ object DoKitInitializer {
             return
         }
         try {
-            DoKit.launchFloating(MainIconDoKitView::class.java)
+            val iconClass = runCatching { Class.forName(MAIN_ICON_CLASS) }.getOrNull()
+                ?: return
+            DoKit::class.java.methods
+                .firstOrNull {
+                    it.name == "launchFloating" && it.parameterTypes.size == 1
+                }
+                ?.invoke(null, iconClass)
             Log.i(TAG, "DoKit floating icon attached to ${activity.javaClass.simpleName}.")
         } catch (error: Exception) {
             // A debug tool must never take the app down.

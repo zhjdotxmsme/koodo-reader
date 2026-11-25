@@ -843,16 +843,18 @@ cd android
 
 Expected: BUILD SUCCESSFUL and zero failed tests.
 
-- [ ] **Step 3: Verify Release compilation and merged permission boundary**
+- [x] **Step 3: Verify Release compilation and merged permission boundary**
 
 Run: `cd android && ./gradlew :app:assembleNativeHostRelease :app:processNativeHostReleaseMainManifest -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native --console=plain`
 Expected: BUILD SUCCESSFUL.
 
-Result (2026-11-25): the manifest half passed — `:app:processNativeHostReleaseMainManifest` succeeded and the merged `nativeHostRelease` manifest contains no `SYSTEM_ALERT_WINDOW` and no DoKit component (the permission lives only in `src/debug/AndroidManifest.xml`). But `:app:assembleNativeHostRelease` itself FAILS at `:app:compileNativeHostReleaseKotlin`: `DoKitInitializer.kt:8/:82` references `MainIconDoKitView`, which the release `dokitx-no-op:3.5.0` artifact does not ship. This is pre-existing and unrelated to Tasks 1–6 — the file was introduced by `9bedf9a9` (before this plan's base `f9a5c158`), untouched by every task commit, and the failure reproduces on a clean tree at `b8d2b455`. Recorded in `docs/android-uiux-upgrade-2026-11-19.md` §5.11; the fix belongs to a separate, non-documentation commit, so this step stays open until release compilation is green.
+Result (2026-11-25, after the release compile fix `fix(android): compile release without the debug icon class`): **BUILD SUCCESSFUL in 4m 40s** — both `:app:assembleNativeHostRelease` (including `:app:compileNativeHostReleaseKotlin`) and `:app:processNativeHostReleaseMainManifest` pass. The earlier failure (`DoKitInitializer.kt:8`/`:82` referenced `MainIconDoKitView`, absent from the release `dokitx-no-op:3.5.0` artifact; pre-existing from `9bedf9a9`, unrelated to Tasks 1–6) was fixed by removing the compile-time reference: the icon class name is a constant resolved via `Class.forName` and `launchFloating` is dispatched reflectively, with the `enabledProvider` guard unchanged so release still never calls DoKit. `:app:testNativeHostDebugUnitTest --tests "com.koodoreader.reader.debug.DoKitInitializerTest"` → 3/3 pass.
 
 Read `android/app/build/intermediates/merged_manifest/nativeHostRelease/AndroidManifest.xml`.
 
 Expected: no `android.permission.SYSTEM_ALERT_WINDOW` and no DoKit component in the release merged manifest. Debug continues to declare the permission only in `src/debug/AndroidManifest.xml`.
+
+Confirmed (2026-11-25): the merged `nativeHostRelease` manifest declares only INTERNET, ACCESS_NETWORK_STATE, POST_NOTIFICATIONS, FOREGROUND_SERVICE (+`FOREGROUND_SERVICE_MEDIA_PLAYBACK`) and the app's own dynamic-receiver permission — no `SYSTEM_ALERT_WINDOW`, no DoKit component.
 
 - [x] **Step 4: Update implementation records**
 
@@ -893,5 +895,5 @@ git commit -m "docs(android): record automated plan closeout"
 ## Status (2026-11-25 closeout execution)
 
 - Tasks 1–5 complete and committed: `16a75dae`, `3465915d`, `16dc7c2f` + `07ca6f94`, `6d91f9d3`, `b8d2b455`.
-- Task 6: Steps 1–2 green — desktop `react-scripts test` 18/18 suites, 222/222 tests; Android Gradle unit suites 1056 tests across `:core:designsystem`(179), `:engine:annotate`(128), `:engine:layout`(228), `:core:importer`(110), `:core:ui`(3), `:app` nativeHostDebug(408), 0 failures; `:app:assembleNativeHostDebug` BUILD SUCCESSFUL. Steps 4–6 executed with this documentation closeout. **Step 3 stays open**: the release merged-manifest permission boundary verified clean, but `:app:assembleNativeHostRelease` fails on the pre-existing `DoKitInitializer` release-compile break from `9bedf9a9` (see the annotation above and `docs/android-uiux-upgrade-2026-11-19.md` §5.11).
+- Task 6: Steps 1–3 green — desktop `react-scripts test` 18/18 suites, 222/222 tests; Android Gradle unit suites 1056 tests across `:core:designsystem`(179), `:engine:annotate`(128), `:engine:layout`(228), `:core:importer`(110), `:core:ui`(3), `:app` nativeHostDebug(408), 0 failures; `:app:assembleNativeHostDebug` BUILD SUCCESSFUL. Step 3 closed 2026-11-25 after the release compile fix: `:app:assembleNativeHostRelease` + `:app:processNativeHostReleaseMainManifest` BUILD SUCCESSFUL (4m 40s), the merged `nativeHostRelease` manifest still contains no `SYSTEM_ALERT_WINDOW` and no DoKit component, and `DoKitInitializerTest` passes 3/3 (see the Step 3 annotation above and `docs/android-uiux-upgrade-2026-11-19.md` §5.11). Steps 4–6 executed with this documentation closeout.
 - Still open (device acceptance pending): actual device column measurement, haptic feel, PDF device behavior, highlight re-anchor device cases, backup device round-trip, performance baseline values.

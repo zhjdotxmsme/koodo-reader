@@ -657,7 +657,7 @@ runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
 
 ## 5.11 2026-11-25 第 10 轮：自动可验证范围收尾（选区/标注锚点/字距/孤行/列宽）
 
-> 收掉 `docs/superpowers/plans/2026-11-25-android-plan-closeout.md` 中全部可自动验证的 5 项，逐项提交：`16a75dae`、`3465915d`、`16dc7c2f`+`07ca6f94`、`6d91f9d3`、`b8d2b455`。最终状态：**自动可验证范围完成；真机验收待做**。
+> 收掉 `docs/superpowers/plans/2026-11-25-android-plan-closeout.md` 中全部可自动验证的 5 项，逐项提交：`16a75dae`、`3465915d`、`16dc7c2f`+`07ca6f94`、`6d91f9d3`、`b8d2b455`。最终状态：**自动可验证范围完成（release 编译异常已于 2026-11-25 修复，见下）；真机验收待做**。
 
 | 事项 | 改动 | 关键位置 |
 |---|---|---|
@@ -681,11 +681,13 @@ runCatching { host.addHighlight(cfi, css) }   // 结果被丢弃
 | `CI=true node node_modules/react-scripts/bin/react-scripts.js test --watchAll=false --runInBand` | **Test Suites: 18 passed, 18 total；Tests: 222 passed, 222 total**，0 失败 |
 | `./gradlew :benchmarks:compileBenchmarkKotlin :core:designsystem:test :core:designsystem:selfCheck :engine:annotate:test :engine:layout:test :core:importer:test :core:ui:testDebugUnitTest :app:testNativeHostDebugUnitTest :app:assembleNativeHostDebug -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD SUCCESSFUL**（1m 24s）；JUnit XML 计数：designsystem 179、annotate 128、layout 228、importer 110、ui 3、app(nativeHostDebug) 408——**合计 1056 tests，0 失败**；`selfCheck` 与 benchmarks 编译通过 |
 | `./gradlew :app:processNativeHostReleaseMainManifest -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD SUCCESSFUL**；merged `nativeHostRelease` manifest **无 `android.permission.SYSTEM_ALERT_WINDOW`、无 DoKit 组件**（release 权限仅 INTERNET/ACCESS_NETWORK_STATE/FOREGROUND_SERVICE(+MEDIA_PLAYBACK)/POST_NOTIFICATIONS）；该权限只声明在 `src/debug/AndroidManifest.xml` 并只合入 debug variant |
-| `./gradlew :app:assembleNativeHostRelease -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD FAILED**（见下） |
+| `./gradlew :app:assembleNativeHostRelease :app:processNativeHostReleaseMainManifest -Ptarget=native -PversionCode=20414 -PversionName=2.4.4-native` | **BUILD SUCCESSFUL**（2026-11-25 修复 release 编译异常后复跑，4m 40s，44 executed / 323 up-to-date；见下） |
 
-### Release 编译失败（预先存在，与本轮无关，只记录不修）
+### Release 编译异常（预先存在）→ 已修复（2026-11-25）
 
-`:app:compileNativeHostReleaseKotlin` 失败：`DoKitInitializer.kt:8` / `:82` 引用 `com.didichuxing.doraemonkit.kit.main.MainIconDoKitView`，而 release 依赖是 `dokitx-no-op:3.5.0`（无此类）。该文件由 `9bedf9a9`（2026-11-24，本收尾计划基线之前）引入；第 10 轮 6 个提交均未触及它或 `app/build.gradle`，且在基线 `b8d2b455` 的干净工作树上即可复现（最后一次成功的 release APK 产物是 2026-11-06、versionName 0.0.0，早于 DoKit 接入）。权限边界不受影响（上表 manifest 核查通过）。**留待独立修复**：release 改用条件调用或把浮动图标入口移入 debug source set，不得混入文档收尾提交。
+`:app:compileNativeHostReleaseKotlin` 曾失败：`DoKitInitializer.kt:8` / `:82` 引用 `com.didichuxing.doraemonkit.kit.main.MainIconDoKitView`，而 release 依赖是 `dokitx-no-op:3.5.0`（无此类）。该文件由 `9bedf9a9`（2026-11-24，本收尾计划基线之前）引入；第 10 轮 6 个提交均未触及它或 `app/build.gradle`，且在基线 `b8d2b455` 的干净工作树上即可复现（最后一次成功的 release APK 产物是 2026-11-06、versionName 0.0.0，早于 DoKit 接入）。权限边界不受影响（上表 manifest 核查通过）。
+
+**修复（2026-11-25，提交 `fix(android): compile release without the debug icon class`）**：`DoKitInitializer` 删除 `MainIconDoKitView` 的 import 与编译期引用，浮动图标类名改为 `MAIN_ICON_CLASS` 常量、经 `Class.forName` 解析，`DoKit.launchFloating` 一并反射分发；类或方法解析不到时静默返回，异常仍被捕获并记日志，`enabledProvider` 守卫与安装逻辑不变——release 依旧不会调用 DoKit，debug 行为不变，依赖与构建脚本未动。复跑 `:app:assembleNativeHostRelease :app:processNativeHostReleaseMainManifest` **BUILD SUCCESSFUL**（4m 40s），merged `nativeHostRelease` manifest 依旧无 `SYSTEM_ALERT_WINDOW`、无 DoKit 组件（release 权限仅 INTERNET/ACCESS_NETWORK_STATE/FOREGROUND_SERVICE(+MEDIA_PLAYBACK)/POST_NOTIFICATIONS + 动态广播接收器权限）；`DoKitInitializerTest` 3/3 通过。**release 编译异常至此已修复，不再阻塞收尾**。
 
 ### 仍未验证（真机，全部保持开放）
 
