@@ -62,6 +62,7 @@ fun ReaderSelectionBottomSheet(
     onSaveHighlight: (colorIndex: Int) -> Unit,
     onDeleteHighlight: () -> Unit,
     onAction: (SelectionMenuAction) -> Unit,
+    onAdjustSelection: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Cap the sheet height and let the content scroll. Without the cap, a
@@ -117,6 +118,13 @@ fun ReaderSelectionBottomSheet(
                     icon = { ActionIcon(action) },
                     label = t(action.titleKey),
                     onClick = { onAction(action) },
+                )
+            }
+            onAdjustSelection?.let { onAdjust ->
+                SelectionActionRow(
+                    icon = { Icon(painterResource(R.drawable.ic_note), contentDescription = null) },
+                    label = t("Adjust selection"),
+                    onClick = onAdjust,
                 )
             }
         }

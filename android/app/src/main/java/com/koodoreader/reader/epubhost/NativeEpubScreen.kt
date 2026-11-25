@@ -184,6 +184,7 @@ import com.koodoreader.reader.shell.rememberReaderFirstRunGuide
 import com.koodoreader.reader.shell.ReaderProgressMath
 import com.koodoreader.reader.shell.ReaderProgressPrefs
 import com.koodoreader.reader.shell.ReaderSelectionBottomSheet
+import com.koodoreader.reader.shell.ReaderSelectionUiPolicy
 import com.koodoreader.reader.shell.ReaderSystemBars
 import com.koodoreader.reader.shell.ReaderTapKind
 import com.koodoreader.reader.shell.ReaderTapTarget
@@ -339,6 +340,7 @@ fun NativeEpubScreen(
     var selectionCharCount by remember { mutableStateOf(0) }
     var selectionCfi by remember { mutableStateOf("") }
     var showSelectionMenu by remember { mutableStateOf(false) }
+    var selectionAdjusting by remember { mutableStateOf(false) }
     // 选区两端把手位置（根 Box 坐标），foliate 轨由 JS selectionEdges 提供。
     var selectionEdges by remember { mutableStateOf<FoliateSelectionMenu.SelectionEdges?>(null) }
     var foliateViewBounds by remember { mutableStateOf(Rect.Zero) }
@@ -1610,6 +1612,9 @@ fun NativeEpubScreen(
     BackHandler(enabled = showChrome) { showChrome = false }
     BackHandler(enabled = showToc) { showToc = false }
     BackHandler(enabled = showSelectionMenu) { showSelectionMenu = false }
+    BackHandler(enabled = showSelectionMenu && selectionAdjusting) {
+        selectionAdjusting = false
+    }
 
     MaterialTheme(colorScheme = readerScheme) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -2233,10 +2238,12 @@ fun NativeEpubScreen(
         modifier = Modifier.fillMaxSize(),
     )
 
-    // ── 选区把手（foliate 轨）：位置跟随选区变化；菜单关闭即清把手并
+    // ── 选区把手（foliate 轨）：仅调整模式查询位置；菜单关闭即清把手并
     // 折叠 WebView 选区，避免残留选中态再次触发 selectionchange 弹菜单。 ──
-    LaunchedEffect(showSelectionMenu, selectionCfi, selectionExcerpt) {
-        if (!showSelectionMenu || !useFoliate) return@LaunchedEffect
+    LaunchedEffect(showSelectionMenu, selectionAdjusting, selectionCfi, selectionExcerpt) {
+        if (!ReaderSelectionUiPolicy.showHandles(showSelectionMenu, selectionAdjusting, useFoliate)) {
+            return@LaunchedEffect
+        }
         val edges = withContext(Dispatchers.IO) { foliateBridge?.selectionEdges() }
             ?: return@LaunchedEffect
         selectionEdges = FoliateSelectionMenu.SelectionEdges(
@@ -2253,35 +2260,49 @@ fun NativeEpubScreen(
     }
 
     // ── 选中行菜单：底部弹层（BottomSheet），避免顶部 Popup 遮挡正文。 ──
-    if (showSelectionMenu && FoliateSelectionMenu.visible(currentSelectionText())) {
+    if (ReaderSelectionUiPolicy.showMenu(showSelectionMenu, selectionAdjusting) &&
+        FoliateSelectionMenu.visible(currentSelectionText())
+    ) {
         val clipboard = LocalClipboardManager.current
-        val highlighted = isSelectionHighlighted()
         ReaderSelectionBottomSheet(
-            highlighted = highlighted,
+            highlighted = isSelectionHighlighted(),
             actions = selectionActions,
             onDismiss = { showSelectionMenu = false },
             onSaveHighlight = { saveHighlight(it) },
             onDeleteHighlight = { deleteHighlight() },
             onAction = { runSelectionAction(it, clipboard) },
+            onAdjustSelection = if (useFoliate) {
+                { selectionAdjusting = true }
+            } else {
+                null
+            },
         )
     }
     // ── 选区拖动手柄：两端各一，拖动把触点换算回 WebView CSS px 交给
     // extendSelection；JS 侧 selectionchange 回流后 effects 重查把手位置。 ──
-    selectionEdges?.let { edges ->
-        SelectionDragHandle(
-            anchor = edges.start,
-            startEdge = true,
-            density = density,
-            boundsLeft = foliateViewBounds.left,
-            boundsTop = foliateViewBounds.top,
-        ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = true) }
-        SelectionDragHandle(
-            anchor = edges.end,
-            startEdge = false,
-            density = density,
-            boundsLeft = foliateViewBounds.left,
-            boundsTop = foliateViewBounds.top,
-        ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = false) }
+    if (ReaderSelectionUiPolicy.showHandles(showSelectionMenu, selectionAdjusting, useFoliate)) {
+        selectionEdges?.let { edges ->
+            SelectionDragHandle(
+                anchor = edges.start,
+                startEdge = true,
+                density = density,
+                boundsLeft = foliateViewBounds.left,
+                boundsTop = foliateViewBounds.top,
+            ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = true) }
+            SelectionDragHandle(
+                anchor = edges.end,
+                startEdge = false,
+                density = density,
+                boundsLeft = foliateViewBounds.left,
+                boundsTop = foliateViewBounds.top,
+            ) { xCss, yCss -> foliateBridge?.extendSelection(xCss, yCss, startEdge = false) }
+        }
+        TextButton(
+            onClick = { selectionAdjusting = false },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = contentInsets.bottom + SpaceTokens.md.dp),
+        ) { Text(t("Done")) }
     }
 
     } // Box wrapping Scaffold + selection overlay

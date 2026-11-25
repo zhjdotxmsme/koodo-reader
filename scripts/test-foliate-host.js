@@ -247,6 +247,11 @@ async function main() {
     await engine.close();
     eq('close drops the book', engine.isOpen, false);
 
+    const { selectionRangeIsUsable } = await import(pathToFileURL(ENGINE_MJS).href);
+    eq('collapsed drag range is rejected before replacing a live selection', selectionRangeIsUsable({ collapsed: true }), false);
+    eq('non-collapsed drag range remains usable', selectionRangeIsUsable({ collapsed: false }), true);
+    eq('missing drag range is rejected', selectionRangeIsUsable(null), false);
+
     eq(
         'collapsed selection hides the host menu',
         JSON.stringify(selectionPayload({ isCollapsed: true, toString: () => '字' }, 'epubcfi(/6/2)')),

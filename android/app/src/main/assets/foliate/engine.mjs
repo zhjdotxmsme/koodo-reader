@@ -34,6 +34,10 @@ export function selectionPayload(sel, cfi, point) {
     return out;
 }
 
+export function selectionRangeIsUsable(range) {
+    return !!range && !range.collapsed;
+}
+
 /**
  * Spine index encoded in an EPUB CFI.
  *
@@ -780,9 +784,9 @@ export function createFoliateEngine(options) {
     }
 
     // Drag a selection edge to (x, y) in top-level WebView viewport
-    // coordinates. Range.setStart/setEnd collapse when the edge crosses the
-    // other end, so handles can pass each other naturally. The resulting
-    // selectionchange re-reports excerpt/cfi to the host.
+    // coordinates. Range.setStart/setEnd collapse when the edge reaches or
+    // crosses the other end; keep the live selection unchanged in that case.
+    // A successful selectionchange re-reports excerpt/cfi to the host.
     function extendSelection(x, y, edge) {
         const found = activeSelectionDoc();
         if (!found) return { ok: false };
@@ -798,6 +802,7 @@ export function createFoliateEngine(options) {
             r.setStart(found.range.startContainer, found.range.startOffset);
             r.setEnd(caret.startContainer, caret.startOffset);
         }
+        if (!selectionRangeIsUsable(r)) return { ok: false, clamped: true };
         found.sel.removeAllRanges();
         found.sel.addRange(r);
         return { ok: true };
