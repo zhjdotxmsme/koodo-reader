@@ -220,7 +220,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import com.koodoreader.core.designsystem.MotionTokens
 import com.koodoreader.core.designsystem.SpaceTokens
-import com.koodoreader.core.designsystem.ReaderCjkColumn
 import com.koodoreader.core.ui.component.ErrorState
 import com.koodoreader.core.ui.component.SelectionCountBadge
 import com.koodoreader.core.ui.component.selectionCharacterCount
@@ -1784,34 +1783,13 @@ fun NativeEpubScreen(
                     hasFile = file != null,
                     assetsAvailable = assets.available,
                 ) -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    // P0-2 (WebView track): the native engine quantises its
-                    // column itself, but foliate lays the book out in a real
-                    // browser — the only lever is symmetric side padding, which
-                    // narrows the page so the text column lands on a whole
-                    // number of character cells. It is measured in dp (= CSS px
-                    // inside the WebView) and depends only on the width and the
-                    // body font, so it never changes with toolbar visibility and
-                    // cannot cause a re-pagination flash.
-                    val cjkSidePad = remember(
-                        maxWidth, contentInsets.left, contentInsets.right,
-                        features.fontScale, features.letterSpacingSp,
-                        viewSettings.marginPx, viewSettings.maxInlineSizePx,
-                    ) {
-                        ReaderCjkColumn.foliateSidePadFor(
-                            viewportPx = (maxWidth - contentInsets.left - contentInsets.right).value,
-                            fontSizePx = ReaderFeatureCodec.fontSizePx(features),
-                            letterSpacingPx = ReaderFeatureCodec.letterSpacingCssPx(features),
-                            marginPx = viewSettings.marginPx.toFloat(),
-                            maxInlineSizePx = viewSettings.maxInlineSizePx.toFloat(),
-                        ).dp
-                    }
                     AndroidView(
                         factory = { foliateBridge?.view ?: android.view.View(it) },
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
-                                start = contentInsets.left + cjkSidePad,
-                                end = contentInsets.right + cjkSidePad,
+                                start = contentInsets.left,
+                                end = contentInsets.right,
                                 top = contentInsets.top,
                                 bottom = contentInsets.bottom,
                             )

@@ -631,6 +631,57 @@ async function main() {
         eq('reAnchor on no items is a clean report', empty.anchored + empty.failed.length, 0);
     }
 
+    // Real paginator geometry: paginated columns quantise to whole CJK cells
+    // (a cell is the body font size plus the tracking), so the ragged right
+    // edge of Chinese text lines up on every page. The customElements /
+    // HTMLElement shims let the module top level register the element without
+    // a browser; only the pure metrics helper is exercised here.
+    globalThis.HTMLElement = class {};
+    globalThis.customElements = { define: () => {} };
+    // paginator.js destructures these NodeFilter constants at module scope,
+    // so the shim needs the real DOM values to import at all.
+    globalThis.NodeFilter = {
+        SHOW_ELEMENT: 1, SHOW_TEXT: 4, SHOW_CDATA_SECTION: 8,
+        FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3,
+    };
+    const PAGINATOR_JS = path.join(
+        ROOT, 'android', 'app', 'src', 'main', 'assets', 'foliate', 'paginator.js',
+    );
+    const { getHorizontalColumnMetrics } = await import(pathToFileURL(PAGINATOR_JS).href);
+    delete globalThis.customElements;
+    delete globalThis.NodeFilter;
+    delete globalThis.HTMLElement;
+
+    const single = getHorizontalColumnMetrics({
+        width: 360, marginLeft: 16, marginRight: 16, gap: 18,
+        columnWidth: 360, columnCount: 1, columnGap: null,
+        cellFontSize: 17, cellLetterSpacing: 0,
+    });
+    eq('single page available width is a whole CJK run', single.availableWidth % 17, 0);
+    check('single page side padding stays finite', Number.isFinite(single.sidePaddingLeft) && Number.isFinite(single.sidePaddingRight));
+
+    const spread = getHorizontalColumnMetrics({
+        width: 720, marginLeft: 32, marginRight: 32, gap: 36,
+        columnWidth: 360, columnCount: 2, columnGap: null,
+        cellFontSize: 17, cellLetterSpacing: 0,
+    });
+    eq('spread column available width is a whole CJK run', spread.availableWidth % 17, 0);
+    check('spread keeps two finite columns', spread.columnWidth > 0 && spread.columnGap > 0);
+
+    const tracked = getHorizontalColumnMetrics({
+        width: 360, marginLeft: 16, marginRight: 16, gap: 18,
+        columnWidth: 360, columnCount: 1, columnGap: null,
+        cellFontSize: 17, cellLetterSpacing: -0.1,
+    });
+    check('signed tracking keeps a positive advance', tracked.availableWidth > 0 && Number.isFinite(tracked.availableWidth));
+
+    const degenerate = getHorizontalColumnMetrics({
+        width: 360, marginLeft: 16, marginRight: 16, gap: 18,
+        columnWidth: 360, columnCount: 1, columnGap: null,
+        cellFontSize: 0, cellLetterSpacing: 0,
+    });
+    eq('degenerate cell metrics preserve the original width', degenerate.availableWidth, 326);
+
 
     if (failures.length) {
         console.log(`\n${failures.length} failed, ${passed} passed`);

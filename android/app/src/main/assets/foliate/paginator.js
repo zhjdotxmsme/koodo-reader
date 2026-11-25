@@ -979,7 +979,7 @@ class View {
         this.#directionStyle.textContent =
             `body > *:not([dir]) { direction: ${this.#docDirection}; }`
     }
-    columnize({ width, height, marginTop, marginRight, marginBottom, marginLeft, gap, columnWidth, columnCount, columnGap }) {
+    columnize({ width, height, marginTop, marginRight, marginBottom, marginLeft, gap, columnWidth, columnCount, columnGap, cellFontSize, cellLetterSpacing }) {
         const vertical = this.#vertical
         this.#size = vertical ? height : width
         this.#columnCount = columnCount || 1
@@ -991,6 +991,10 @@ class View {
         } = getHorizontalColumnMetrics({
             width, marginLeft, marginRight, gap, columnWidth, columnCount,
             columnGap: vertical ? null : columnGap,
+            // Vertical writing quantises along the block axis elsewhere; only
+            // horizontal paginated columns sit on the CJK cell grid.
+            cellFontSize: vertical ? undefined : cellFontSize,
+            cellLetterSpacing: vertical ? undefined : cellLetterSpacing,
         })
         setStylesImportant(doc.documentElement, {
             'box-sizing': 'border-box',
@@ -1450,6 +1454,35 @@ class View {
     }
 }
 
+// Quantise a paginated column to whole CJK cells: a cell is the body font
+// size plus the tracking, so a column holding a whole number of cells ends
+// every line on the character grid and justification has no slack to make
+// the tracking breathe. The leftover width goes to the gap and splits evenly
+// over the side paddings, which keeps each page tile — and with it the page
+// edge — where the raw metrics put it. Degenerate input (missing or
+// non-positive cell metrics, or a column narrower than four cells) returns
+// the raw metrics untouched.
+const quantizeColumnMetrics = (metrics, fontSize, letterSpacing) => {
+    if (!Number.isFinite(fontSize) || !Number.isFinite(letterSpacing)) return metrics
+    const cell = fontSize + letterSpacing
+    if (!(fontSize > 0) || !(cell > 0)) return metrics
+    const available = metrics.availableWidth
+    if (!Number.isFinite(available) || available <= 0) return metrics
+    const cells = Math.floor((available + letterSpacing) / cell)
+    if (cells < 4) return metrics
+    const width = cells * fontSize + Math.max(0, cells - 1) * letterSpacing
+    if (!Number.isFinite(width) || width <= 0 || width > available) return metrics
+    const extra = available - width
+    return {
+        ...metrics,
+        columnGap: metrics.columnGap + extra,
+        sidePaddingLeft: metrics.sidePaddingLeft + extra / 2,
+        sidePaddingRight: metrics.sidePaddingRight + extra / 2,
+        columnWidth: width,
+        availableWidth: width,
+    }
+}
+
 // Horizontal metrics of a paginated column layout: the CSS column gap, the
 // root's side padding, the `column-width` hint and the content width of one
 // column. The document is one multi-column flow that the container scrolls
@@ -1461,22 +1494,31 @@ class View {
 // the host grid instead (getColumnGapHostTracks). The width hint shrinks with
 // the gap: the browser fits floor((content + gap) / (hint + gap)) columns, so
 // the derived hint under a wider gap collapses the spread to a single column.
-export const getHorizontalColumnMetrics = ({ width, marginLeft, marginRight, gap, columnWidth, columnCount, columnGap }) => {
+// `cellFontSize` / `cellLetterSpacing` quantise the column to whole CJK
+// character cells (see quantizeColumnMetrics); the host passes them only for
+// horizontal paginated layouts.
+export const getHorizontalColumnMetrics = ({ width, marginLeft, marginRight, gap, columnWidth, columnCount, columnGap, cellFontSize, cellLetterSpacing }) => {
     const multi = columnCount > 1
     if (!multi || !Number.isFinite(columnGap) || columnGap < 0) {
         const sidePaddingLeft = multi ? marginLeft / 4 + gap / 4 : marginLeft / 2 + gap / 2
         const sidePaddingRight = multi ? marginRight / 4 + gap / 4 : marginRight / 2 + gap / 2
-        return {
+        return quantizeColumnMetrics({
             columnGap: multi ? (marginLeft + marginRight) / 4 + gap / 2 : (marginLeft + marginRight) / 2 + gap,
             sidePaddingLeft,
             sidePaddingRight,
             columnWidth: Math.trunc(columnWidth),
             availableWidth: Math.trunc(width / columnCount - sidePaddingLeft - sidePaddingRight),
-        }
+        }, cellFontSize, cellLetterSpacing)
     }
     const sidePadding = columnGap / 2
     const column = Math.trunc(width / columnCount - columnGap)
-    return { columnGap, sidePaddingLeft: sidePadding, sidePaddingRight: sidePadding, columnWidth: column, availableWidth: column }
+    return quantizeColumnMetrics({
+        columnGap,
+        sidePaddingLeft: sidePadding,
+        sidePaddingRight: sidePadding,
+        columnWidth: column,
+        availableWidth: column,
+    }, cellFontSize, cellLetterSpacing)
 }
 
 // How the host grid keeps the text's outer edge under a `column-gap`
@@ -1506,7 +1548,8 @@ export const getColumnGapHostTracks = ({ columnGap, marginLeft, marginRight, hos
 // NOTE: everything here assumes the so-called "negative scroll type" for RTL
 export class Paginator extends HTMLElement {
     static observedAttributes = [
-        'flow', 'gap', 'column-gap', 'margin-top', 'margin-bottom', 'margin-left', 'margin-right',
+        'flow', 'gap', 'column-gap', 'cell-font-size', 'cell-letter-spacing',
+        'margin-top', 'margin-bottom', 'margin-left', 'margin-right',
         'max-inline-size', 'max-block-size', 'max-column-count',
         'no-preload', 'no-background', 'no-continuous-scroll',
     ]
@@ -1943,6 +1986,12 @@ export class Paginator extends HTMLElement {
                 this.render()
                 break
             }
+            // Cell metrics re-quantise the paginated columns, so they need the
+            // same explicit re-render as the other non-resizing attributes.
+            case 'cell-font-size':
+            case 'cell-letter-spacing':
+                this.render()
+                break
             case 'gap':
             case 'margin-top':
             case 'margin-bottom':
@@ -2379,7 +2428,13 @@ export class Paginator extends HTMLElement {
         this.#header.replaceChildren(...heads)
         this.#footer.replaceChildren(...feet)
 
-        const layout = { width, height, marginTop, marginRight, marginBottom, marginLeft, gap, columnWidth, columnCount: divisor, columnGap, rtl: this.#rtl }
+        // Body font size and tracking, as CSS px, for whole-cell column
+        // quantisation. Read here but attached only to the paginated layout:
+        // scrolled flow has no columns to quantise (its view never calls
+        // columnize), and columnize itself keeps vertical flows out.
+        const cellFontSize = Number.parseFloat(this.getAttribute('cell-font-size'))
+        const cellLetterSpacing = Number.parseFloat(this.getAttribute('cell-letter-spacing'))
+        const layout = { width, height, marginTop, marginRight, marginBottom, marginLeft, gap, columnWidth, columnCount: divisor, columnGap, cellFontSize, cellLetterSpacing, rtl: this.#rtl }
         this.#lastLayout = layout
         return layout
     }

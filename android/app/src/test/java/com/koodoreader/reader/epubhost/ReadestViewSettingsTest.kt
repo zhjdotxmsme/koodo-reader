@@ -114,4 +114,22 @@ class ReadestViewSettingsTest {
         )
         assertEquals(0, snapshot.marginPx)
     }
+
+    @Test
+    fun `signed tracking round-trips into the snapshot`() {
+        // letterSpacingCssPx is the CJK base (0 sp) plus the reader's signed
+        // adjustment, so both directions of the slider must survive into the
+        // foliate bridge: negative tightens, positive loosens.
+        val negative = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(letterSpacingSp = -0.05f, fontScale = 1.0f),
+        )
+        assertEquals(-0.05, negative.letterSpacingPx, 1e-6)
+        val positive = ReadestViewSettings.from(
+            ThemeKind.DEFAULT,
+            ReaderFeatureState(letterSpacingSp = 0.1f, fontScale = 1.0f),
+        )
+        assertEquals(0.1, positive.letterSpacingPx, 1e-6)
+        assertEquals(0.0, ReadestViewSettings.from(ThemeKind.DEFAULT, ReaderFeatureState()).letterSpacingPx, 0.0)
+    }
 }

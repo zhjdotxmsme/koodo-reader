@@ -706,6 +706,14 @@ export function createFoliateEngine(options) {
                 view.renderer.setAttribute('max-column-count', String(maxColumnCount));
                 view.renderer.setAttribute('max-inline-size', maxInlineSizePx + 'px');
                 view.renderer.setAttribute('gap', '5%');
+                // Cell metrics for the paginator's CJK column quantisation:
+                // the same 1.25 mobile factor readest-style.mjs applies to
+                // defaultFontSize, so a cell is the real body advance; the
+                // tracking is signed and may be negative.
+                const cellFontSize = Number(appearance.defaultFontSize || 13.6) * 1.25;
+                const cellLetterSpacing = Number(appearance.letterSpacingPx || 0);
+                view.renderer.setAttribute('cell-font-size', String(cellFontSize));
+                view.renderer.setAttribute('cell-letter-spacing', String(cellLetterSpacing));
                 const margin = Math.max(0, Number(appearance.marginPx || 0)) + 'px';
                 view.renderer.setAttribute('margin-top', margin);
                 view.renderer.setAttribute('margin-right', margin);

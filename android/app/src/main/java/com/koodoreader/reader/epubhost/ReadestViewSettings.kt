@@ -24,6 +24,7 @@ object ReadestViewSettings {
         val userStylesheet: String = "",
         val textRulesJson: String = "",
         val maxInlineSizePx: Int = 720,
+        val letterSpacingPx: Double = 0.0,
     )
 
     fun from(
@@ -64,6 +65,11 @@ object ReadestViewSettings {
             defaultFont = defaultFont,
             userStylesheet = userCss,
             textRulesJson = features.textRulesJson,
+            // Tracking in CSS px for the foliate column quantiser: a cell is
+            // the body font size plus this value (see paginator.js
+            // quantizeColumnMetrics). Signed, so the foliate side can quantise
+            // tight tracking the same way the native engine does.
+            letterSpacingPx = ReaderFeatureCodec.letterSpacingCssPx(features).toDouble(),
         )
     }
 }

@@ -226,6 +226,7 @@ class FoliateHostBridge(
             .put("userStylesheet", snapshot.userStylesheet)
             .put("textRulesJson", snapshot.textRulesJson)
             .put("maxInlineSizePx", snapshot.maxInlineSizePx)
+            .put("letterSpacingPx", snapshot.letterSpacingPx)
         runJs(method = "setViewSettings", args = listOf(payload.toString()))
     }
 
