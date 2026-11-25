@@ -17,7 +17,9 @@ package com.koodoreader.engine.layout
  * @property firstLineIndentPx the fallback first-line indent, in px, applied to
  *   every block that does not declare its own `text-indent`. The Chinese
  *   convention is two character widths (2em), which scales with the font size.
- * @property letterSpacingPx the fallback letter spacing, in px.
+ * @property letterSpacingPx the fallback letter spacing, in px — signed
+ *   (negative = tighter). What must hold is the cell advance,
+ *   `fontSizePx + letterSpacingPx > 0`, not the sign of the tracking itself.
  */
 data class PaginatorOptions(
     val columnsPerPage: Int = 1,
@@ -48,7 +50,7 @@ data class PaginatorOptions(
      * indent keeps it and the reader's default only fills the gap.
      */
     val firstLineIndentPx: Float = 0f,
-    /** Fallback letter spacing in px (0 = none). */
+    /** Fallback letter spacing in px (signed; negative = tighter). */
     val letterSpacingPx: Float = 0f,
     /**
      * How a justified line distributes its leftover width.
@@ -72,7 +74,10 @@ data class PaginatorOptions(
         require(widowsOrphans in 0..4) { "widowsOrphans must be 0..4 (was $widowsOrphans)" }
         require(fontSizePx > 0f) { "fontSizePx must be > 0 (was $fontSizePx)" }
         require(firstLineIndentPx >= 0f) { "firstLineIndentPx must be >= 0 (was $firstLineIndentPx)" }
-        require(letterSpacingPx >= 0f) { "letterSpacingPx must be >= 0 (was $letterSpacingPx)" }
+        require(letterSpacingPx.isFinite()) { "letterSpacingPx must be finite" }
+        require(fontSizePx + letterSpacingPx > 0f) {
+            "fontSizePx + letterSpacingPx must be > 0"
+        }
     }
 }
 

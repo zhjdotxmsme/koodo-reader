@@ -31,10 +31,11 @@ class ReaderFeatureStateTest {
         assertTrue(s.scrolled)
         assertFalse(s.customBookCssEnabled)
         assertTrue(s.customBookCss.isEmpty())
-        // The stylesheet now carries the CJK typography: tracking, a flush
-        // right edge, and the 10dp paragraph gap.
+        // The stylesheet carries the CJK typography: a flush right edge and
+        // the 10dp paragraph gap. Tracking is opt-in now, so the default state
+        // emits no letter-spacing declaration at all.
         val css = ReaderFeatureCodec.userStylesheet(s, density = 1f)
-        assertTrue(css, css.contains("letter-spacing:0.5px;"))
+        assertFalse(css, css.contains("letter-spacing"))
         assertTrue(css, css.contains("text-align:justify;"))
         assertTrue(css, css.contains("margin-bottom:10px !important;"))
         assertEquals(ReaderPerformancePolicy.TIER_NORMAL, s.perfTier)
@@ -145,10 +146,11 @@ class ReaderFeatureStateTest {
             customBookCss = "body{color:blue}",
             customBookCssEnabled = false,
         )
-        // The stylesheet now carries the CJK typography: tracking, a flush
-        // right edge, and the 10dp paragraph gap.
+        // The stylesheet carries the CJK typography: a flush right edge and
+        // the 10dp paragraph gap. Tracking is opt-in now, so the default state
+        // emits no letter-spacing declaration at all.
         val css = ReaderFeatureCodec.userStylesheet(s, density = 1f)
-        assertTrue(css, css.contains("letter-spacing:0.5px;"))
+        assertFalse(css, css.contains("letter-spacing"))
         assertTrue(css, css.contains("text-align:justify;"))
         assertTrue(css, css.contains("margin-bottom:10px !important;"))
     }
@@ -285,15 +287,16 @@ class ReaderFeatureStateTest {
     fun `letter spacing reaches both rendering tracks`() {
         val wide = ReaderFeatureState(letterSpacingSp = 0.1f)
         val base = ReaderFeatureState()
-        // WebView track: CSS px = dp, so no density in the number.
+        // WebView track: CSS px = dp, so no density in the number. The default
+        // state emits no letter-spacing rule; the slider's 0.1sp emits 0.1px.
         val baseCss = ReaderFeatureCodec.userStylesheet(base, density = 1f)
         val wideCss = ReaderFeatureCodec.userStylesheet(wide, density = 1f)
-        assertTrue(baseCss, baseCss.contains("letter-spacing:0.5px;"))
-        assertTrue(wideCss, wideCss.contains("letter-spacing:0.6px;"))
+        assertFalse(baseCss, baseCss.contains("letter-spacing"))
+        assertTrue(wideCss, wideCss.contains("letter-spacing:0.1px;"))
         // Native track: px, so density scales it.
         val options = ReaderTypography.paginatorOptions(
             density = 3f, letterSpacingSp = 0.1f,
         )
-        assertEquals((0.5f + 0.1f) * 3f, options.letterSpacingPx, 0.001f)
+        assertEquals(0.3f, options.letterSpacingPx, 0.001f)
     }
 }

@@ -24,11 +24,12 @@ class CjkTypographyTest {
     }
 
     @Test
-    fun `letter spacing defaults to a positive half sp`() {
-        assertEquals(0.5f, CjkTypography.LETTER_SPACING_SP)
-        // A hair of tracking: enough to separate CJK ink, which fills its
-        // whole em box and frequently touches the neighbour's.
-        assertEquals(1.5f, CjkTypography.letterSpacingPx(density = 3f), 0.0001f)
+    fun `letter spacing defaults to zero tracking`() {
+        assertEquals(0f, CjkTypography.LETTER_SPACING_SP)
+        // Tracking is opt-in now: the default matches the desktop's 0, and the
+        // reader's slider adds on top of it. The conversion still honours the
+        // density, so a non-default setting scales the same way as before.
+        assertEquals(0f, CjkTypography.letterSpacingPx(density = 3f), 0.0001f)
     }
 
     @Test

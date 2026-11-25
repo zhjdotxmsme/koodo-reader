@@ -14,20 +14,24 @@ import com.koodoreader.engine.layout.TextJustify
  *
  * `:core:designsystem` owns the *values* ([CjkTypography]); `:engine:layout`
  * owns the *algorithm* (justification, indentation, tracking). This object is
- * the seam between them: it converts "0.5sp of tracking" into "N px at this
- * density and font scale", and it does so in exactly one place so that the
- * EPUB canvas track, the native text track and the PDF reflow track cannot
- * drift apart.
+ * the seam between them: it converts the chosen tracking, in sp, into "N px
+ * at this density and font scale", and it does so in exactly one place so
+ * that the EPUB canvas track, the native text track and the PDF reflow track
+ * cannot drift apart.
  *
  * ## Why the defaults differ from the desktop
  *
  * The desktop reader config stores `letterSpacing: 0`, `paraSpacing: 0`,
  * `textAlign: "left"` and no first-line indent. Those are *desktop* defaults
  * tuned for Latin prose. On a phone, reading Chinese, they produce a ragged
- * right edge, no paragraph breaks and glyphs that touch. The native reader
- * therefore applies the CJK defaults on top of whatever the desktop config
- * carries — the persisted config still round-trips to the desktop unchanged,
- * but the native presentation is correct for the language actually on screen.
+ * right edge and indistinguishable paragraphs. Their zero tracking the native
+ * reader keeps: a fixed hair of tracking helps CJK ink but opens a gap inside
+ * Latin words, so tracking is opt-in through the reader's slider (down to
+ * −0.1 sp; the engine only demands the cell advance stay positive). The
+ * native reader therefore applies the CJK defaults on top of whatever the
+ * desktop config carries — the persisted config still round-trips to the
+ * desktop unchanged, but the native presentation is correct for the language
+ * actually on screen.
  *
  * A user who has *explicitly* chosen a value in the settings keeps it: this
  * object supplies the **fallback**, and the settings layer only overrides it
@@ -45,10 +49,15 @@ object ReaderTypography {
     val fallbackTextAlign: TextAlign = TextAlign.JUSTIFY
 
     /**
-     * The fallback letter spacing, in px, for the given density and font scale.
+     * The letter spacing, in px, for the given density and font scale.
      *
-     * @param extraSp the reader's own tracking adjustment on top of the CJK
-     *   default (see [ReaderFeatureState.letterSpacingSp]).
+     * The CJK default ([CjkTypography.LETTER_SPACING_SP]) is 0 — tracking is
+     * opt-in — so the value is the reader's chosen sp converted to px. The
+     * conversion honours both the density and the font scale, and accepts a
+     * negative choice: the engine only rejects a tracking that would consume
+     * the font's own advance.
+     *
+     * @param extraSp the reader's tracking in sp (see [ReaderFeatureState.letterSpacingSp]).
      */
     fun letterSpacingPx(density: Float, fontScale: Float = 1f, extraSp: Float = 0f): Float =
         (CjkTypography.LETTER_SPACING_SP + extraSp) * density * fontScale.coerceAtLeast(0.5f)
@@ -96,7 +105,7 @@ object ReaderTypography {
         /** Explicit paragraph gap in **dp**, or 0 when the user has not set one. */
         explicitParagraphSpacingPx: Float = 0f,
         firstLineIndent: Boolean = true,
-        /** Extra tracking on top of the CJK default, in **sp**. */
+        /** The reader's tracking, in **sp** (the CJK default of 0 adds nothing). */
         letterSpacingSp: Float = 0f,
     ): PaginatorOptions = PaginatorOptions(
         columnsPerPage = columnsPerPage,
@@ -155,7 +164,7 @@ object ReaderTypography {
         firstLineIndent: Boolean = true,
         justify: Boolean = true,
         explicitParagraphSpacingPx: Float = 0f,
-        /** Extra tracking on top of the CJK default, in **sp** (= CSS px here). */
+        /** The reader's tracking, in **sp** (= CSS px here). */
         letterSpacingSp: Float = 0f,
     ): String = CjkStyleSheet.build(
         CjkStyleSheet.Rule(
@@ -168,7 +177,8 @@ object ReaderTypography {
                 CjkTypography.PARAGRAPH_SPACING_DP * fontScale.coerceAtLeast(0.5f)
             },
             firstLineIndentEm = CjkTypography.FIRST_LINE_INDENT_EM,
-            // CSS px again: 0.5sp of tracking is 0.5 CSS px, not 0.5 × density.
+            // CSS px again: 0.1sp of tracking is 0.1 CSS px, not 0.1 × density.
+            // Zero tracking (the default) emits no declaration at all.
             letterSpacingPx = (CjkTypography.LETTER_SPACING_SP + letterSpacingSp) *
                 fontScale.coerceAtLeast(0.5f),
             justify = justify,

@@ -289,7 +289,7 @@ class CjkTypographyLayoutTest {
     }
 
     @Test
-    fun `paginator options reject a negative indent or tracking`() {
+    fun `paginator options reject a negative indent or a collapsed advance`() {
         var rejected = false
         try {
             PaginatorOptions(firstLineIndentPx = -1f)
@@ -298,12 +298,15 @@ class CjkTypographyLayoutTest {
         }
         assertTrue(rejected, "a negative first-line indent must be rejected")
 
+        // Negative tracking itself is legal; what must never happen is a
+        // tracking that consumes the font's own advance (the cell would
+        // collapse to zero width and quantisation could not fit any column).
         rejected = false
         try {
-            PaginatorOptions(letterSpacingPx = -1f)
+            PaginatorOptions(letterSpacingPx = -17f)
         } catch (e: IllegalArgumentException) {
             rejected = true
         }
-        assertTrue(rejected, "a negative letter spacing must be rejected")
+        assertTrue(rejected, "a non-positive cell advance must be rejected")
     }
 }

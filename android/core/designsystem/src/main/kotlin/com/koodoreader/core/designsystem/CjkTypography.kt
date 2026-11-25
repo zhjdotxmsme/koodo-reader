@@ -14,9 +14,12 @@ package com.koodoreader.core.designsystem
  *  2. **No first-line indent.** Chinese convention marks a new paragraph with a
  *     two-character indent, not a blank line. Without it, Chinese paragraphs
  *     are indistinguishable from line wraps.
- *  3. **Zero letter spacing.** CJK glyphs occupy the full em box and their ink
- *     frequently touches the neighbour's ink. A hair of tracking restores the
- *     visual gap.
+ *  3. **Touching ink.** CJK glyphs occupy the full em box and their ink
+ *     frequently touches the neighbour's, which reads as smear at small
+ *     sizes. Tracking can separate it — but a fixed hair of tracking also
+ *     opens a visible gap inside Latin words, so the default tracking stays
+ *     at the desktop's 0 and separating the ink is the reader's
+ *     letter-spacing slider's call ([LETTER_SPACING_SP]).
  *
  * These are the *reader defaults* (what a Chinese reader sees before touching
  * any setting). They are deliberately NOT applied to the shell UI, and they do
@@ -64,27 +67,29 @@ object CjkTypography {
     /**
      * Default letter spacing, in **sp**.
      *
-     * `0.5sp` — a hair of tracking between characters.
+     * `0` — the desktop default. An earlier default added a hair of tracking
+     * (0.5 sp) to separate CJK ink, which fills its whole em box and
+     * frequently touches the neighbour's; the same hair, however, opened a
+     * visible gap inside Latin words and moved every line break, so tracking
+     * is **opt-in** now: the reader's letter-spacing slider adds up to
+     * ±0.1 sp on top of this base, and the native engine accepts the signed
+     * result as long as the cell advance stays positive.
      *
-     * CJK glyphs fill their whole em box and their ink frequently touches the
-     * neighbour's, which is what makes dense Chinese text look smeared at a
-     * small size. 0.5sp is the smallest increment that visibly separates the
-     * ink without opening a gap in Latin words.
-     *
-     * ## Why this does not cause the "字距忽大忽小" problem
+     * ## Why a non-zero tracking cannot cause the "字距忽大忽小" problem
      *
      * Tracking is only harmful when it is *added on top of* a stretched
      * justification. That is avoided by [CjkColumn] column quantisation: the
      * column is fitted to a whole number of character cells — a cell being the
      * font size **plus** the tracking — and the first-line indent is rounded
      * to the same grid. Every line therefore ends exactly on the grid, and
-     * the justification engine has no slack to distribute, so the tracking
-     * stays at 0.5sp on every single line.
+     * the justification engine has no slack to distribute, so whatever
+     * tracking is chosen stays identical on every single line.
      *
-     * The two features are a pair: quantisation alone would leave the glyphs
-     * touching, and tracking alone would produce uneven spacing.
+     * The two features are a pair: quantisation makes any fixed tracking
+     * value hold on every line, and the slider decides whether there is
+     * tracking to hold.
      */
-    const val LETTER_SPACING_SP = 0.5f
+    const val LETTER_SPACING_SP = 0f
 
     /**
      * Extra spacing between paragraphs, in **dp**.

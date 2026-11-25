@@ -112,9 +112,36 @@ class LayoutTokensTest {
     }
 
     @Test
-    fun `negative letter spacing throws`() {
+    fun `negative letter spacing within the advance is accepted`() {
+        val t = LayoutTokens(
+            viewportWidthPx = 100f,
+            viewportHeightPx = 100f,
+            fontSizePx = 17f,
+            letterSpacingPx = -1f,
+        )
+        assertEquals(-1f, t.letterSpacingPx, EPS)
+    }
+
+    @Test
+    fun `letter spacing that consumes the font advance throws`() {
         assertThrows(IllegalArgumentException::class.java) {
-            LayoutTokens(viewportWidthPx = 100f, viewportHeightPx = 100f, letterSpacingPx = -1f)
+            LayoutTokens(
+                viewportWidthPx = 100f,
+                viewportHeightPx = 100f,
+                fontSizePx = 10f,
+                letterSpacingPx = -10f,
+            )
+        }
+    }
+
+    @Test
+    fun `non finite letter spacing throws`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            LayoutTokens(
+                viewportWidthPx = 100f,
+                viewportHeightPx = 100f,
+                letterSpacingPx = Float.NaN,
+            )
         }
     }
 
@@ -177,6 +204,17 @@ class LayoutTokensTest {
     fun `marginOf clamps to slider bounds`() {
         assertEquals(80f, DesktopReaderConfig.marginOf("999"), EPS)
         assertEquals(-40f, DesktopReaderConfig.marginOf("-999"), EPS)
+    }
+
+    @Test
+    fun `letterSpacingOf preserves the android negative range`() {
+        assertEquals(-0.1f, DesktopReaderConfig.letterSpacingOf("-0.1"), EPS)
+        // Tighter than the Android floor clamps to it, so the cell advance can
+        // never collapse through desktop-config parsing alone.
+        assertEquals(-0.1f, DesktopReaderConfig.letterSpacingOf("-5"), EPS)
+        // Non-negative desktop values keep working unchanged.
+        assertEquals(2f, DesktopReaderConfig.letterSpacingOf("2"), EPS)
+        assertEquals(DesktopReaderConfig.LETTER_SPACING_MAX, DesktopReaderConfig.letterSpacingOf("999"), EPS)
     }
 
     @Test

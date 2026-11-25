@@ -165,7 +165,14 @@ data class LayoutTokens(
         // the engine can never divide by zero or produce a negative column.
         require(marginHorizontalPx >= -viewportWidthPx / 2f) { "marginHorizontalPx out of range (was $marginHorizontalPx)" }
         require(marginVerticalPx >= -viewportHeightPx / 2f) { "marginVerticalPx out of range (was $marginVerticalPx)" }
-        require(letterSpacingPx >= 0f) { "letterSpacingPx must be >= 0 (was $letterSpacingPx)" }
+        // Tracking is signed (negative = tighter); the invariant that must
+        // hold is the cell advance — font size + tracking — staying positive,
+        // so shaping and column quantisation always have a positive step.
+        // A non-finite value would poison every width it touched.
+        require(letterSpacingPx.isFinite()) { "letterSpacingPx must be finite" }
+        require(fontSizePx + letterSpacingPx > 0f) {
+            "fontSizePx + letterSpacingPx must be > 0"
+        }
         require(paraSpacingPx >= 0f) { "paraSpacingPx must be >= 0 (was $paraSpacingPx)" }
         require(firstLineIndentPx >= 0f) { "firstLineIndentPx must be >= 0 (was $firstLineIndentPx)" }
         require(columnGapPx >= 0f) { "columnGapPx must be >= 0 (was $columnGapPx)" }
@@ -306,7 +313,19 @@ object DesktopReaderConfig {
     fun lineHeightOf(value: Any?): Float =
         floatOf(value, LINE_HEIGHT_DEFAULT).coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX)
 
-    fun letterSpacingOf(value: Any?): Float = floatOf(value, LETTER_SPACING_DEFAULT).coerceIn(0f, LETTER_SPACING_MAX)
+    /**
+     * Parse the `letterSpacing` config key.
+     *
+     * Desktop configs only ever store non-negative values (the desktop slider
+     * is 0..20), and those pass through unchanged. The Android reader's own
+     * tracking slider goes down to −0.1, so a config written on Android (or
+     * hand-edited) may carry a small negative: that range is permitted, with
+     * the floor chosen so the cell advance cannot collapse through parsing
+     * alone — [LayoutTokens] still enforces `fontSizePx + letterSpacingPx > 0`
+     * itself as the second line of defence.
+     */
+    fun letterSpacingOf(value: Any?): Float =
+        floatOf(value, LETTER_SPACING_DEFAULT).coerceIn(-0.1f, LETTER_SPACING_MAX)
 
     fun paraSpacingOf(value: Any?): Float = floatOf(value, PARA_SPACING_DEFAULT).coerceIn(0f, PARA_SPACING_MAX)
 

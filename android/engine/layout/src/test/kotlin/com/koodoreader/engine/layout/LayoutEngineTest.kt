@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -191,6 +192,21 @@ class LayoutEngineTest {
         // engine now subtracts it, so the measured width is the width the
         // canvas actually draws.
         assertEquals(46f, line(result, 1).width, EPS)
+    }
+
+    // ── tracking validation ─────────────────────────────────────────────────
+
+    @Test
+    fun `negative tracking is accepted while the cell advance stays positive`() {
+        val options = PaginatorOptions(fontSizePx = 17f, letterSpacingPx = -0.3f)
+        assertEquals(-0.3f, options.letterSpacingPx, EPS)
+    }
+
+    @Test
+    fun `tracking that consumes the font advance is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PaginatorOptions(fontSizePx = 0.2f, letterSpacingPx = -0.2f)
+        }
     }
 
     // ── pagination ──────────────────────────────────────────────────────────
