@@ -20,6 +20,9 @@ package com.koodoreader.engine.layout
  * @property letterSpacingPx the fallback letter spacing, in px — signed
  *   (negative = tighter). What must hold is the cell advance,
  *   `fontSizePx + letterSpacingPx > 0`, not the sign of the tracking itself.
+ * @property languageAwareWidowsOrphans resolve the `orphans`/`widows` minimum
+ *   per block from its script (CJK blocks relax to 1) instead of applying
+ *   [widowsOrphans] to every block. See [ReaderScript.widowsOrphans].
  */
 data class PaginatorOptions(
     val columnsPerPage: Int = 1,
@@ -68,6 +71,18 @@ data class PaginatorOptions(
      * what makes the letter spacing change from line to line.
      */
     val quantizeColumnToCells: Boolean = false,
+    /**
+     * Resolve the `orphans`/`widows` minimum per block from its script.
+     *
+     * The configured [widowsOrphans] is tuned for Latin prose (2: a single
+     * stranded line looks broken). A printed Chinese book ends columns with a
+     * single line all the time, so when this is on, blocks that carry CJK
+     * text ([ReaderScript.widowsOrphans]) use a minimum of 1 and keep their
+     * natural line count; Latin and other blocks keep [widowsOrphans].
+     * Off by default: generic paginator callers keep the configured minimum
+     * for every block. The native reader turns it on.
+     */
+    val languageAwareWidowsOrphans: Boolean = false,
 ) {
     init {
         require(columnsPerPage in 1..8) { "columnsPerPage must be 1..8 (was $columnsPerPage)" }
@@ -262,6 +277,15 @@ class LayoutEngine(
             }
 
             val block = flatBlock.block
+            // The orphan/widow minimum for THIS block: CJK-dominant blocks
+            // relax the configured minimum to 1 (a printed Chinese book ends
+            // a paragraph with a single line without blinking), everyone else
+            // keeps it. Resolved once per block, before the placement loop.
+            val blockWidowsOrphans = if (options.languageAwareWidowsOrphans) {
+                ReaderScript.widowsOrphans(block.text, options.widowsOrphans)
+            } else {
+                options.widowsOrphans
+            }
             if (block.isEmpty) {
                 prevStyle = block.style
                 continue
@@ -291,10 +315,10 @@ class LayoutEngine(
                         i++
                         continue
                     }
-                    if (placedInColumn < options.widowsOrphans && shaped.size > 1) {
-                        // Orphans: fewer than `widowsOrphans` lines of the block
-                        // would be left behind in this column, so the whole
-                        // block moves on.
+                    if (placedInColumn < blockWidowsOrphans && shaped.size > 1) {
+                        // Orphans: fewer than `blockWidowsOrphans` lines of the
+                        // block would be left behind in this column, so the
+                        // whole block moves on.
                         closeColumn()
                         i = 0
                         continue
@@ -313,14 +337,14 @@ class LayoutEngine(
                 val remaining = shaped.size - i
                 if (take < remaining) {
                     // The block splits at the bottom of this column.
-                    if (take < options.widowsOrphans) {
+                    if (take < blockWidowsOrphans) {
                         closeColumn()
                         i = 0
                         continue
                     }
                     // Widows: pull one line back so the next column does not
                     // start with a single stranded line.
-                    if (take > 1 && remaining - take < options.widowsOrphans) take--
+                    if (take > 1 && remaining - take < blockWidowsOrphans) take--
                 }
 
                 place(flatBlock, flatBlock.spine.index, shaped, i, i + take, align)

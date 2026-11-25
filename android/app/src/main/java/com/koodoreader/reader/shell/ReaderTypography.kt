@@ -144,6 +144,12 @@ object ReaderTypography {
         // justification engine spreads into the glyph gaps — the "假字距"
         // that makes a Chinese page look typeset by an amateur.
         quantizeColumnToCells = true,
+        // Chinese typesetting ends paragraphs (and columns) with a single line
+        // as a matter of course, so the Latin default minimum of 2 only
+        // produces half-empty Chinese columns. The engine classifies each
+        // block (ReaderScript) and relaxes the minimum to 1 for CJK blocks;
+        // Latin blocks keep the configured minimum.
+        languageAwareWidowsOrphans = true,
     )
 
     /**

@@ -245,6 +245,23 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun `language aware cjk pagination allows a single trailing line`() {
+        // Same five-line fixture as the widow test above, in CJK: with
+        // `languageAwareWidowsOrphans` the block-classified minimum (1) replaces
+        // the Latin default (2), so the column keeps its 4 lines and the
+        // paragraph ends with a single trailing line — what a printed Chinese
+        // book does on every page.
+        val fiveLines = "甲".repeat(40)
+        val result = LayoutEngine(
+            TextMeasurers.mono(),
+            PaginatorOptions(languageAwareWidowsOrphans = true),
+        ).layout(doc(TextBlock.of(fiveLines, elementIndex = 0)), tokens())
+        assertEquals(2, result.pageCount)
+        assertEquals(4, result.pages[0].lines.size)
+        assertEquals(1, result.pages[1].lines.size)
+    }
+
+    @Test
     fun `orphan control moves block to next column when fewer than minimum lines fit`() {
         // contentHeight = 80, lineH = 18 → 4 lines per column.
         // Block 1: 4 lines (one per word, since "aaaa bbbb" = 9 chars > 80 px).
