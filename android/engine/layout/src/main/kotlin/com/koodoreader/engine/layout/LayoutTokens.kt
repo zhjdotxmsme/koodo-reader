@@ -1,6 +1,7 @@
 package com.koodoreader.engine.layout
 
 import com.koodoreader.core.designsystem.CjkColumn
+import com.koodoreader.core.designsystem.CjkTypography
 
 /**
  * CSS `text-align` values the desktop reader exposes.
@@ -325,7 +326,7 @@ object DesktopReaderConfig {
      * itself as the second line of defence.
      */
     fun letterSpacingOf(value: Any?): Float =
-        floatOf(value, LETTER_SPACING_DEFAULT).coerceIn(-0.1f, LETTER_SPACING_MAX)
+        floatOf(value, LETTER_SPACING_DEFAULT).coerceIn(CjkTypography.LETTER_SPACING_MIN_SP, LETTER_SPACING_MAX)
 
     fun paraSpacingOf(value: Any?): Float = floatOf(value, PARA_SPACING_DEFAULT).coerceIn(0f, PARA_SPACING_MAX)
 

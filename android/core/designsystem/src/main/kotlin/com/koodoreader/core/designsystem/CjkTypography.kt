@@ -92,6 +92,13 @@ object CjkTypography {
     const val LETTER_SPACING_SP = 0f
 
     /**
+     * Shared floor for user-adjusted tracking, in sp. The layout engine's desktop
+     * config parser and the Android settings codec must use this one value so the
+     * accepted range cannot drift between modules.
+     */
+    const val LETTER_SPACING_MIN_SP = -0.1f
+
+    /**
      * Extra spacing between paragraphs, in **dp**.
      *
      * The requested range is 8–12dp; 10dp sits in the middle and reads as

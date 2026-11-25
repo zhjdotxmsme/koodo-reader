@@ -96,7 +96,7 @@ object ReaderFeatureCodec {
     const val LINE_HEIGHT_MAX = 2f
     /** Slider granularity for the line height — 21 stops between min and max. */
     const val LINE_HEIGHT_STEP = 0.05f
-    const val LETTER_SPACING_MIN = -0.1f
+    const val LETTER_SPACING_MIN = CjkTypography.LETTER_SPACING_MIN_SP
     const val LETTER_SPACING_MAX = 0.1f
     const val LETTER_SPACING_STEP = 0.01f
     const val MARGIN_MIN = -40f

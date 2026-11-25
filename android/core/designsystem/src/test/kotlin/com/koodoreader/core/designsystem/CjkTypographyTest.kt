@@ -33,6 +33,11 @@ class CjkTypographyTest {
     }
 
     @Test
+    fun `shared tracking floor matches the supported range`() {
+        assertEquals(-0.1f, CjkTypography.LETTER_SPACING_MIN_SP)
+    }
+
+    @Test
     fun `tracking stays small enough not to open a gap in latin words`() {
         // 0.5sp is a hair: enough to separate CJK ink, not enough to be seen
         // as a space between Latin letters.
